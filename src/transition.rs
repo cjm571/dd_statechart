@@ -1,5 +1,5 @@
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *\
-Filename : transition_event.rs
+Filename : transition.rs
 
 Copyright (C) 2020 CJ McAllister
     This program is free software; you can redistribute it and/or modify
@@ -19,21 +19,31 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+use std::fmt;
+
+use crate::{
+    event::EventId,
+    state::StateId,
+};
+
 
 ///////////////////////////////////////////////////////////////////////////////
 //  Data Structures
 ///////////////////////////////////////////////////////////////////////////////
 
-/// Represents a state-changing event that will cause the of one or more state nodes to other nodes,
-/// if the condition of the event is evaluates as true.
-pub struct TransitionEvent {
-    id:         String,
-    condition:  Condition,
-}
+/// Convenience alias for boolean expressions to be used as transition guards
+pub type Condition = fn() -> bool;
 
-/// Represents a condition on a state-change event.
-pub struct Condition {
-    id: String,
+//TODO: Probably expand this to a more detailed struct
+pub type TransitionId = &'static str;
+
+/// Represents a (single-target or multicast) transition from the current
+/// (source) state to a target state
+pub struct Transition {
+    id:         TransitionId,
+    triggers:   Vec<EventId>,
+    condition:  Condition,
+    targets:    Vec<StateId>,
 }
 
 
@@ -41,33 +51,46 @@ pub struct Condition {
 //  Object Implementations
 ///////////////////////////////////////////////////////////////////////////////
 
-/*  *  *  *  *  *  *  *\
- *  TransitionEvent   *
-\*  *  *  *  *  *  *  */
-impl TransitionEvent {
+impl Transition {
 
     /*  *  *  *  *  *  *  *\
      *  Accessor Methods  *
     \*  *  *  *  *  *  *  */
-    pub fn id(&self) -> &String {
+    pub fn id(&self) -> &TransitionId {
         &self.id
     }
 
-    pub fn condition(&self) -> &Condition {
-        &self.condition
+    pub fn triggers(&self) -> &Vec<EventId> {
+        &self.triggers
+    }
+
+    pub fn targets(&self) -> &Vec<StateId> {
+        &self.targets
+    }
+
+
+    /*  *  *  *  *  *  *  *\
+     *  Utility Methods   *
+    \*  *  *  *  *  *  *  */
+    
+    /// Evaluates the guard condition for this Transition
+    pub fn evaluate_condition(&self) -> bool {
+        (self.condition)()
     }
 }
 
 
-/*  *  *  *  *  *  *  *\
- *      Condition     *
-\*  *  *  *  *  *  *  */
-impl Condition {
+///////////////////////////////////////////////////////////////////////////////
+//  Trait Implementations
+///////////////////////////////////////////////////////////////////////////////
 
-    /*  *  *  *  *  *  *  *\
-     *  Accessor Methods  *
-    \*  *  *  *  *  *  *  */
-    pub fn id(&self) -> &String {
-        &self.id
+impl fmt::Debug for Transition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Transition")
+            .field("id", &self.id)
+            .field("triggers", &self.triggers)
+            .field("condition", &self.condition)
+            .field("targets", &self.targets)
+            .finish()
     }
 }

@@ -1,5 +1,5 @@
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *\
-Filename : node.rs
+Filename : event.rs
 
 Copyright (C) 2020 CJ McAllister
     This program is free software; you can redistribute it and/or modify
@@ -19,30 +19,17 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-use crate::transition_event::TransitionEvent;
-
 
 ///////////////////////////////////////////////////////////////////////////////
 //  Data Structures
 ///////////////////////////////////////////////////////////////////////////////
 
-/// Represents a state node within a statechart.
-/// 
-/// May contain one or more entry events, and zero or more exit events.
-pub struct Node<'a> {
-    id:         String,
-    entrances:  Vec<Connection<'a>>,
-    exits:      Vec<Connection<'a>>,
-}
+//TODO: Probably expand this to a more detailed struct
+pub type EventId = &'static str;
 
-/// Represents a unidirectional connection between two nodes.
-/// 
-/// Contains references to a "From" and "To" node, as well as the TransitionEvent that connects the two.
-pub struct Connection<'a> {
-    id:     String,
-    source: &'a Node<'a>,
-    target: &'a Node<'a>,
-    event:  &'a TransitionEvent,
+/// Represents an event that can be broadcast to the statechart
+pub struct Event {
+    id: EventId,
 }
 
 
@@ -50,49 +37,22 @@ pub struct Connection<'a> {
 //  Object Implementations
 ///////////////////////////////////////////////////////////////////////////////
 
-/*  *  *  *  *  *  *  *\
- *        Node        *
-\*  *  *  *  *  *  *  */
-impl Node<'_> {
-
+impl Event {
+    /// Creates a new Event object with the given ID.
+    pub fn new(id: EventId) -> Self {
+        Self { id }
+    }
+    
     /*  *  *  *  *  *  *  *\
      *  Accessor Methods  *
     \*  *  *  *  *  *  *  */
-    pub fn id(&self) -> &String {
+    pub fn id(&self) -> &EventId {
         &self.id
-    }
-
-    pub fn entrances(&self) -> &Vec<Connection> {
-        &self.entrances
-    }
-
-    pub fn exits(&self) -> &Vec<Connection> {
-        &self.exits
     }
 }
 
 
-/*  *  *  *  *  *  *  *\
- *     Connection     *
-\*  *  *  *  *  *  *  */
-impl Connection<'_> {
 
-    /*  *  *  *  *  *  *  *\
-     *  Accessor Methods  *
-    \*  *  *  *  *  *  *  */
-    pub fn id(&self) -> &String {
-        &self.id
-    }
 
-    pub fn source(&self) -> &Node {
-        &self.source
-    }
 
-    pub fn target(&self) -> &Node {
-        &self.target
-    }
 
-    pub fn event(&self) -> &TransitionEvent {
-        &self.event
-    }
-}

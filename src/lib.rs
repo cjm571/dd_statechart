@@ -20,19 +20,26 @@ Purpose:
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 //TODO: Need to use function pointer for this or some shit
-//TODO: Add nested nodes or statecharts
+//TODO: Add nested states
 //TODO: Proper error enum implementation with description() and shit
+
+use std::collections::HashMap;
 
 
 ///////////////////////////////////////////////////////////////////////////////
 //  Module Declarations
 ///////////////////////////////////////////////////////////////////////////////
 
-pub mod node;
-use node::*;
+pub mod event;
+pub mod state;
+pub mod transition;
 
-pub mod transition_event;
-use transition_event::*;
+use event::Event;
+use state::{
+    State,
+    StateId,
+};
+
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -43,9 +50,10 @@ use transition_event::*;
 /// 
 /// Contains a list of all nodes and events that make up the statechart.
 #[derive(Default)]
-pub struct StateChart<'a> {
-    nodes:          Vec<Node<'a>>,
-    events:         Vec<TransitionEvent>,
+pub struct StateChart {
+    id:         String,
+    initial:    Vec<StateId>,
+    states:     HashMap<StateId, State>,
 }
 
 
@@ -59,67 +67,110 @@ pub enum StateChartError {
 //  Object Implementations
 ///////////////////////////////////////////////////////////////////////////////
 
-impl<'a> StateChart<'a> {
+impl StateChart {
+    /// Creates a StateChart object with the given parameters.
+    pub fn new(id: String, initial: Vec<StateId>, states: HashMap<StateId, State>) -> Self {
+        Self {
+            id,
+            initial,
+            states,
+        }
+    }
 
     /*  *  *  *  *  *  *  *\
      *  Accessor Methods  *
     \*  *  *  *  *  *  *  */
-    pub fn nodes(&self) -> &Vec<Node<'a>> {
-        &self.nodes
+    /// Retrieves all active states in the StateChart.
+    pub fn active_state_ids(&self) -> Vec<&StateId> {
+        let mut active_states: Vec<&StateId> = Vec::new();
+        
+        // Traverse the map of states and push all active states into a vector
+        for state in self.states.values() {
+            if state.is_active() {
+                active_states.push(state.id());
+            }
+        }
+
+        active_states
     }
 
-    pub fn events(&self) -> &Vec<TransitionEvent> {
-        &self.events
-    }
     
-
+    //TODO: replace add_* with Builder pattern
     /*  *  *  *  *  *  *  *\
      *  Mutator Methods   *
     \*  *  *  *  *  *  *  */
-    pub fn add_node(&mut self, node: Node<'a>) -> Result<(), StateChartError> {
-        // Check for duplicate before adding
-        self.duplicate_node_check(&node)?;
+    pub fn add_state(&mut self, mut state: State, is_initial: bool) {
+        //TODO: Need to sanity-check is_initial so that nonparallel states are not marked as initially active
 
-        self.nodes.push(node);
+        // If necessary, add the ID to the initially-active list and activate
+        if is_initial {
+            self.initial.push(state.id());
+            state.activate();
+        }
+
+        // Add new state to the map
+        self.states.insert(state.id(), state);
+    }
+
+
+    /*  *  *  *  *  *  *  *\
+     *  Utility Methods   *
+    \*  *  *  *  *  *  *  */
+    /// Broadcasts an event to all states of the StateChart.
+    /// 
+    /// Returns Ok() if the event was valid, StateChartError if the event was rejected.
+    pub fn broadcast_event(&mut self, event: &Event) -> Result<(), StateChartError> {
+        //TODO: Sanity-check event?
+
+        // Traverse the map of states and send the event to each for evaluation
+        let mut state_changes: HashMap<StateId, Vec<StateId>> = HashMap::new();
+        for state in self.states.values_mut() {
+            match state.evaluate_event(event.id()) {
+                Ok(new_state_ids)   => {
+                    state_changes.insert(state.id(), new_state_ids);
+                },
+                Err(e)          => {
+                    //TODO: Do something with the error
+                    println!("Error: {:?}", e);
+                }
+            }
+        }
+
+        // Deactivate the old states and activate the new one(s)
+        for (old_state_id, new_state_ids) in state_changes {
+            self.get_mut_state_from_id(old_state_id).deactivate();
+
+            for state_id in new_state_ids {
+                self.get_mut_state_from_id(state_id).activate();
+            }
+        }
 
         Ok(())
     }
-
-    pub fn add_event(&mut self, event: TransitionEvent) -> Result<(), StateChartError> {
-        // Check for duplicate before adding
-        self.duplicate_event_check(&event)?;
-
-        self.events.push(event);
-
-        Ok(())
-    }
-
     
+
     /*  *  *  *  *  *  *  *\
      *  Helper Methods    *
     \*  *  *  *  *  *  *  */
-    /// Checks if the given node already exists
-    fn duplicate_node_check(&self, node: &Node) -> Result<(), StateChartError> {
-        for existing_node in &self.nodes {
-            if existing_node.id() == node.id() {
-                return Err(StateChartError::AlreadyExists)
-            }
-        }
-
-        Ok(())
-    }
-    
-    fn duplicate_event_check(&self, event: &TransitionEvent) -> Result<(), StateChartError> {
-        for existing_event in &self.events {
-            if existing_event.id() == event.id() {
-                return Err(StateChartError::AlreadyExists)
-            }
-        }
-
-        Ok(())
+    fn get_mut_state_from_id(&mut self, id: StateId) -> &mut State {
+        self.states.get_mut(&id).unwrap()
     }
 }
 
+
+///////////////////////////////////////////////////////////////////////////////
+//  Trait Implementations
+///////////////////////////////////////////////////////////////////////////////
+
+impl std::fmt::Debug for StateChart {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StateChart")
+            .field("id", &self.id)
+            .field("initial", &self.initial)
+            .field("states", &self.states)
+            .finish()
+    }
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 //  Unit Tests
@@ -127,10 +178,28 @@ impl<'a> StateChart<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::{
+        State,
+        StateChart,
+    };
+
+    const EMPTY_STATECHART_PRINT: &str = "StateChart { id: \"\", initial: [], states: {} }";
 
     #[test]
-    fn create_combat_statechart() {
+    fn empty_statechart() {
+        let statechart = StateChart::default();
+
+        assert_eq!(EMPTY_STATECHART_PRINT, format!("{:?}", statechart));
+    }
+
+    #[test]
+    fn sandbox() {
+        // Define states to be added to the statechart
+        let state_a = State::new("A");
+
         let mut statechart = StateChart::default();
+        statechart.add_state(state_a, true);
+
+        println!("{:#?}", statechart);
     }
 }
