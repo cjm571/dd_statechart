@@ -46,8 +46,8 @@ impl Event {
     /*  *  *  *  *  *  *  *\
      *  Accessor Methods  *
     \*  *  *  *  *  *  *  */
-    pub fn id(&self) -> &EventId {
-        &self.id
+    pub fn id(&self) -> EventId {
+        self.id
     }
 }
 

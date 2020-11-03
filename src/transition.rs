@@ -40,10 +40,10 @@ pub type TransitionId = &'static str;
 /// Represents a (single-target or multicast) transition from the current
 /// (source) state to a target state
 pub struct Transition {
-    id:         TransitionId,
-    triggers:   Vec<EventId>,
-    condition:  Condition,
-    targets:    Vec<StateId>,
+    id:     TransitionId,
+    event:  EventId,
+    cond:   Condition,
+    target: Vec<StateId>,
 }
 
 
@@ -52,20 +52,35 @@ pub struct Transition {
 ///////////////////////////////////////////////////////////////////////////////
 
 impl Transition {
+    /// Fully-qualified constructor.
+    /// 
+    /// Creates a Transition with all of the given parameters.
+    pub fn new(
+        id: TransitionId,
+        event: EventId,
+        cond: Condition,
+        target: Vec<StateId>) -> Self {
+            Self {
+                id,
+                event,
+                cond,
+                target,
+            }
+        }
 
     /*  *  *  *  *  *  *  *\
      *  Accessor Methods  *
     \*  *  *  *  *  *  *  */
-    pub fn id(&self) -> &TransitionId {
-        &self.id
+    pub fn id(&self) -> TransitionId {
+        self.id
     }
 
-    pub fn triggers(&self) -> &Vec<EventId> {
-        &self.triggers
+    pub fn event(&self) -> EventId {
+        &self.event
     }
 
-    pub fn targets(&self) -> &Vec<StateId> {
-        &self.targets
+    pub fn target(&self) -> &Vec<StateId> {
+        &self.target
     }
 
 
@@ -75,7 +90,7 @@ impl Transition {
     
     /// Evaluates the guard condition for this Transition
     pub fn evaluate_condition(&self) -> bool {
-        (self.condition)()
+        (self.cond)()
     }
 }
 
@@ -88,9 +103,9 @@ impl fmt::Debug for Transition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Transition")
             .field("id", &self.id)
-            .field("triggers", &self.triggers)
-            .field("condition", &self.condition)
-            .field("targets", &self.targets)
+            .field("event", &self.event)
+            .field("cond", &self.cond)
+            .field("target", &self.target)
             .finish()
     }
 }

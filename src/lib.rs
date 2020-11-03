@@ -17,11 +17,15 @@ Copyright (C) 2020 CJ McAllister
 Purpose:
     Top-level module defining Data-Driven Harel Statecharts.
 
+    This crate is designed to conform to the State Chart XML (SCXML) standard
+    established in W3C Recommendation REC-scxml-20150901.
+    This standard can be found at: https://www.w3.org/TR/2015/REC-scxml-20150901/
+
+    All submodules in this crate will reference subsections of this standard.
+
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-//TODO: Need to use function pointer for this or some shit
-//TODO: Add nested states
-//TODO: Proper error enum implementation with description() and shit
+//TODO: Nested states
 
 use std::collections::HashMap;
 
@@ -37,6 +41,7 @@ pub mod transition;
 use event::Event;
 use state::{
     State,
+    StateError,
     StateId,
 };
 
@@ -47,7 +52,7 @@ use state::{
 ///////////////////////////////////////////////////////////////////////////////
 
 /// Top-level representation of a complete statechart.
-/// 
+///
 /// Contains a list of all nodes and events that make up the statechart.
 #[derive(Default)]
 pub struct StateChart {
@@ -81,9 +86,9 @@ impl StateChart {
      *  Accessor Methods  *
     \*  *  *  *  *  *  *  */
     /// Retrieves all active states in the StateChart.
-    pub fn active_state_ids(&self) -> Vec<&StateId> {
-        let mut active_states: Vec<&StateId> = Vec::new();
-        
+    pub fn active_state_ids(&self) -> Vec<StateId> {
+        let mut active_states: Vec<StateId> = Vec::new();
+
         // Traverse the map of states and push all active states into a vector
         for state in self.states.values() {
             if state.is_active() {
@@ -94,7 +99,7 @@ impl StateChart {
         active_states
     }
 
-    
+
     //TODO: replace add_* with Builder pattern
     /*  *  *  *  *  *  *  *\
      *  Mutator Methods   *
@@ -117,37 +122,40 @@ impl StateChart {
      *  Utility Methods   *
     \*  *  *  *  *  *  *  */
     /// Broadcasts an event to all states of the StateChart.
-    /// 
+    ///
     /// Returns Ok() if the event was valid, StateChartError if the event was rejected.
-    pub fn broadcast_event(&mut self, event: &Event) -> Result<(), StateChartError> {
+    pub fn broadcast_event(&mut self, event: &Event) -> Result<HashMap<StateId, Vec<StateId>>, StateError> {
         //TODO: Sanity-check event?
 
         // Traverse the map of states and send the event to each for evaluation
         let mut state_changes: HashMap<StateId, Vec<StateId>> = HashMap::new();
-        for state in self.states.values_mut() {
-            match state.evaluate_event(event.id()) {
-                Ok(new_state_ids)   => {
-                    state_changes.insert(state.id(), new_state_ids);
+        for source_state in self.states.values() {
+            match source_state.evaluate_event(event.id()) {
+                Ok(target_ids) => {
+                    if !target_ids.is_empty() {
+                        // Transition Enabled, record the source and target State(s) for de/activation
+                        state_changes.insert(source_state.id(), target_ids);
+                    }
                 },
-                Err(e)          => {
-                    //TODO: Do something with the error
-                    println!("Error: {:?}", e);
+                Err(StateError::FailedConditions(transition_ids)) => {
+                    // Transition(s) failed, short-circuit before we alter the Configuration
+                    return Err(StateError::FailedConditions(transition_ids));
                 }
             }
         }
 
-        // Deactivate the old states and activate the new one(s)
-        for (old_state_id, new_state_ids) in state_changes {
-            self.get_mut_state_from_id(old_state_id).deactivate();
+        // Traverse state change map to de/activate source and target States
+        for (source_state_id, target_state_ids) in &state_changes {
+            self.get_mut_state_from_id(source_state_id).deactivate();
 
-            for state_id in new_state_ids {
+            for state_id in target_state_ids {
                 self.get_mut_state_from_id(state_id).activate();
             }
-        }
+        }        
 
-        Ok(())
+        Ok(state_changes)
     }
-    
+
 
     /*  *  *  *  *  *  *  *\
      *  Helper Methods    *
@@ -179,11 +187,22 @@ impl std::fmt::Debug for StateChart {
 #[cfg(test)]
 mod tests {
     use crate::{
-        State,
+        event::Event,
+        state::{
+            State,
+            StateError,
+        },
         StateChart,
+        transition::Transition,
     };
 
+    /// Constvenience variable for empty statechart comparison.
     const EMPTY_STATECHART_PRINT: &str = "StateChart { id: \"\", initial: [], states: {} }";
+
+    /// Constvenience function for use as a "null conditional"
+    const fn always_true() -> bool { true }
+    /// Constvenience function for use as an "anti-null conditional"
+    const fn always_false() -> bool { false }
 
     #[test]
     fn empty_statechart() {
@@ -193,13 +212,77 @@ mod tests {
     }
 
     #[test]
-    fn sandbox() {
-        // Define states to be added to the statechart
-        let state_a = State::new("A");
+    fn failed_condition() {
+        // Define states
+        let mut initial = State::new("INITIAL");
+        let unreachable = State::new("UNREACHABLE");
 
-        let mut statechart = StateChart::default();
-        statechart.add_state(state_a, true);
+        // Define events and transitions
+        let go_to_unreachable = Event::new("go_to_unreachable");
+        let initial_to_unreachable = Transition::new(
+            "initial_to_unreachable",
+            go_to_unreachable.id(),
+            always_false,
+            vec![unreachable.id()]);
+        initial.add_transition(initial_to_unreachable);
 
-        println!("{:#?}", statechart);
+        // Create statechart object and add states to it
+        let mut hapless_statechart = StateChart::default();
+        hapless_statechart.add_state(initial, true);
+        hapless_statechart.add_state(unreachable, false);
+
+        // Broadcast the event and verify that the transition failed its guard condition
+        match hapless_statechart.broadcast_event(&go_to_unreachable) {
+            Ok(ids) => {
+                eprintln!("Error: Unexpected successful event evaluation.");
+                eprintln!("Successful Change Map: {:?}", ids);
+                panic!();
+            }
+            Err(StateError::FailedConditions(_ids)) => {
+                // Pass!
+                return;
+            }
+        }
+    }
+
+    #[test]
+    fn hyperion() {
+        // Define state IDs for reference
+        let idle_id             = "IDLE";
+        let diagnostic_id       = "DIAGNOSTIC";
+        let non_imaging_id      = "NON-IMAGING";
+        let imaging_standby_id  = "IMAGING STANDBY";
+        let imaging_id          = "IMAGING";
+
+        // Define system states
+        let mut idle = State::new(idle_id);
+        let diagnostic = State::new(diagnostic_id);
+        let non_imaging = State::new(non_imaging_id);
+        let imaging_standby = State::new(imaging_standby_id);
+        let imaging = State::new(imaging_id);
+
+        // Define events and transitions
+        let go_to_non_imaging = Event::new("go_to_non_imaging");
+        let idle_to_non_imaging = Transition::new(
+            "idle_to_non-imaging",
+            go_to_non_imaging.id(),
+            always_true,
+            vec![non_imaging.id()]);
+        idle.add_transition(idle_to_non_imaging);
+
+        // Create statechart object and add states to it
+        let mut hyperion_statechart = StateChart::default();
+        hyperion_statechart.add_state(idle, true);
+        hyperion_statechart.add_state(diagnostic, false);
+        hyperion_statechart.add_state(non_imaging, false);
+        hyperion_statechart.add_state(imaging_standby, false);
+        hyperion_statechart.add_state(imaging, false);
+
+        // Broadcast a Go To Non-Imaging event
+        hyperion_statechart.broadcast_event(&go_to_non_imaging).unwrap();
+
+        // Verify that IDLE is inactive and NON-IMAGING is active
+        assert_eq!(hyperion_statechart.active_state_ids().contains(&idle_id), false);
+        assert_eq!(hyperion_statechart.active_state_ids().contains(&non_imaging_id), true);
     }
 }
