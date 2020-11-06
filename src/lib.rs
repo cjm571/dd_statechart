@@ -223,8 +223,9 @@ mod tests {
 
         // Define events and transitions
         let go_to_unreachable = Event::new("go_to_unreachable");
+        let initial_to_unreachable_id = "initial_to_unreachable";
         let initial_to_unreachable = Transition::new(
-            "initial_to_unreachable",
+            initial_to_unreachable_id,
             go_to_unreachable.id(),
             always_false,
             vec![unreachable.id()]);
@@ -236,17 +237,11 @@ mod tests {
         hapless_statechart.add_state(unreachable, false).unwrap();
 
         // Broadcast the event and verify that the transition failed its guard condition
-        match hapless_statechart.broadcast_event(&go_to_unreachable) {
-            Ok(ids) => {
-                eprintln!("Error: Unexpected successful event evaluation.");
-                eprintln!("Successful Change Map: {:?}", ids);
-                panic!();
-            }
-            Err(StateError::FailedConditions(_ids)) => {
-                // Pass!
-                return;
-            }
-        }
+        assert_eq!(
+            hapless_statechart.broadcast_event(&go_to_unreachable),
+            Err(StateError::FailedConditions(vec![initial_to_unreachable_id])),
+            "Failed to detect failed Transition due to failed Condition." 
+        );
     }
 
     #[test]
@@ -302,6 +297,10 @@ mod tests {
         duplicate_statechart.add_state(duplicate_a, true).unwrap();
         
         // Verify that adding the duplicate ID results in an error
-        assert_eq!(duplicate_statechart.add_state(duplicate_b, false), Err(StateChartError::DuplicateStateId(duplicate_id)));
+        assert_eq!(
+            duplicate_statechart.add_state(duplicate_b, false),
+            Err(StateChartError::DuplicateStateId(duplicate_id)),
+            "Failed to detect duplicate State ID error."
+        );
     }
 }

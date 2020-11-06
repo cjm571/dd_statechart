@@ -39,6 +39,7 @@ pub type TransitionId = &'static str;
 
 /// Represents a (single-target or multicast) transition from the current
 /// (source) state to a target state
+#[derive(PartialEq)]
 pub struct Transition {
     id:     TransitionId,
     event:  EventId,

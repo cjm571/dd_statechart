@@ -44,7 +44,7 @@ pub type StateId = &'static str;
 /// Represents a state within the statechart.
 /// 
 /// May contain one or more of: initial states, transitions, entry/exit callbacks, substates
-#[derive(Default)]
+#[derive(Default, PartialEq)]
 pub struct State {
     id:             StateId,
     is_active:      bool,
@@ -56,6 +56,7 @@ pub struct State {
 }
 
 //TODO: Comment
+#[derive(PartialEq)]
 pub enum StateError {
     FailedConditions(Vec<TransitionId>),
 }
