@@ -51,20 +51,23 @@ use state::{
 //  Data Structures
 ///////////////////////////////////////////////////////////////////////////////
 
+//TODO: Probably expand this to a more detailed struct
+pub type StateChartId = &'static str;
+
 /// Top-level representation of a complete statechart.
 ///
 /// Contains a list of all nodes and events that make up the statechart.
-#[derive(Default)]
 pub struct StateChart {
-    id:         String,
+    id:         StateChartId,
     initial:    Vec<StateId>,
     states:     HashMap<StateId, State>,
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum StateChartError {
-    AlreadyExists,
+    DuplicateStateId(StateId),
+    Other,
 }
 
 
@@ -73,12 +76,12 @@ pub enum StateChartError {
 ///////////////////////////////////////////////////////////////////////////////
 
 impl StateChart {
-    /// Creates a StateChart object with the given parameters.
-    pub fn new(id: String, initial: Vec<StateId>, states: HashMap<StateId, State>) -> Self {
+    /// Creates a StateChart object with the given ID.
+    pub fn new(id: StateChartId) -> Self {
         Self {
             id,
-            initial,
-            states,
+            initial: Vec::new(),
+            states: HashMap::new(),
         }
     }
 
@@ -104,8 +107,13 @@ impl StateChart {
     /*  *  *  *  *  *  *  *\
      *  Mutator Methods   *
     \*  *  *  *  *  *  *  */
-    pub fn add_state(&mut self, mut state: State, is_initial: bool) {
+    pub fn add_state(&mut self, mut state: State, is_initial: bool) -> Result<(), StateChartError>{
         //TODO: Need to sanity-check is_initial so that nonparallel states are not marked as initially active
+
+        // Ensure that the new State's ID is unique
+        if self.states.contains_key(state.id()) {
+            return Err(StateChartError::DuplicateStateId(state.id()));
+        }
 
         // If necessary, add the ID to the initially-active list and activate
         if is_initial {
@@ -115,6 +123,8 @@ impl StateChart {
 
         // Add new state to the map
         self.states.insert(state.id(), state);
+
+        Ok(())
     }
 
 
@@ -192,24 +202,18 @@ mod tests {
             State,
             StateError,
         },
-        StateChart,
+        {
+            StateChart,
+            StateChartError,
+        },
         transition::Transition,
     };
-
-    /// Constvenience variable for empty statechart comparison.
-    const EMPTY_STATECHART_PRINT: &str = "StateChart { id: \"\", initial: [], states: {} }";
 
     /// Constvenience function for use as a "null conditional"
     const fn always_true() -> bool { true }
     /// Constvenience function for use as an "anti-null conditional"
     const fn always_false() -> bool { false }
 
-    #[test]
-    fn empty_statechart() {
-        let statechart = StateChart::default();
-
-        assert_eq!(EMPTY_STATECHART_PRINT, format!("{:?}", statechart));
-    }
 
     #[test]
     fn failed_condition() {
@@ -227,9 +231,9 @@ mod tests {
         initial.add_transition(initial_to_unreachable);
 
         // Create statechart object and add states to it
-        let mut hapless_statechart = StateChart::default();
-        hapless_statechart.add_state(initial, true);
-        hapless_statechart.add_state(unreachable, false);
+        let mut hapless_statechart = StateChart::new("hapless");
+        hapless_statechart.add_state(initial, true).unwrap();
+        hapless_statechart.add_state(unreachable, false).unwrap();
 
         // Broadcast the event and verify that the transition failed its guard condition
         match hapless_statechart.broadcast_event(&go_to_unreachable) {
@@ -271,12 +275,12 @@ mod tests {
         idle.add_transition(idle_to_non_imaging);
 
         // Create statechart object and add states to it
-        let mut hyperion_statechart = StateChart::default();
-        hyperion_statechart.add_state(idle, true);
-        hyperion_statechart.add_state(diagnostic, false);
-        hyperion_statechart.add_state(non_imaging, false);
-        hyperion_statechart.add_state(imaging_standby, false);
-        hyperion_statechart.add_state(imaging, false);
+        let mut hyperion_statechart = StateChart::new("hyperion");
+        hyperion_statechart.add_state(idle, true).unwrap();
+        hyperion_statechart.add_state(diagnostic, false).unwrap();
+        hyperion_statechart.add_state(non_imaging, false).unwrap();
+        hyperion_statechart.add_state(imaging_standby, false).unwrap();
+        hyperion_statechart.add_state(imaging, false).unwrap();
 
         // Broadcast a Go To Non-Imaging event
         hyperion_statechart.broadcast_event(&go_to_non_imaging).unwrap();
@@ -284,5 +288,20 @@ mod tests {
         // Verify that IDLE is inactive and NON-IMAGING is active
         assert_eq!(hyperion_statechart.active_state_ids().contains(&idle_id), false);
         assert_eq!(hyperion_statechart.active_state_ids().contains(&non_imaging_id), true);
+    }
+
+    #[test]
+    fn duplicate_state_id() {
+        // Define states with duplicate IDs
+        let duplicate_id = "duplicate";
+        let duplicate_a = State::new(duplicate_id);
+        let duplicate_b = State::new(duplicate_id);
+
+        // Create the statechart object and add states to it
+        let mut duplicate_statechart = StateChart::new("duplicate_chart");
+        duplicate_statechart.add_state(duplicate_a, true).unwrap();
+        
+        // Verify that adding the duplicate ID results in an error
+        assert_eq!(duplicate_statechart.add_state(duplicate_b, false), Err(StateChartError::DuplicateStateId(duplicate_id)));
     }
 }

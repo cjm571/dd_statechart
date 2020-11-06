@@ -1,3 +1,4 @@
 /target
 Cargo.lock
 docs/.~lock.design_musings.odt#
+*.code-workspace
