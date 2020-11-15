@@ -41,10 +41,11 @@ pub type TransitionId = &'static str;
 /// (source) state to a target state
 #[derive(PartialEq)]
 pub struct Transition {
-    id:     TransitionId,
-    event:  EventId,
-    cond:   Condition,
-    target: Vec<StateId>,
+    id:         TransitionId,
+    event_id:   EventId,
+    cond:       Condition,
+    source_id:  StateId,
+    target_ids: Vec<StateId>,
 }
 
 
@@ -58,14 +59,16 @@ impl Transition {
     /// Creates a Transition with all of the given parameters.
     pub fn new(
         id: TransitionId,
-        event: EventId,
+        event_id: EventId,
         cond: Condition,
-        target: Vec<StateId>) -> Self {
+        source_id: StateId,
+        target_ids: Vec<StateId>) -> Self {
             Self {
                 id,
-                event,
+                event_id,
                 cond,
-                target,
+                source_id,
+                target_ids,
             }
         }
 
@@ -76,12 +79,17 @@ impl Transition {
         self.id
     }
 
-    pub fn event(&self) -> EventId {
-        &self.event
+    pub fn event_id(&self) -> EventId {
+        &self.event_id
     }
 
-    pub fn target(&self) -> &Vec<StateId> {
-        &self.target
+    pub fn source_id(&self) -> StateId {
+        self.source_id
+    }
+
+    pub fn target_ids(&self) -> Vec<StateId> {
+        // Clone is necessary to avoid issues with borrow-checker
+        self.target_ids.clone()
     }
 
 
@@ -104,9 +112,10 @@ impl fmt::Debug for Transition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Transition")
             .field("id", &self.id)
-            .field("event", &self.event)
+            .field("event_id", &self.event_id)
             .field("cond", &self.cond)
-            .field("target", &self.target)
+            .field("source_id", &self.source_id)
+            .field("target_ids", &self.target_ids)
             .finish()
     }
 }

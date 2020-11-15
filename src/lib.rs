@@ -27,22 +27,30 @@ Purpose:
 
 //TODO: Nested states
 
-use std::collections::HashMap;
-
 
 ///////////////////////////////////////////////////////////////////////////////
 //  Module Declarations
 ///////////////////////////////////////////////////////////////////////////////
 
+pub mod registry;
 pub mod event;
 pub mod state;
 pub mod transition;
 
-use event::Event;
-use state::{
-    State,
-    StateError,
-    StateId,
+
+
+use crate::{
+    event::Event,
+    registry::{
+        Registry,
+        RegistryError,
+    },
+    state::{
+        State,
+        StateError,
+        StateId,
+    },
+    transition::TransitionId,
 };
 
 
@@ -60,12 +68,12 @@ pub type StateChartId = &'static str;
 pub struct StateChart {
     id:         StateChartId,
     initial:    Vec<StateId>,
-    states:     HashMap<StateId, State>,
+    registry:   Registry,
 }
-
 
 #[derive(Debug, PartialEq)]
 pub enum StateChartError {
+    AlreadyExists,
     DuplicateStateId(StateId),
     Other,
 }
@@ -80,8 +88,8 @@ impl StateChart {
     pub fn new(id: StateChartId) -> Self {
         Self {
             id,
-            initial: Vec::new(),
-            states: HashMap::new(),
+            initial:    Vec::new(),
+            registry:   Registry::default(),
         }
     }
 
@@ -90,16 +98,7 @@ impl StateChart {
     \*  *  *  *  *  *  *  */
     /// Retrieves all active states in the StateChart.
     pub fn active_state_ids(&self) -> Vec<StateId> {
-        let mut active_states: Vec<StateId> = Vec::new();
-
-        // Traverse the map of states and push all active states into a vector
-        for state in self.states.values() {
-            if state.is_active() {
-                active_states.push(state.id());
-            }
-        }
-
-        active_states
+        self.registry.get_active_state_ids()
     }
 
 
@@ -107,22 +106,16 @@ impl StateChart {
     /*  *  *  *  *  *  *  *\
      *  Mutator Methods   *
     \*  *  *  *  *  *  *  */
-    pub fn add_state(&mut self, mut state: State, is_initial: bool) -> Result<(), StateChartError>{
-        //TODO: Need to sanity-check is_initial so that nonparallel states are not marked as initially active
-
-        // Ensure that the new State's ID is unique
-        if self.states.contains_key(state.id()) {
-            return Err(StateChartError::DuplicateStateId(state.id()));
-        }
-
+    pub fn add_state(&mut self, mut state: State, is_initial: bool) -> Result<(), RegistryError> {
+        //OPT: *DESIGN* Should pushing to `initial` be done before registration, which can fail?
         // If necessary, add the ID to the initially-active list and activate
         if is_initial {
             self.initial.push(state.id());
             state.activate();
         }
 
-        // Add new state to the map
-        self.states.insert(state.id(), state);
+        // Register the state
+        self.registry.register_state(state)?;
 
         Ok(())
     }
@@ -131,47 +124,74 @@ impl StateChart {
     /*  *  *  *  *  *  *  *\
      *  Utility Methods   *
     \*  *  *  *  *  *  *  */
-    /// Broadcasts an event to all states of the StateChart.
-    ///
-    /// Returns Ok() if the event was valid, StateChartError if the event was rejected.
-    pub fn broadcast_event(&mut self, event: &Event) -> Result<HashMap<StateId, Vec<StateId>>, StateError> {
-        //TODO: Sanity-check event?
+    pub fn process_external_event(&mut self, event: &Event) -> Result<(), StateError> {
+        // Collect and process the set of enabled Transitions
+        let enabled_transition_ids = self.select_transitions(event)?;
 
-        // Traverse the map of states and send the event to each for evaluation
-        let mut state_changes: HashMap<StateId, Vec<StateId>> = HashMap::new();
-        for source_state in self.states.values() {
-            match source_state.evaluate_event(event.id()) {
-                Ok(target_ids) => {
-                    if !target_ids.is_empty() {
-                        // Transition Enabled, record the source and target State(s) for de/activation
-                        state_changes.insert(source_state.id(), target_ids);
-                    }
-                },
-                Err(StateError::FailedConditions(transition_ids)) => {
-                    // Transition(s) failed, short-circuit before we alter the Configuration
-                    return Err(StateError::FailedConditions(transition_ids));
-                }
-            }
-        }
-
-        // Traverse state change map to de/activate source and target States
-        for (source_state_id, target_state_ids) in &state_changes {
-            self.get_mut_state_from_id(source_state_id).deactivate();
-
-            for state_id in target_state_ids {
-                self.get_mut_state_from_id(state_id).activate();
-            }
-        }        
-
-        Ok(state_changes)
+        // Perform microstep processing for the current Event
+        self.process_microstep(enabled_transition_ids)
     }
 
 
     /*  *  *  *  *  *  *  *\
      *  Helper Methods    *
-    \*  *  *  *  *  *  *  */
-    fn get_mut_state_from_id(&mut self, id: StateId) -> &mut State {
-        self.states.get_mut(&id).unwrap()
+    \*  *  *  *  *  *  *  */    
+    /// Collects the ID(s) of Transition(s) enabled by the given Event.
+    ///
+    /// Returns Ok() if the event was valid, StateChartError if the event was rejected.
+    ///
+    /// TODO: Fix/Finish comment
+    pub fn select_transitions(&self, event: &Event) -> Result<Vec<TransitionId>, StateError> {
+        //TODO: Sanity-check event?
+
+        let mut enabled_transitions = Vec::new();
+
+        // Traverse the map of states and send the event to each for evaluation
+        for state_id in &self.registry.get_active_state_ids() {
+            let state = self.registry.get_state(state_id);
+            let enabled_transition = state.evaluate_event(event.id())?.unwrap();
+
+            enabled_transitions.push(enabled_transition);
+        }
+
+        Ok(enabled_transitions)
+    }
+
+    /// Processes a single set of Enabled Transitions.
+    ///
+    /// Per definition of the `microstep()` procedure in Appendix D of the standard,
+    /// processing a microstep involves 3 phases:
+    /// 1. Exiting source State(s)
+    /// 2. Executing executable content of a Transition
+    /// 3. Entering target State(s)
+    fn process_microstep(&mut self, enabled_transition_ids: Vec<TransitionId>) -> Result<(), StateError> {
+        //TODO: Sort transition source states into exit order, for now, just copying as-is
+        let exit_sorted_transition_ids = enabled_transition_ids.clone();
+
+        // Exit source State(s) in "Exit Order"
+        for transition_id in exit_sorted_transition_ids {
+            let source_state_id = self.registry.get_transition(transition_id).unwrap().source_id();
+            let source_state = self.registry.get_mut_state(source_state_id);
+
+            source_state.exit()?;
+        }
+
+        //TODO: Perform executable content of Transition(s)
+        
+        //TODO: Sort transition source states into entry order, for now, just copying as-is
+        let entry_sorted_transition_ids = enabled_transition_ids.clone();
+
+        // Enter target State(s) in "Entry Order"
+        for transition_id in entry_sorted_transition_ids {
+            let target_state_ids = self.registry.get_transition(transition_id).unwrap().target_ids();
+            //TODO: Sort these too?
+            for state_id in target_state_ids {
+                let target_state = self.registry.get_mut_state(state_id);
+                target_state.enter()?;
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -185,7 +205,7 @@ impl std::fmt::Debug for StateChart {
         f.debug_struct("StateChart")
             .field("id", &self.id)
             .field("initial", &self.initial)
-            .field("states", &self.states)
+            .field("registry", &self.registry)
             .finish()
     }
 }
@@ -197,15 +217,13 @@ impl std::fmt::Debug for StateChart {
 #[cfg(test)]
 mod tests {
     use crate::{
+        StateChart,
         event::Event,
         state::{
             State,
             StateError,
         },
-        {
-            StateChart,
-            StateChartError,
-        },
+        registry::RegistryError,
         transition::Transition,
     };
 
@@ -228,6 +246,7 @@ mod tests {
             initial_to_unreachable_id,
             go_to_unreachable.id(),
             always_false,
+            initial.id(),
             vec![unreachable.id()]);
         initial.add_transition(initial_to_unreachable);
 
@@ -238,7 +257,7 @@ mod tests {
 
         // Broadcast the event and verify that the transition failed its guard condition
         assert_eq!(
-            hapless_statechart.broadcast_event(&go_to_unreachable),
+            hapless_statechart.process_external_event(&go_to_unreachable),
             Err(StateError::FailedConditions(vec![initial_to_unreachable_id])),
             "Failed to detect failed Transition due to failed Condition." 
         );
@@ -266,6 +285,7 @@ mod tests {
             "idle_to_non-imaging",
             go_to_non_imaging.id(),
             always_true,
+            idle.id(),
             vec![non_imaging.id()]);
         idle.add_transition(idle_to_non_imaging);
 
@@ -277,8 +297,16 @@ mod tests {
         hyperion_statechart.add_state(imaging_standby, false).unwrap();
         hyperion_statechart.add_state(imaging, false).unwrap();
 
+        //FIXME: DEBUG DELETE
+        eprintln!("Active States BEFORE Event: {:?}", hyperion_statechart.active_state_ids());
+        eprintln!("{:?}\n", hyperion_statechart);
+
         // Broadcast a Go To Non-Imaging event
-        hyperion_statechart.broadcast_event(&go_to_non_imaging).unwrap();
+        hyperion_statechart.process_external_event(&go_to_non_imaging).unwrap();
+        
+        //FIXME: DEBUG DELETE
+        eprintln!("Active States AFTER Event: {:?}", hyperion_statechart.active_state_ids());
+        eprintln!("{:?}", hyperion_statechart);
 
         // Verify that IDLE is inactive and NON-IMAGING is active
         assert_eq!(hyperion_statechart.active_state_ids().contains(&idle_id), false);
@@ -299,7 +327,7 @@ mod tests {
         // Verify that adding the duplicate ID results in an error
         assert_eq!(
             duplicate_statechart.add_state(duplicate_b, false),
-            Err(StateChartError::DuplicateStateId(duplicate_id)),
+            Err(RegistryError::AlreadyExists),
             "Failed to detect duplicate State ID error."
         );
     }
