@@ -42,7 +42,7 @@ use crate::{
 ///////////////////////////////////////////////////////////////////////////////
 
 //TODO: should this really be called "Registry"?
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 pub struct Registry {
     states:         HashMap<StateId, State>,
     events:         HashMap<EventId, Event>,
@@ -64,12 +64,12 @@ impl Registry {
      *  Accessor Methods  *
     \*  *  *  *  *  *  *  */
     
-    pub fn get_state(&self, id: StateId) -> &State {
-        self.states.get(id).unwrap()
+    pub fn get_state(&self, id: StateId) -> Option<&State> {
+        self.states.get(id)
     }
 
-    pub fn get_mut_state(&mut self, id: StateId) -> &mut State {
-        self.states.get_mut(id).unwrap()
+    pub fn get_mut_state(&mut self, id: StateId) -> Option<&mut State> {
+        self.states.get_mut(id)
     }
 
     pub fn get_transition(&self, id: TransitionId) -> Result<&Transition, RegistryError> {

@@ -28,7 +28,7 @@ Purpose:
 pub type EventId = &'static str;
 
 /// Represents an event that can be broadcast to the statechart
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Event {
     id: EventId,
 }
