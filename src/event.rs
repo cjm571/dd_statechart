@@ -15,7 +15,12 @@ Copyright (C) 2020 CJ McAllister
     Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
 
 Purpose:
-    //TODO: Purpose statement
+    This modules defines an Event object and ID. IDs conform to §3.12.1 Event
+    Descriptors of the SCXML spec.
+
+    Events are simple objects whose IDs are passed into the StateChart and will
+    trigger associated Transitions. Note that this is not the only way for
+    State changes to occur in the StateChart, as some Transitions are eventless.
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 

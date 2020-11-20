@@ -17,11 +17,33 @@ Copyright (C) 2020 CJ McAllister
 Purpose:
     Top-level module defining Data-Driven Harel Statecharts.
 
-    This crate is designed to conform to the State Chart XML (SCXML) standard
-    established in W3C Recommendation REC-scxml-20150901.
+    This crate is designed to generally conform to the State Chart XML (SCXML)
+    standard established in W3C Recommendation REC-scxml-20150901.
     This standard can be found at: https://www.w3.org/TR/2015/REC-scxml-20150901/
 
     All submodules in this crate will reference subsections of this standard.
+
+    However, due to the focus on embedded systems, some nonconformances will be
+    necessary. Any such nonconformances are listed below:
+
+    1) §3.14: IDs
+         “When such an attribute is defined to be optional and the author
+          omits it, then, for elements other than <send> and <invoke>, the
+          SCXML processor must generate a unique id automatically at
+          document load time”
+        Omitted IDs shall be treated as errors, and the input SCXML shall be
+        rejected.
+
+    2) §3.3.2 [<state>] Children
+         “<datamodel> Defines part or all of the data model. Occurs 0 or
+          1 times. See 5.2 <datamodel>
+          <invoke> Invokes an external service. Occurs 0 or more times.
+          See 6.4 <invoke> for 	details.”
+        <datamodel> amd <invoke> items shall not be supported.
+    3) §3.7 <final>
+        Final states shall not be supported. Embedded systems are designed to
+        run continuously, and therefore should not enter a state that cannot
+        be exited.
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 

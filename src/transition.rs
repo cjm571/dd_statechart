@@ -15,7 +15,12 @@ Copyright (C) 2020 CJ McAllister
     Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
 
 Purpose:
-    //TODO: Purpose statement
+    This module defines a Transition object and ID. Transitions conform to 
+    §3.5 <transition> of the SCXML Spec.
+
+    Transitions are the actionable components of a StateChart. They are enabled
+    by Events, and may contain executable content as well as triggering an exit
+    of their source State and entry of their target State(s).
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
@@ -42,7 +47,7 @@ pub type TransitionId = &'static str;
 #[derive(PartialEq)]
 pub struct Transition {
     id:         TransitionId,
-    event_id:   EventId,
+    event_id:   EventId, //TODO: Handle multiple events
     cond:       Condition,
     source_id:  StateId,
     target_ids: Vec<StateId>,

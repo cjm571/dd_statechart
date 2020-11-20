@@ -15,7 +15,12 @@ Copyright (C) 2020 CJ McAllister
     Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
 
 Purpose:
-    //TODO: Purpose statement
+    This module defines a State object and ID. States conform to §3.3 <state>
+    of the SCXML Spec.
+
+    States are the keystone object of a StateChart, and may contain multiple
+    Transitions, callbacks, and sub-States. They are entered and exited via
+    activation of Transitions by Events.
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 

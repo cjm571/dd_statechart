@@ -15,7 +15,15 @@ Copyright (C) 2020 CJ McAllister
     Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
 
 Purpose:
-    //TODO: Purpose statement
+    This module defines a Registry object that tracks elements of the Statechart.
+
+    It is meant to be a sole source of information on States, Transformation, and
+    valid Events. Additionally, it is the gatekeeper for mutable State objects.
+    
+    Many functions of StateChart processing require both reading and mutating
+    States,such as determining if a target state should be activated, and Rust's
+    borrow checker (wisely) will not allow these in-place mutations. The Registry
+    provides a safe method to retrieve a mutable reference via ID.
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
