@@ -44,8 +44,8 @@ use crate::{
 //TODO: should this really be called "Registry"?
 #[derive(Debug, Default, PartialEq)]
 pub struct Registry {
-    states:         HashMap<StateId, State>,
-    events:         HashMap<EventId, Event>,
+    states: HashMap<StateId, State>,
+    events: HashMap<EventId, Event>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -117,7 +117,7 @@ impl Registry {
 
     pub fn register_event(&mut self, event: Event) -> Result<(), RegistryError> {
         // Ensure Event is not already registered
-        if self.events.contains_key(event.id()) {
+        if self.events.contains_key(&event.id()) {
             return Err(RegistryError::AlreadyExists);
         }
         

@@ -165,7 +165,6 @@ impl State {
 
         // If no candidates were identified, stop here and return an empty vector
         if enable_candidates.is_empty() {
-            eprintln!("No Transitions of State {} matched Event {}", self.id, event_id);
             return Ok(None);
         }
 
@@ -174,7 +173,6 @@ impl State {
         for candidate in enable_candidates {
             if candidate.evaluate_condition() {
                 // Short-circuit and return the Target of the first Transition to be Enabled
-                eprintln!("Transition {} of State {} matched Event {}", candidate.id(), self.id, event_id);
                 return Ok(Some(candidate.id()))
             }
             else {
@@ -184,7 +182,6 @@ impl State {
         }
 
         // All candidates failed to pass their Condition, return an error
-        eprintln!("Transitions {:?} of State {} failed their Conditions", failed_candidates, self.id);
         Err(StateError::FailedConditions(failed_candidates))
     }
 

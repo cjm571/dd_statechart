@@ -147,7 +147,7 @@ impl StateChart {
         // Traverse the map of states and send the event to each for evaluation
         for state_id in &self.registry.get_active_state_ids() {
             let state = self.registry.get_state(state_id).unwrap();
-            let enabled_transition = state.evaluate_event(event_id)?.unwrap();
+            let enabled_transition = state.evaluate_event(event_id.clone())?.unwrap();
 
             enabled_transitions.push(enabled_transition);
         }
@@ -267,6 +267,7 @@ impl std::fmt::Debug for StateChart {
     }
 }
 
+
 ///////////////////////////////////////////////////////////////////////////////
 //  Unit Tests
 ///////////////////////////////////////////////////////////////////////////////
@@ -275,7 +276,10 @@ impl std::fmt::Debug for StateChart {
 mod tests {
     use crate::{
         StateChartBuilder,
-        event::Event,
+        event::{
+            Event,
+            EventId,
+        },
         state::{
             State,
             StateError,
@@ -295,10 +299,10 @@ mod tests {
         // Define states
         let mut initial = State::new("INITIAL");
         let unreachable = State::new("UNREACHABLE");
-        let go_to_unreachable_id = "go_to_unreachable";
+        let go_to_unreachable_id = EventId::from("go_to_unreachable").unwrap();
 
         // Define events and transitions
-        let go_to_unreachable = Event::new(go_to_unreachable_id);
+        let go_to_unreachable = Event::new(go_to_unreachable_id.clone());
         let initial_to_unreachable_id = "initial_to_unreachable";
         let initial_to_unreachable = Transition::new(
             initial_to_unreachable_id,
@@ -346,8 +350,8 @@ mod tests {
         let imaging = State::new(imaging_id);
 
         // Define events and transitions
-        let go_to_non_imaging_id = "go_to_non_imaging";
-        let go_to_non_imaging = Event::new(go_to_non_imaging_id);
+        let go_to_non_imaging_id = EventId::from("go_to_non_imaging").unwrap();
+        let go_to_non_imaging = Event::new(go_to_non_imaging_id.clone());
         let idle_to_non_imaging = Transition::new(
             "idle_to_non-imaging",
             go_to_non_imaging.id(),

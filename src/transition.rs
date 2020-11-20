@@ -80,7 +80,7 @@ impl Transition {
     }
 
     pub fn event_id(&self) -> EventId {
-        &self.event_id
+        self.event_id.clone()
     }
 
     pub fn source_id(&self) -> StateId {
