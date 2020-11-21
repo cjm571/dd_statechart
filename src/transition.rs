@@ -24,7 +24,10 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-use std::fmt;
+use std::{
+    error::Error,
+    fmt,
+};
 
 use crate::{
     event::EventId,
@@ -36,21 +39,39 @@ use crate::{
 //  Data Structures
 ///////////////////////////////////////////////////////////////////////////////
 
-/// Convenience alias for boolean expressions to be used as transition guards
-pub type Condition = fn() -> bool;
-
-//TODO: Probably expand this to a more detailed struct
-pub type TransitionId = &'static str;
-
 /// Represents a (single-target or multicast) transition from the current
 /// (source) state to a target state
 #[derive(PartialEq)]
 pub struct Transition {
     id:         TransitionId,
-    event_id:   EventId, //TODO: Handle multiple events
+    event_ids:  Vec<EventId>,
     cond:       Condition,
     source_id:  StateId,
     target_ids: Vec<StateId>,
+}
+
+pub type TransitionId = &'static str;
+
+/// Convenience alias for boolean expressions to be used as transition guards
+pub type Condition = fn() -> bool;
+
+
+#[derive(Debug, PartialEq)]
+pub struct TransitionBuilder {
+    id:         TransitionId,
+    event_ids:  Vec<EventId>,
+    cond:       Condition,
+    cond_set:   bool,
+    source_id:  StateId,
+    target_ids: Vec<StateId>,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum TransitionBuilderError {
+    ConditionAlreadySet,
+    DuplicateEventId(EventId),
+    DuplicateTargetId(StateId),
+    SourceTargetCollision(StateId),
 }
 
 
@@ -59,33 +80,17 @@ pub struct Transition {
 ///////////////////////////////////////////////////////////////////////////////
 
 impl Transition {
-    /// Fully-qualified constructor.
-    /// 
-    /// Creates a Transition with all of the given parameters.
-    pub fn new(
-        id: TransitionId,
-        event_id: EventId,
-        cond: Condition,
-        source_id: StateId,
-        target_ids: Vec<StateId>) -> Self {
-            Self {
-                id,
-                event_id,
-                cond,
-                source_id,
-                target_ids,
-            }
-        }
 
     /*  *  *  *  *  *  *  *\
      *  Accessor Methods  *
     \*  *  *  *  *  *  *  */
+
     pub fn id(&self) -> TransitionId {
         self.id
     }
 
-    pub fn event_id(&self) -> EventId {
-        self.event_id.clone()
+    pub fn event_ids(&self) -> &Vec<EventId> {
+        &self.event_ids
     }
 
     pub fn source_id(&self) -> StateId {
@@ -109,18 +114,115 @@ impl Transition {
 }
 
 
+impl TransitionBuilder {
+    pub fn new(id: TransitionId, source_id: StateId) -> Self {
+        Self {
+            id,
+            event_ids:  Vec::new(),
+            cond:       || {return true},
+            cond_set:   false,
+            source_id,
+            target_ids: Vec::new(),
+        }
+    }
+
+    /*  *  *  *  *  *  *  *\
+     *  Builder Methods   *
+    \*  *  *  *  *  *  *  */
+
+    pub fn build(self) -> Transition {
+        Transition {
+            id:         self.id,
+            event_ids:  self.event_ids,
+            cond:       self.cond,
+            source_id:  self.source_id,
+            target_ids: self.target_ids,
+        }
+    }
+
+    pub fn event_id(mut self, event_id: EventId) -> Result<Self, TransitionBuilderError> {
+        // Ensure the given ID is not already in the event vector
+        if self.event_ids.contains(&event_id) {
+            return Err(TransitionBuilderError::DuplicateEventId(event_id));
+        }
+
+        self.event_ids.push(event_id);
+
+        Ok(self)
+    }
+
+    pub fn cond(mut self, cond: Condition) -> Result<Self, TransitionBuilderError> {
+        // Ensure condition has not already been set
+        if self.cond_set {
+            return Err(TransitionBuilderError::ConditionAlreadySet);
+        }
+        
+        self.cond = cond;
+        self.cond_set = true;
+
+        Ok(self)
+    }
+
+    pub fn target_id(mut self, target_id: StateId) -> Result<Self, TransitionBuilderError> {
+        // Ensure the given ID is not already in the target vector
+        if self.target_ids.contains(&target_id) {
+            return Err(TransitionBuilderError::DuplicateTargetId(target_id));
+        }
+
+        // Ensure target is not the same as the source
+        if target_id == self.source_id {
+            return Err(TransitionBuilderError::SourceTargetCollision(target_id));
+        }
+
+        self.target_ids.push(target_id);
+
+        Ok(self)
+    }
+}
+
+
 ///////////////////////////////////////////////////////////////////////////////
 //  Trait Implementations
 ///////////////////////////////////////////////////////////////////////////////
 
+/*  *  *  *  *  *  *  *\
+ *     Transition     *
+\*  *  *  *  *  *  *  */
+
 impl fmt::Debug for Transition {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Transition")
             .field("id", &self.id)
-            .field("event_id", &self.event_id)
+            .field("event_id", &self.event_ids)
             .field("cond", &self.cond)
             .field("source_id", &self.source_id)
             .field("target_ids", &self.target_ids)
             .finish()
+    }
+}
+
+
+/*  *  *  *  *  *  *  *  *  *\
+ *  TransitionBuilderError  *
+\*  *  *  *  *  *  *  *  *  */
+
+impl Error for TransitionBuilderError {}
+
+impl fmt::Display for TransitionBuilderError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::ConditionAlreadySet => {
+                write!(f, "transition condition has already been set")
+            },
+            Self::DuplicateEventId(event_id) => {
+                write!(f, "ID '{}' is already in the Event vector", event_id)
+            },
+            Self::DuplicateTargetId(target_id) => {
+                write!(f, "ID '{}' is already in the target State vector", target_id)
+            },
+            Self::SourceTargetCollision(target_id) => {
+                write!(f, "ID '{}' collides with the Transition's source State ID", target_id)
+            }
+        }
     }
 }

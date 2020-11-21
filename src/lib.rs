@@ -47,7 +47,10 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-//TODO: Nested states
+use std::{
+    error::Error,
+    fmt,
+};
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -58,8 +61,6 @@ pub mod event;
 pub mod registry;
 pub mod state;
 pub mod transition;
-
-
 
 use crate::{
     event::{
@@ -84,9 +85,6 @@ use crate::{
 //  Data Structures
 ///////////////////////////////////////////////////////////////////////////////
 
-//TODO: Probably expand this to a more detailed struct
-pub type StateChartId = &'static str;
-
 /// Top-level representation of a complete statechart.
 ///
 /// Contains a list of all nodes and events that make up the statechart.
@@ -95,6 +93,8 @@ pub struct StateChart {
     initial:    Vec<StateId>,
     registry:   Registry,
 }
+
+pub type StateChartId = &'static str;
 
 #[derive(Debug, PartialEq)]
 pub enum StateChartError {
@@ -113,7 +113,7 @@ pub struct StateChartBuilder {
 
 #[derive(Debug, PartialEq)]
 pub enum StateChartBuilderError {
-    InitialStateNotRegistered,
+    InitialStateNotRegistered(StateId),
 }
 
 
@@ -135,6 +135,7 @@ impl StateChart {
     /*  *  *  *  *  *  *  *\
      *  Accessor Methods  *
     \*  *  *  *  *  *  *  */
+
     /// Retrieves all active states in the StateChart.
     pub fn active_state_ids(&self) -> Vec<StateId> {
         self.registry.get_active_state_ids()
@@ -144,6 +145,7 @@ impl StateChart {
     /*  *  *  *  *  *  *  *\
      *  Utility Methods   *
     \*  *  *  *  *  *  *  */
+
     pub fn process_external_event(&mut self, event_id: EventId) -> Result<(), StateError> {
         // Collect and process the set of enabled Transitions
         let enabled_transition_ids = self.select_transitions(event_id)?;
@@ -155,7 +157,8 @@ impl StateChart {
 
     /*  *  *  *  *  *  *  *\
      *  Helper Methods    *
-    \*  *  *  *  *  *  *  */    
+    \*  *  *  *  *  *  *  */
+
     /// Collects the ID(s) of Transition(s) enabled by the given Event.
     ///
     /// Returns Ok() if the event was valid, TopLevelError if the event was rejected.
@@ -240,9 +243,9 @@ impl StateChartBuilder {
                 //      Or not? maybe the activate function could do that...
             }
             else {
-                // State ID in the `initial` vector was not found.
+                // State ID in the `initial` vector was not found in the Registry.
                 // Therefore the StateChart is invalid
-                return Err(StateChartBuilderError::InitialStateNotRegistered);
+                return Err(StateChartBuilderError::InitialStateNotRegistered(state_id));
             }
         }
         
@@ -279,8 +282,12 @@ impl StateChartBuilder {
 //  Trait Implementations
 ///////////////////////////////////////////////////////////////////////////////
 
-impl std::fmt::Debug for StateChart {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+/*  *  *  *  *  *  *  *\
+ *     StateChart     *
+\*  *  *  *  *  *  *  */
+
+impl fmt::Debug for StateChart {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("StateChart")
             .field("id", &self.id)
             .field("initial", &self.initial)
@@ -290,12 +297,32 @@ impl std::fmt::Debug for StateChart {
 }
 
 
+/*  *  *  *  *  *  *  *  *  *\
+ *  StateChartBuilderError  *
+\*  *  *  *  *  *  *  *  *  */
+
+impl Error for StateChartBuilderError {}
+
+impl fmt::Display for StateChartBuilderError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::InitialStateNotRegistered(state_id) => {
+                write!(f, "ID '{}' is in the `initial` vector, but is not registered", state_id)
+            }
+        }
+    }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 //  Unit Tests
 ///////////////////////////////////////////////////////////////////////////////
 
+//TODO: Unit tests for StateChartBuilder
+
 #[cfg(test)]
 mod tests {
+    use std::error::Error;
+
     use crate::{
         StateChartBuilder,
         event::{
@@ -307,31 +334,29 @@ mod tests {
             StateError,
         },
         registry::RegistryError,
-        transition::Transition,
+        transition::TransitionBuilder,
     };
 
-    /// Constvenience function for use as a "null conditional"
-    const fn always_true() -> bool { true }
     /// Constvenience function for use as an "anti-null conditional"
     const fn always_false() -> bool { false }
 
 
     #[test]
-    fn failed_condition() -> Result<(), RegistryError> {
+    fn failed_condition() -> Result<(), Box<dyn Error>> {
         // Define states
         let mut initial = State::new("INITIAL");
         let unreachable = State::new("UNREACHABLE");
-        let go_to_unreachable_id = EventId::from("go_to_unreachable").unwrap();
 
         // Define events and transitions
+        let go_to_unreachable_id = EventId::from("go_to_unreachable").unwrap();
         let go_to_unreachable = Event::new(go_to_unreachable_id.clone());
+
         let initial_to_unreachable_id = "initial_to_unreachable";
-        let initial_to_unreachable = Transition::new(
-            initial_to_unreachable_id,
-            go_to_unreachable.id(),
-            always_false,
-            initial.id(),
-            vec![unreachable.id()]);
+        let initial_to_unreachable = TransitionBuilder::new(initial_to_unreachable_id, initial.id())
+            .event_id(go_to_unreachable_id.clone())?
+            .cond(always_false)?
+            .target_id(unreachable.id())?
+            .build();
         initial.add_transition(initial_to_unreachable);
 
         // Define the `initial` vector
@@ -356,7 +381,7 @@ mod tests {
     }
 
     #[test]
-    fn hyperion() -> Result<(), RegistryError>  {
+    fn hyperion() -> Result<(), Box<dyn Error>>  {
         // Define state IDs for reference
         let idle_id             = "IDLE";
         let diagnostic_id       = "DIAGNOSTIC";
@@ -374,12 +399,11 @@ mod tests {
         // Define events and transitions
         let go_to_non_imaging_id = EventId::from("go_to_non_imaging").unwrap();
         let go_to_non_imaging = Event::new(go_to_non_imaging_id.clone());
-        let idle_to_non_imaging = Transition::new(
-            "idle_to_non-imaging",
-            go_to_non_imaging.id(),
-            always_true,
-            idle.id(),
-            vec![non_imaging.id()]);
+
+        let idle_to_non_imaging = TransitionBuilder::new("idle_to_non-imaging", idle.id())
+            .event_id(go_to_non_imaging.id())?
+            .target_id(non_imaging.id())?
+            .build();
         idle.add_transition(idle_to_non_imaging);
 
         // Define the `initial` vector
@@ -420,7 +444,7 @@ mod tests {
         // Verify that adding the duplicate ID results in an error
         assert_eq!(
             statechart_builder.state(duplicate_b),
-            Err(RegistryError::AlreadyExists),
+            Err(RegistryError::StateAlreadyRegistered(duplicate_id)),
             "Failed to detect duplicate State ID error."
         );
 

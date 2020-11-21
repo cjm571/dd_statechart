@@ -27,7 +27,11 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    error::Error,
+    fmt,
+};
 
 use crate::{
     event::{
@@ -58,8 +62,8 @@ pub struct Registry {
 
 #[derive(Debug, PartialEq)]
 pub enum RegistryError {
-    AlreadyExists,
-    DoesNotExist,
+    StateAlreadyRegistered(StateId),
+    EventAlreadyRegistered(EventId),
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -80,17 +84,17 @@ impl Registry {
         self.states.get_mut(id)
     }
 
-    pub fn get_transition(&self, id: TransitionId) -> Result<&Transition, RegistryError> {
+    pub fn get_transition(&self, id: TransitionId) -> Option<&Transition> {
         // Search State map for a State containing this ID
         for state in self.states.values() {
             for transition in state.transitions() {
                 if id == transition.id() {
-                    return Ok(transition);
+                    return Some(transition);
                 }
             }
         }
 
-        Err(RegistryError::DoesNotExist)
+        None
     }
 
     pub fn get_active_state_ids(&self) -> Vec<StateId> {
@@ -113,7 +117,7 @@ impl Registry {
     pub fn register_state(&mut self, state: State) -> Result<(), RegistryError> {
         // Ensure State is not already registered
         if self.states.contains_key(state.id()) {
-            return Err(RegistryError::AlreadyExists);
+            return Err(RegistryError::StateAlreadyRegistered(state.id()));
         }
         
         //TODO: Sanity check(s)
@@ -126,7 +130,7 @@ impl Registry {
     pub fn register_event(&mut self, event: Event) -> Result<(), RegistryError> {
         // Ensure Event is not already registered
         if self.events.contains_key(&event.id()) {
-            return Err(RegistryError::AlreadyExists);
+            return Err(RegistryError::EventAlreadyRegistered(event.id()));
         }
         
         //TODO: Sanity check(s)
@@ -134,5 +138,29 @@ impl Registry {
         // Add Event and ID to the map
         self.events.insert(event.id(), event);
         Ok(())
+    }
+}
+
+
+///////////////////////////////////////////////////////////////////////////////
+//  Trait Implementations
+///////////////////////////////////////////////////////////////////////////////
+
+/*  *  *  *  *  *  *  *\
+ *    RegistryError   *
+\*  *  *  *  *  *  *  */
+
+impl Error for RegistryError {}
+
+impl fmt::Display for RegistryError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::StateAlreadyRegistered(state_id) => {
+                write!(f, "State with ID '{}' already registered", state_id)
+            },
+            Self::EventAlreadyRegistered(event_id) => {
+                write!(f, "Event with ID '{}' already registered", event_id)
+            }            
+        }
     }
 }

@@ -24,7 +24,10 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-use std::fmt;
+use std::{
+    error::Error,
+    fmt,
+};
 
 use crate::{
     event::EventId,
@@ -43,9 +46,6 @@ use crate::{
 /// Convenience alias for callbacks to be executed by on_entry, on_exit
 pub type Callback = fn() -> Result<(), ()>;
 
-//TODO: Probably expand this to a more detailed struct
-pub type StateId = &'static str;
-
 /// Represents a state within the statechart.
 /// 
 /// May contain one or more of: initial states, transitions, entry/exit callbacks, substates
@@ -60,7 +60,8 @@ pub struct State {
     //TODO: Substates
 }
 
-//TODO: Comment
+pub type StateId = &'static str;
+
 #[derive(PartialEq)]
 pub enum StateError {
     FailedCallback(usize),
@@ -73,6 +74,7 @@ pub enum StateError {
 ///////////////////////////////////////////////////////////////////////////////
 
 impl State {
+    //TODO: Need Builder that enforces conformance and knock-on rules such as transition's source ==  state's ID, etc.
     pub fn new(id: StateId) -> Self {
         Self {
             id,
@@ -163,8 +165,10 @@ impl State {
         // Check for Event match in each of this State's Transitions
         let mut enable_candidates = Vec::new();
         for transition in &self.transitions {
-            if transition.event_id() == event_id {
-                enable_candidates.push(transition);
+            for transition_event in transition.event_ids() {
+                if transition_event == &event_id {
+                    enable_candidates.push(transition);
+                }
             }
         }
 
@@ -226,6 +230,7 @@ impl State {
 /*  *  *  *  *  *  *  *\
  *       State        *
 \*  *  *  *  *  *  *  */
+
 impl fmt::Debug for State {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("State")
@@ -243,8 +248,11 @@ impl fmt::Debug for State {
 /*  *  *  *  *  *  *  *\
  *     StateError     *
 \*  *  *  *  *  *  *  */
+
+impl Error for StateError {}
+
 impl fmt::Debug for StateError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::FailedCallback(idx) => {
                 f.debug_struct("FailedCallback:")
@@ -255,6 +263,19 @@ impl fmt::Debug for StateError {
                 f.debug_struct("FailedCondition(s)")
                     .field("transitions", transitions)
                     .finish()
+            }
+        }
+    }
+}
+
+impl fmt::Display for StateError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::FailedCallback(idx) => {
+                write!(f, "callback at index {} failed", idx)
+            },
+            Self::FailedConditions(transitions) => {
+                write!(f, "conditions failed in transition(s) {:?}", transitions)
             }
         }
     }

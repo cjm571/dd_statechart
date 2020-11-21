@@ -24,7 +24,10 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-use std::fmt;
+use std::{
+    error::Error,
+    fmt,
+};
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -43,10 +46,9 @@ pub struct EventId {
     id_nodes: Vec<&'static str>,
 }
 
-
 #[derive(Debug, PartialEq)]
 pub enum EventError {
-    InvalidSourceString,
+    InvalidSourceString(&'static str),
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -62,6 +64,7 @@ impl Event {
     /*  *  *  *  *  *  *  *\
      *  Accessor Methods  *
     \*  *  *  *  *  *  *  */
+
     pub fn id(&self) -> EventId {
         self.id.clone()
     }
@@ -77,7 +80,7 @@ impl EventId {
         deduped_nodes.dedup();
 
         if source_nodes.len() != deduped_nodes.len() {
-            return Err(EventError::InvalidSourceString);
+            return Err(EventError::InvalidSourceString(source));
         }
 
         Ok(
@@ -93,6 +96,10 @@ impl EventId {
 //  Trait Implementations
 ///////////////////////////////////////////////////////////////////////////////
 
+/*  *  *  *  *  *  *  *\
+ *      EventId       *
+\*  *  *  *  *  *  *  */
+
 impl fmt::Display for EventId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut id_node_iter = self.id_nodes.iter();
@@ -103,6 +110,23 @@ impl fmt::Display for EventId {
         }
 
         Ok(())
+    }
+}
+
+
+/*  *  *  *  *  *  *  *\
+ *     EventError     *
+\*  *  *  *  *  *  *  */
+
+impl Error for EventError {}
+
+impl fmt::Display for EventError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::InvalidSourceString(source) => {
+                write!(f, "source string '{}' is an invalid Event Descriptor", source)
+            }
+        }
     }
 }
 
@@ -134,7 +158,7 @@ mod tests {
         // Verify invalid string handling
         assert_eq!(
             EventId::from(invalid_string),
-            Err(EventError::InvalidSourceString),
+            Err(EventError::InvalidSourceString(invalid_string)),
             "Failed to reject invalid event descriptor"
         );
     }
