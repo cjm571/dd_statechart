@@ -57,8 +57,14 @@ pub enum EventError {
 
 impl Event {
     /// Creates a new Event object with the given ID.
-    pub fn new(id: EventId) -> Self {
-        Self { id }
+    pub fn new(id: &'static str) -> Result<Self, EventError> {
+        let event_id = EventId::from(id)?;
+        
+        Ok(
+            Self {
+                id: event_id
+            }
+        )
     }
     
     /*  *  *  *  *  *  *  *\

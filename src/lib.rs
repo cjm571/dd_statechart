@@ -88,6 +88,7 @@ use crate::{
 /// Top-level representation of a complete statechart.
 ///
 /// Contains a list of all nodes and events that make up the statechart.
+#[derive(PartialEq)]
 pub struct StateChart {
     id:         StateChartId,
     initial:    Vec<StateId>,
@@ -95,13 +96,6 @@ pub struct StateChart {
 }
 
 pub type StateChartId = &'static str;
-
-#[derive(Debug, PartialEq)]
-pub enum StateChartError {
-    AlreadyExists,
-    DuplicateStateId(StateId),
-    Other,
-}
 
 
 #[derive(Debug, PartialEq)]
@@ -313,14 +307,13 @@ impl fmt::Display for StateChartBuilderError {
     }
 }
 
+
 ///////////////////////////////////////////////////////////////////////////////
 //  Unit Tests
 ///////////////////////////////////////////////////////////////////////////////
 
-//TODO: Unit tests for StateChartBuilder
-
 #[cfg(test)]
-mod tests {
+mod state_chart_tests {
     use std::error::Error;
 
     use crate::{
@@ -329,56 +322,10 @@ mod tests {
             Event,
             EventId,
         },
-        state::{
-            State,
-            StateError,
-        },
+        state::State,
         registry::RegistryError,
         transition::TransitionBuilder,
     };
-
-    /// Constvenience function for use as an "anti-null conditional"
-    const fn always_false() -> bool { false }
-
-
-    #[test]
-    fn failed_condition() -> Result<(), Box<dyn Error>> {
-        // Define states
-        let mut initial = State::new("INITIAL");
-        let unreachable = State::new("UNREACHABLE");
-
-        // Define events and transitions
-        let go_to_unreachable_id = EventId::from("go_to_unreachable").unwrap();
-        let go_to_unreachable = Event::new(go_to_unreachable_id.clone());
-
-        let initial_to_unreachable_id = "initial_to_unreachable";
-        let initial_to_unreachable = TransitionBuilder::new(initial_to_unreachable_id, initial.id())
-            .event_id(go_to_unreachable_id.clone())?
-            .cond(always_false)?
-            .target_id(unreachable.id())?
-            .build();
-        initial.add_transition(initial_to_unreachable);
-
-        // Define the `initial` vector
-        let initial_ids = vec![initial.id()];
-
-        // Build statechart
-        let mut hapless_statechart = StateChartBuilder::new("hapless")
-            .state(initial)?
-            .state(unreachable)?
-            .event(go_to_unreachable)?
-            .initial(initial_ids)
-            .build().unwrap();
-
-        // Broadcast the event and verify that the transition failed its guard condition
-        assert_eq!(
-            hapless_statechart.process_external_event(go_to_unreachable_id),
-            Err(StateError::FailedConditions(vec![initial_to_unreachable_id])),
-            "Failed to detect failed Transition due to failed Condition." 
-        );
-
-        Ok(())
-    }
 
     #[test]
     fn hyperion() -> Result<(), Box<dyn Error>>  {
@@ -397,8 +344,8 @@ mod tests {
         let imaging = State::new(imaging_id);
 
         // Define events and transitions
-        let go_to_non_imaging_id = EventId::from("go_to_non_imaging").unwrap();
-        let go_to_non_imaging = Event::new(go_to_non_imaging_id.clone());
+        let go_to_non_imaging_id_str = "go_to_non_imaging";
+        let go_to_non_imaging = Event::new(go_to_non_imaging_id_str)?;
 
         let idle_to_non_imaging = TransitionBuilder::new("idle_to_non-imaging", idle.id())
             .event_id(go_to_non_imaging.id())?
@@ -421,7 +368,7 @@ mod tests {
             .build().unwrap();
 
         // Broadcast a Go To Non-Imaging event
-        hyperion_statechart.process_external_event(go_to_non_imaging_id).unwrap();
+        hyperion_statechart.process_external_event(EventId::from(go_to_non_imaging_id_str)?).unwrap();
 
         // Verify that IDLE is inactive and NON-IMAGING is active
         assert_eq!(hyperion_statechart.active_state_ids().contains(&idle_id), false);
@@ -446,6 +393,38 @@ mod tests {
             statechart_builder.state(duplicate_b),
             Err(RegistryError::StateAlreadyRegistered(duplicate_id)),
             "Failed to detect duplicate State ID error."
+        );
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod state_chart_builder_tests {
+
+    use std::error::Error;
+
+    use crate::{
+        StateChartBuilder,
+        StateChartBuilderError,
+        state::State,
+    };
+
+    #[test]
+    fn build_errors() -> Result<(), Box<dyn Error>> {
+        // Create states, one will be registered the other will not
+        let unregistered = State::new("unregistered");
+        let registered = State::new("registered");
+
+        // Attempt to build a StateChart with an unregistered initial ID
+        let invalid_builder = StateChartBuilder::new("invalid")
+            .state(registered)?
+            .initial(vec![unregistered.id()]);
+
+        assert_eq!(
+            invalid_builder.build(),
+            Err(StateChartBuilderError::InitialStateNotRegistered(unregistered.id())),
+            "Failed to detect unregistered ID in the initial vector"
         );
 
         Ok(())

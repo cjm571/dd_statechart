@@ -164,3 +164,102 @@ impl fmt::Display for RegistryError {
         }
     }
 }
+
+
+///////////////////////////////////////////////////////////////////////////////
+//  Unit Tests
+///////////////////////////////////////////////////////////////////////////////
+
+
+#[cfg(test)]
+mod tests {
+
+    use std::error::Error;
+
+    use crate::{
+        event::{
+            Event,
+            EventId,
+        },
+        registry::{
+            Registry,
+            RegistryError,
+        },
+        state::{
+            State,
+            StateId,
+        },
+    };
+
+    #[test]
+    fn already_registered() -> Result<(), Box<dyn Error>> {
+        // Create States and Events to be double-registered
+        let state_id = "state";
+        let event_id = "event";
+
+        let state_a = State::new(state_id);
+        let state_b = State::new(state_id);
+        let event_a = Event::new(event_id)?;
+        let event_b = Event::new(event_id)?;
+
+        // Create the Registry and register the elements
+        let mut registry = Registry::default();
+        assert_eq!(
+            registry.register_state(state_a),
+            Ok(()),
+            "Valid State registration failed"
+        );
+        assert_eq!(
+            registry.register_event(event_a),
+            Ok(()),
+            "Valid Event registration failed"
+        );
+        
+        // Verify that double-registration fails for both elements
+        assert_eq!(
+            registry.register_state(state_b),
+            Err(RegistryError::StateAlreadyRegistered(state_id)),
+            "Failed to reject State double-registration"
+        );
+        assert_eq!(
+            registry.register_event(event_b),
+            Err(RegistryError::EventAlreadyRegistered(EventId::from(event_id)?)),
+            "Failed to reject Event double-registration"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn missing_elements() -> Result<(), Box<dyn Error>> {
+        // Create an empty Registry and attempt lookups for non-existent elements
+        let mut registry = Registry::default();
+
+        assert_eq!(
+            registry.get_state("nonexistent"),
+            None,
+            "get_state() somehow found a nonexistent State"
+        );
+
+        assert_eq!(
+            registry.get_mut_state("nonexistent"),
+            None,
+            "get_mut_state() somehow found a nonexistent State"
+        );
+
+        assert_eq!(
+            registry.get_transition("nonexistent"),
+            None,
+           "get_transition() somehow found a nonexistent Transition"
+        );
+
+        let empty_stateid_vec: Vec<StateId> = Vec::new();
+        assert_eq!(
+            registry.get_active_state_ids(),
+            empty_stateid_vec,
+            "get_active_state_ids() somehow found nonexistent State(s)"
+        );
+
+        Ok(())
+    }
+}

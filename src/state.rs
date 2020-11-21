@@ -42,10 +42,6 @@ use crate::{
 //  Data Structures
 ///////////////////////////////////////////////////////////////////////////////
 
-//TODO: Specify Result error type (generic, probably?) for short-circuiting failed transitions
-/// Convenience alias for callbacks to be executed by on_entry, on_exit
-pub type Callback = fn() -> Result<(), ()>;
-
 /// Represents a state within the statechart.
 /// 
 /// May contain one or more of: initial states, transitions, entry/exit callbacks, substates
@@ -61,6 +57,11 @@ pub struct State {
 }
 
 pub type StateId = &'static str;
+
+//TODO: Specify Result error type (generic, probably?) for short-circuiting failed transitions
+/// Convenience alias for callbacks to be executed by on_entry, on_exit
+pub type Callback = fn() -> Result<(), ()>;
+
 
 #[derive(PartialEq)]
 pub enum StateError {
@@ -120,6 +121,17 @@ impl State {
     pub fn add_transition(&mut self, transition: Transition) {
         self.transitions.push(transition);
     }
+
+    //FIXME: START TEMP FUNCTIONS
+    pub fn add_on_entry(&mut self, callback: Callback) {
+        self.on_entry.push(callback);
+    }
+    
+    pub fn add_on_exit(&mut self, callback: Callback) {
+        self.on_exit.push(callback);
+    }
+
+    //FIXME: END TEMP FUNCTIONS
     
 
     /*  *  *  *  *  *  *  *\
@@ -278,5 +290,147 @@ impl fmt::Display for StateError {
                 write!(f, "conditions failed in transition(s) {:?}", transitions)
             }
         }
+    }
+}
+
+
+///////////////////////////////////////////////////////////////////////////////
+//  Unit Tests
+///////////////////////////////////////////////////////////////////////////////
+
+
+#[cfg(test)]
+mod tests{
+
+    use std::error::Error;
+
+    use crate::{
+        StateChartBuilder,
+        event::{
+            Event,
+            EventId,
+        },
+        state::{
+            State,
+            StateError,
+        },
+        transition::TransitionBuilder,
+    };
+
+
+    /// Constvenience function for use as an "anti-null conditional"
+    const fn always_false() -> bool { false }
+
+
+    #[test]
+    fn failed_condition() -> Result<(), Box<dyn Error>> {
+        // Define States
+        let mut initial = State::new("INITIAL");
+        let unreachable = State::new("UNREACHABLE");
+
+        // Define events and transitions
+        let go_to_unreachable_id_str = "go_to_unreachable";
+        let go_to_unreachable = Event::new(go_to_unreachable_id_str)?;
+
+        let initial_to_unreachable_id = "initial_to_unreachable";
+        let initial_to_unreachable = TransitionBuilder::new(initial_to_unreachable_id, initial.id())
+            .event_id(go_to_unreachable.id())?
+            .cond(always_false)?
+            .target_id(unreachable.id())?
+            .build();
+        initial.add_transition(initial_to_unreachable);
+
+        // Define the `initial` vector
+        let initial_ids = vec![initial.id()];
+
+        // Build statechart
+        let mut hapless_statechart = StateChartBuilder::new("hapless")
+            .state(initial)?
+            .state(unreachable)?
+            .event(go_to_unreachable)?
+            .initial(initial_ids)
+            .build().unwrap();
+
+        // Broadcast the event and verify that the transition failed its guard condition
+        assert_eq!(
+            hapless_statechart.process_external_event(EventId::from(go_to_unreachable_id_str)?),
+            Err(StateError::FailedConditions(vec![initial_to_unreachable_id])),
+            "Failed to detect failed Transition due to failed Condition." 
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn failed_on_exit() -> Result<(), Box<dyn Error>> {
+        // Define States, one of which will fail its 2nd on_exit callback
+        let mut initial = State::new("INITIAL");
+        initial.add_on_exit(|| {Ok(())});
+        initial.add_on_exit(|| {Err(())});
+        let terminal = State::new("TERMINAL");
+
+        // Define Event
+        let initial_to_terminal_id_str = "initial_to_terminal";
+        let initial_to_terminal = Event::new(initial_to_terminal_id_str)?;
+
+        // Define Transition and add it to the initial State
+        let hapless_transition = TransitionBuilder::new("hapless", initial.id())
+            .event_id(initial_to_terminal.id())?
+            .target_id(terminal.id())?
+            .build();
+        initial.add_transition(hapless_transition);
+        
+        // Build the StateChart and process the Event
+        let mut statechart = StateChartBuilder::new("failed_on_exit")
+            .initial(vec![initial.id()])
+            .state(initial)?
+            .state(terminal)?
+            .event(initial_to_terminal)?
+            .build().unwrap();
+        
+        assert_eq!(
+            statechart.process_external_event(EventId::from(initial_to_terminal_id_str)?),
+            Err(StateError::FailedCallback(1)),
+            "Failed to catch a failed on_exit callback"
+        );
+
+        Ok(())
+    }
+
+    
+    #[test]
+    fn failed_on_entry() -> Result<(), Box<dyn Error>> {
+        // Define States, one of which will fail its 2nd on_entry callback
+        let mut initial = State::new("INITIAL");
+        let mut terminal = State::new("TERMINAL");
+        terminal.add_on_entry(|| {Ok(())});
+        terminal.add_on_entry(|| {Err(())});
+
+        // Define Event
+        let initial_to_terminal_id_str = "initial_to_terminal";
+        let initial_to_terminal = Event::new(initial_to_terminal_id_str)?;
+
+        // Define Transition and add it to the initial State
+        let hapless_transition = TransitionBuilder::new("hapless", initial.id())
+            .event_id(initial_to_terminal.id())?
+            .target_id(terminal.id())?
+            .build();
+        initial.add_transition(hapless_transition);
+        
+        // Build the StateChart and process the Event
+        let mut statechart = StateChartBuilder::new("failed_on_entry")
+            .initial(vec![initial.id()])
+            .state(initial)?
+            .state(terminal)?
+            .event(initial_to_terminal)?
+            .build().unwrap();
+        
+        assert_eq!(
+            statechart.process_external_event(EventId::from(initial_to_terminal_id_str)?),
+            Err(StateError::FailedCallback(1)),
+            "Failed to catch a failed on_entry callback"
+        );
+
+        Ok(())
     }
 }
