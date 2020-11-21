@@ -34,10 +34,7 @@ use std::{
 };
 
 use crate::{
-    event::{
-        Event,
-        EventId,
-    },
+    event::Event,
     state::{
         State,
         StateId,
@@ -57,13 +54,13 @@ use crate::{
 #[derive(Debug, Default, PartialEq)]
 pub struct Registry {
     states: HashMap<StateId, State>,
-    events: HashMap<EventId, Event>,
+    events: Vec<Event>,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum RegistryError {
     StateAlreadyRegistered(StateId),
-    EventAlreadyRegistered(EventId),
+    EventAlreadyRegistered(Event),
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -129,14 +126,14 @@ impl Registry {
 
     pub fn register_event(&mut self, event: Event) -> Result<(), RegistryError> {
         // Ensure Event is not already registered
-        if self.events.contains_key(&event.id()) {
-            return Err(RegistryError::EventAlreadyRegistered(event.id()));
+        if self.events.contains(&event) {
+            return Err(RegistryError::EventAlreadyRegistered(event));
         }
         
         //TODO: Sanity check(s)
 
         // Add Event and ID to the map
-        self.events.insert(event.id(), event);
+        self.events.push(event);
         Ok(())
     }
 }
@@ -158,8 +155,8 @@ impl fmt::Display for RegistryError {
             Self::StateAlreadyRegistered(state_id) => {
                 write!(f, "State with ID '{}' already registered", state_id)
             },
-            Self::EventAlreadyRegistered(event_id) => {
-                write!(f, "Event with ID '{}' already registered", event_id)
+            Self::EventAlreadyRegistered(event) => {
+                write!(f, "Event '{}' already registered", event)
             }            
         }
     }
@@ -177,10 +174,7 @@ mod tests {
     use std::error::Error;
 
     use crate::{
-        event::{
-            Event,
-            EventId,
-        },
+        event::Event,
         registry::{
             Registry,
             RegistryError,
@@ -199,8 +193,8 @@ mod tests {
 
         let state_a = State::new(state_id);
         let state_b = State::new(state_id);
-        let event_a = Event::new(event_id)?;
-        let event_b = Event::new(event_id)?;
+        let event_a = Event::from(event_id)?;
+        let event_b = Event::from(event_id)?;
 
         // Create the Registry and register the elements
         let mut registry = Registry::default();
@@ -223,7 +217,7 @@ mod tests {
         );
         assert_eq!(
             registry.register_event(event_b),
-            Err(RegistryError::EventAlreadyRegistered(EventId::from(event_id)?)),
+            Err(RegistryError::EventAlreadyRegistered(event_a)),
             "Failed to reject Event double-registration"
         );
 

@@ -30,7 +30,7 @@ use std::{
 };
 
 use crate::{
-    event::EventId,
+    event::Event,
     transition::{
         Transition,
         TransitionId,
@@ -173,12 +173,12 @@ impl State {
     ///
     /// On failure, returns a vector of Transitions that matched the given Event, but
     /// failed their respective Condition.
-    pub fn evaluate_event(&self, event_id: EventId) -> Result<Option<TransitionId>, StateError> {
+    pub fn evaluate_event(&self, event: Event) -> Result<Option<TransitionId>, StateError> {
         // Check for Event match in each of this State's Transitions
         let mut enable_candidates = Vec::new();
         for transition in &self.transitions {
-            for transition_event in transition.event_ids() {
-                if transition_event == &event_id {
+            for transition_event in transition.events() {
+                if transition_event == &event {
                     enable_candidates.push(transition);
                 }
             }
@@ -306,10 +306,7 @@ mod tests{
 
     use crate::{
         StateChartBuilder,
-        event::{
-            Event,
-            EventId,
-        },
+        event::Event,
         state::{
             State,
             StateError,
@@ -329,12 +326,11 @@ mod tests{
         let unreachable = State::new("UNREACHABLE");
 
         // Define events and transitions
-        let go_to_unreachable_id_str = "go_to_unreachable";
-        let go_to_unreachable = Event::new(go_to_unreachable_id_str)?;
+        let go_to_unreachable = Event::from("go_to_unreachable")?;
 
         let initial_to_unreachable_id = "initial_to_unreachable";
         let initial_to_unreachable = TransitionBuilder::new(initial_to_unreachable_id, initial.id())
-            .event_id(go_to_unreachable.id())?
+            .event(go_to_unreachable)?
             .cond(always_false)?
             .target_id(unreachable.id())?
             .build();
@@ -353,7 +349,7 @@ mod tests{
 
         // Broadcast the event and verify that the transition failed its guard condition
         assert_eq!(
-            hapless_statechart.process_external_event(EventId::from(go_to_unreachable_id_str)?),
+            hapless_statechart.process_external_event(go_to_unreachable),
             Err(StateError::FailedConditions(vec![initial_to_unreachable_id])),
             "Failed to detect failed Transition due to failed Condition." 
         );
@@ -370,12 +366,11 @@ mod tests{
         let terminal = State::new("TERMINAL");
 
         // Define Event
-        let initial_to_terminal_id_str = "initial_to_terminal";
-        let initial_to_terminal = Event::new(initial_to_terminal_id_str)?;
+        let initial_to_terminal = Event::from("initial_to_terminal")?;
 
         // Define Transition and add it to the initial State
         let hapless_transition = TransitionBuilder::new("hapless", initial.id())
-            .event_id(initial_to_terminal.id())?
+            .event(initial_to_terminal)?
             .target_id(terminal.id())?
             .build();
         initial.add_transition(hapless_transition);
@@ -389,7 +384,7 @@ mod tests{
             .build().unwrap();
         
         assert_eq!(
-            statechart.process_external_event(EventId::from(initial_to_terminal_id_str)?),
+            statechart.process_external_event(initial_to_terminal),
             Err(StateError::FailedCallback(1)),
             "Failed to catch a failed on_exit callback"
         );
@@ -407,12 +402,11 @@ mod tests{
         terminal.add_on_entry(|| {Err(())});
 
         // Define Event
-        let initial_to_terminal_id_str = "initial_to_terminal";
-        let initial_to_terminal = Event::new(initial_to_terminal_id_str)?;
+        let initial_to_terminal = Event::from("initial_to_terminal")?;
 
         // Define Transition and add it to the initial State
         let hapless_transition = TransitionBuilder::new("hapless", initial.id())
-            .event_id(initial_to_terminal.id())?
+            .event(initial_to_terminal)?
             .target_id(terminal.id())?
             .build();
         initial.add_transition(hapless_transition);
@@ -426,7 +420,7 @@ mod tests{
             .build().unwrap();
         
         assert_eq!(
-            statechart.process_external_event(EventId::from(initial_to_terminal_id_str)?),
+            statechart.process_external_event(initial_to_terminal),
             Err(StateError::FailedCallback(1)),
             "Failed to catch a failed on_entry callback"
         );

@@ -63,10 +63,7 @@ pub mod state;
 pub mod transition;
 
 use crate::{
-    event::{
-        Event,
-        EventId,
-    },
+    event::Event,
     registry::{
         Registry,
         RegistryError,
@@ -140,9 +137,9 @@ impl StateChart {
      *  Utility Methods   *
     \*  *  *  *  *  *  *  */
 
-    pub fn process_external_event(&mut self, event_id: EventId) -> Result<(), StateError> {
+    pub fn process_external_event(&mut self, event: Event) -> Result<(), StateError> {
         // Collect and process the set of enabled Transitions
-        let enabled_transition_ids = self.select_transitions(event_id)?;
+        let enabled_transition_ids = self.select_transitions(event)?;
 
         // Perform microstep processing for the current Event
         self.process_microstep(enabled_transition_ids)
@@ -158,7 +155,7 @@ impl StateChart {
     /// Returns Ok() if the event was valid, TopLevelError if the event was rejected.
     ///
     /// TODO: Fix/Finish comment
-    pub fn select_transitions(&self, event_id: EventId) -> Result<Vec<TransitionId>, StateError> {
+    pub fn select_transitions(&self, event: Event) -> Result<Vec<TransitionId>, StateError> {
         //TODO: Sanity-check event?
 
         let mut enabled_transitions = Vec::new();
@@ -166,7 +163,7 @@ impl StateChart {
         // Traverse the map of states and send the event to each for evaluation
         for state_id in &self.registry.get_active_state_ids() {
             let state = self.registry.get_state(state_id).unwrap();
-            let enabled_transition = state.evaluate_event(event_id.clone())?.unwrap();
+            let enabled_transition = state.evaluate_event(event)?.unwrap();
 
             enabled_transitions.push(enabled_transition);
         }
@@ -318,10 +315,7 @@ mod state_chart_tests {
 
     use crate::{
         StateChartBuilder,
-        event::{
-            Event,
-            EventId,
-        },
+        event::Event,
         state::State,
         registry::RegistryError,
         transition::TransitionBuilder,
@@ -344,11 +338,10 @@ mod state_chart_tests {
         let imaging = State::new(imaging_id);
 
         // Define events and transitions
-        let go_to_non_imaging_id_str = "go_to_non_imaging";
-        let go_to_non_imaging = Event::new(go_to_non_imaging_id_str)?;
+        let go_to_non_imaging = Event::from("go_to_non_imaging")?;
 
         let idle_to_non_imaging = TransitionBuilder::new("idle_to_non-imaging", idle.id())
-            .event_id(go_to_non_imaging.id())?
+            .event(go_to_non_imaging)?
             .target_id(non_imaging.id())?
             .build();
         idle.add_transition(idle_to_non_imaging);
@@ -368,7 +361,7 @@ mod state_chart_tests {
             .build().unwrap();
 
         // Broadcast a Go To Non-Imaging event
-        hyperion_statechart.process_external_event(EventId::from(go_to_non_imaging_id_str)?).unwrap();
+        hyperion_statechart.process_external_event(go_to_non_imaging)?;
 
         // Verify that IDLE is inactive and NON-IMAGING is active
         assert_eq!(hyperion_statechart.active_state_ids().contains(&idle_id), false);

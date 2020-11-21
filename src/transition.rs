@@ -30,7 +30,7 @@ use std::{
 };
 
 use crate::{
-    event::EventId,
+    event::Event,
     state::StateId,
 };
 
@@ -44,7 +44,7 @@ use crate::{
 #[derive(PartialEq)]
 pub struct Transition {
     id:         TransitionId,
-    event_ids:  Vec<EventId>,
+    events:  Vec<Event>,
     cond:       Condition,
     source_id:  StateId,
     target_ids: Vec<StateId>,
@@ -59,7 +59,7 @@ pub type Condition = fn() -> bool;
 #[derive(Debug, PartialEq)]
 pub struct TransitionBuilder {
     id:         TransitionId,
-    event_ids:  Vec<EventId>,
+    events:  Vec<Event>,
     cond:       Condition,
     cond_set:   bool,
     source_id:  StateId,
@@ -69,7 +69,7 @@ pub struct TransitionBuilder {
 #[derive(Debug, PartialEq)]
 pub enum TransitionBuilderError {
     ConditionAlreadySet,
-    DuplicateEventId(EventId),
+    DuplicateEventId(Event),
     DuplicateTargetId(StateId),
     SourceTargetCollision(StateId),
 }
@@ -89,8 +89,8 @@ impl Transition {
         self.id
     }
 
-    pub fn event_ids(&self) -> &Vec<EventId> {
-        &self.event_ids
+    pub fn events(&self) -> &Vec<Event> {
+        &self.events
     }
 
     pub fn source_id(&self) -> StateId {
@@ -118,7 +118,7 @@ impl TransitionBuilder {
     pub fn new(id: TransitionId, source_state_id: StateId) -> Self {
         Self {
             id,
-            event_ids:  Vec::new(),
+            events:     Vec::new(),
             cond:       || {true},
             cond_set:   false,
             source_id: source_state_id,
@@ -133,20 +133,20 @@ impl TransitionBuilder {
     pub fn build(self) -> Transition {
         Transition {
             id:         self.id,
-            event_ids:  self.event_ids,
+            events:     self.events,
             cond:       self.cond,
             source_id:  self.source_id,
             target_ids: self.target_ids,
         }
     }
 
-    pub fn event_id(mut self, event_id: EventId) -> Result<Self, TransitionBuilderError> {
+    pub fn event(mut self, event: Event) -> Result<Self, TransitionBuilderError> {
         // Ensure the given ID is not already in the event vector
-        if self.event_ids.contains(&event_id) {
-            return Err(TransitionBuilderError::DuplicateEventId(event_id));
+        if self.events.contains(&event) {
+            return Err(TransitionBuilderError::DuplicateEventId(event));
         }
 
-        self.event_ids.push(event_id);
+        self.events.push(event);
 
         Ok(self)
     }
@@ -193,7 +193,7 @@ impl fmt::Debug for Transition {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Transition")
             .field("id", &self.id)
-            .field("event_id", &self.event_ids)
+            .field("event", &self.events)
             .field("cond", &self.cond)
             .field("source_id", &self.source_id)
             .field("target_ids", &self.target_ids)
@@ -214,8 +214,8 @@ impl fmt::Display for TransitionBuilderError {
             Self::ConditionAlreadySet => {
                 write!(f, "transition condition has already been set")
             },
-            Self::DuplicateEventId(event_id) => {
-                write!(f, "ID '{}' is already in the Event vector", event_id)
+            Self::DuplicateEventId(event) => {
+                write!(f, "Event '{}' is already in the Event vector", event)
             },
             Self::DuplicateTargetId(target_id) => {
                 write!(f, "ID '{}' is already in the target State vector", target_id)
@@ -249,16 +249,16 @@ mod builder_tests {
     #[test]
     fn duplicate_event() -> Result<(), Box<dyn Error>> {
         // Define Event and State
-        let event = Event::new("event")?;
+        let event = Event::from("event")?;
         let state = State::new("state");
 
         // Verify that duplicate event is caught
         let builder = TransitionBuilder::new("transition", state.id())
-            .event_id(event.id())?;
+            .event(event)?;
 
         assert_eq!(
-            builder.event_id(event.id()),
-            Err(TransitionBuilderError::DuplicateEventId(event.id())),
+            builder.event(event),
+            Err(TransitionBuilderError::DuplicateEventId(event)),
             "Failed to catch duplicate event"
         );
 
