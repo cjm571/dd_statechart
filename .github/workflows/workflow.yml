@@ -29,8 +29,7 @@ jobs:
       run:  cargo +stable build --verbose
 
     - name: Lint via `clippy`
-      run:  cargo +stable clean
-      run:  cargo +stable clippy
+      run:  cargo +stable clean; cargo +stable clippy
 
     - name: Unit Tests
       run: cargo +stable test
@@ -45,8 +44,7 @@ jobs:
       run:  cargo +nightly build --verbose
 
     - name: Lint via `clippy`
-      run:  cargo +nightly clean
-      run:  cargo +nightly clippy
+      run:  cargo +nightly clean; cargo +nightly clippy
 
     - name: Unit Tests
       run: cargo +nightly test
