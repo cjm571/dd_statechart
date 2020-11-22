@@ -1,0 +1,44 @@
+name: Default-Workflow
+
+on: [push, pull_request]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  checkout:
+    runs-on: self-hosted
+
+    steps:
+    - name: Checkout source
+      uses: actions/checkout@v2
+
+    - name: Display installed toolchains
+      run:  rustup toolchain list
+
+    - name: Cargo dependency update
+      run:  cargo update
+      
+
+  stable:
+    runs-on: self-hosted
+    needs: checkout
+
+    steps:
+    - name: Build debug target
+      run:  cargo +stable build --verbose
+
+    - name: Lint via `clippy`
+      run:  cargo +stable clippy
+
+
+  nightly:
+    runs-on: self-hosted
+    needs: checkout
+
+    steps:
+    - name: Build debug target
+      run:  cargo +nightly build --verbose
+
+    - name: Lint via `clippy`
+      run:  cargo +nightly clippy
