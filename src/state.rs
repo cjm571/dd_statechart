@@ -62,11 +62,28 @@ pub type StateId = &'static str;
 /// Convenience alias for callbacks to be executed by on_entry, on_exit
 pub type Callback = fn() -> Result<(), ()>;
 
-
 #[derive(PartialEq)]
 pub enum StateError {
     FailedCallback(usize),
     FailedConditions(Vec<TransitionId>),
+}
+
+
+#[derive(Debug, PartialEq)]
+pub struct StateBuilder {
+    id:             StateId,
+    is_active:      bool,
+    initial_ids:    Vec<StateId>,
+    transitions:    Vec<Transition>,
+    on_entry:       Vec<Callback>,
+    on_exit:        Vec<Callback>,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum StateBuilderError {
+    DuplicateInitialId(StateId),
+    DuplicateTransition(TransitionId),
+    TransitionSourceMismatch(TransitionId, StateId),
 }
 
 
@@ -75,18 +92,6 @@ pub enum StateError {
 ///////////////////////////////////////////////////////////////////////////////
 
 impl State {
-    //TODO: Need Builder that enforces conformance and knock-on rules such as transition's source ==  state's ID, etc.
-    pub fn new(id: StateId) -> Self {
-        Self {
-            id,
-            is_active:      false,
-            initial_ids:    Vec::new(),
-            transitions:    Vec::new(),
-            on_entry:       Vec::new(),
-            on_exit:        Vec::new(),
-        }
-    }
-
 
     /*  *  *  *  *  *  *  *\
      *  Accessor Methods  *
@@ -116,22 +121,6 @@ impl State {
     pub fn deactivate(&mut self) {
         self.is_active = false;
     }
-
-    //TODO: Turn this into builder method?
-    pub fn add_transition(&mut self, transition: Transition) {
-        self.transitions.push(transition);
-    }
-
-    //FIXME: START TEMP FUNCTIONS
-    pub fn add_on_entry(&mut self, callback: Callback) {
-        self.on_entry.push(callback);
-    }
-    
-    pub fn add_on_exit(&mut self, callback: Callback) {
-        self.on_exit.push(callback);
-    }
-
-    //FIXME: END TEMP FUNCTIONS
     
 
     /*  *  *  *  *  *  *  *\
@@ -167,7 +156,6 @@ impl State {
     /// Transition to be enabled will short-circuit the evaluation of further
     /// Transitions.
     ///
-    //TODO: Fix comment for final implementation of this function
     /// On success, returns a vector the target State ID(s) of the Enabled Transition.
     /// Note that this vector may be empty if no Transitions match the given Event.
     ///
@@ -235,6 +223,86 @@ impl State {
 }
 
 
+impl StateBuilder {
+    pub fn new(id: StateId) -> Self {
+        Self {
+            id,
+            is_active:      false,
+            initial_ids:    Vec::new(),
+            transitions:    Vec::new(),
+            on_entry:       Vec::new(),
+            on_exit:        Vec::new(),
+        }
+    }
+
+
+    /*  *  *  *  *  *  *  *\
+     *  Builder Methods   *
+    \*  *  *  *  *  *  *  */
+
+    pub fn build(self) -> Result<State, StateBuilderError> {
+        // Ensure all Transitions' source States match this one
+        for transition in &self.transitions {
+            if transition.source_id() != self.id {
+                return Err(StateBuilderError::TransitionSourceMismatch(transition.id(), transition.source_id()));
+            }
+        }
+
+        //TODO: When substates implemented, need to ensure that initial vector contains
+        //      only IDs that match substates' IDs
+
+        Ok(
+            State {
+                id:             self.id,
+                is_active:      self.is_active,
+                initial_ids:    self.initial_ids,
+                transitions:    self.transitions,
+                on_entry:       self.on_entry,
+                on_exit:        self.on_exit,
+            }
+        )        
+    }
+
+    pub fn initial(mut self, initial_id: StateId) -> Result<Self, StateBuilderError> {
+        // Ensure the ID is not a duplicate
+        if self.initial_ids.contains(&initial_id) {
+            return Err(StateBuilderError::DuplicateInitialId(initial_id));
+        }
+        
+        self.initial_ids.push(&initial_id);
+
+        Ok(self)
+    }
+
+    pub fn transition(mut self, transition: Transition) -> Result<Self, StateBuilderError> {
+        // Ensure the Transition is not a duplicate
+        if self.transitions.contains(&transition) {
+            return Err(StateBuilderError::DuplicateTransition(transition.id()));
+        }
+
+        self.transitions.push(transition);
+
+        Ok(self)
+    }
+
+    pub fn on_entry(mut self, callback: Callback) -> Self {
+        // Callbacks are effectively unique, even if their signature/contents is identical
+        // so we cannot check for duplicates. Just push onto the vector.
+        self.on_entry.push(callback);
+
+        self
+    }
+
+    pub fn on_exit(mut self, callback: Callback) -> Self {
+        // Callbacks are effectively unique, even if their signature/contents is identical
+        // so we cannot check for duplicates. Just push onto the vector.
+        self.on_exit.push(callback);
+
+        self
+    }
+
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 //  Trait Implementations
 ///////////////////////////////////////////////////////////////////////////////
@@ -294,21 +362,45 @@ impl fmt::Display for StateError {
 }
 
 
+
+/*  *  *  *  *  *  *  *\
+ *  StateBuilderError *
+\*  *  *  *  *  *  *  */
+
+impl Error for StateBuilderError {}
+
+impl fmt::Display for StateBuilderError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::DuplicateInitialId(state_id) => {
+                write!(f, "State '{}' is a duplicate of an existing initial State", state_id)
+            },
+            Self::DuplicateTransition(transition_id) => {
+                write!(f, "Transition '{}' is a duplicate of an existing Transition", transition_id)
+            },
+            Self::TransitionSourceMismatch(transition_id, state_id) => {
+                write!(f, "Transition '{}' source State '{}' does not match parent State", transition_id, state_id)
+            }
+        }
+    }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 //  Unit Tests
 ///////////////////////////////////////////////////////////////////////////////
 
 
 #[cfg(test)]
-mod tests{
+mod tests {
 
     use std::error::Error;
 
     use crate::{
         StateChartBuilder,
+        StateChartError,
         event::Event,
         state::{
-            State,
+            StateBuilder,
             StateError,
         },
         transition::TransitionBuilder,
@@ -321,36 +413,38 @@ mod tests{
 
     #[test]
     fn failed_condition() -> Result<(), Box<dyn Error>> {
-        // Define States
-        let mut initial = State::new("INITIAL");
-        let unreachable = State::new("UNREACHABLE");
-
-        // Define events and transitions
+        // Define Event and State IDs
         let go_to_unreachable = Event::from("go_to_unreachable")?;
+        let initial_state_id = "INITIAL";
+        let unreachable_state_id = "UNREACHABLE";
 
+        // Build initial->unreachable Transition
         let initial_to_unreachable_id = "initial_to_unreachable";
-        let initial_to_unreachable = TransitionBuilder::new(initial_to_unreachable_id, initial.id())
+        let initial_to_unreachable = TransitionBuilder::new(initial_to_unreachable_id, initial_state_id)
             .event(go_to_unreachable)?
             .cond(always_false)?
-            .target_id(unreachable.id())?
+            .target_id(unreachable_state_id)?
             .build();
-        initial.add_transition(initial_to_unreachable);
 
-        // Define the `initial` vector
-        let initial_ids = vec![initial.id()];
+            
+        // Build States
+        let initial = StateBuilder::new(initial_state_id)
+            .transition(initial_to_unreachable)?
+            .build()?;
+        let unreachable = StateBuilder::new(unreachable_state_id).build()?;
 
-        // Build statechart
+        // Build StateChart
         let mut hapless_statechart = StateChartBuilder::new("hapless")
+            .initial(vec![initial.id()])
             .state(initial)?
             .state(unreachable)?
             .event(go_to_unreachable)?
-            .initial(initial_ids)
             .build().unwrap();
 
         // Broadcast the event and verify that the transition failed its guard condition
         assert_eq!(
             hapless_statechart.process_external_event(go_to_unreachable),
-            Err(StateError::FailedConditions(vec![initial_to_unreachable_id])),
+            Err(StateChartError::StateError(StateError::FailedConditions(vec![initial_to_unreachable_id]))),
             "Failed to detect failed Transition due to failed Condition." 
         );
 
@@ -359,21 +453,24 @@ mod tests{
 
     #[test]
     fn failed_on_exit() -> Result<(), Box<dyn Error>> {
-        // Define States, one of which will fail its 2nd on_exit callback
-        let mut initial = State::new("INITIAL");
-        initial.add_on_exit(|| {Ok(())});
-        initial.add_on_exit(|| {Err(())});
-        let terminal = State::new("TERMINAL");
-
-        // Define Event
+        // Define Event and State IDs
         let initial_to_terminal = Event::from("initial_to_terminal")?;
+        let initial_state_id = "INITIAL";
+        let terminal_state_id = "TERMINAL";
 
-        // Define Transition and add it to the initial State
-        let hapless_transition = TransitionBuilder::new("hapless", initial.id())
+        // Build Transition
+        let hapless_transition = TransitionBuilder::new("hapless", initial_state_id)
             .event(initial_to_terminal)?
-            .target_id(terminal.id())?
+            .target_id(terminal_state_id)?
             .build();
-        initial.add_transition(hapless_transition);
+
+        // Build States, one of which will fail its 2nd on_exit callback
+        let initial = StateBuilder::new(initial_state_id)
+            .transition(hapless_transition)?
+            .on_exit(|| {Ok(())})
+            .on_exit(|| {Err(())})
+            .build()?;
+        let terminal = StateBuilder::new(terminal_state_id).build()?;
         
         // Build the StateChart and process the Event
         let mut statechart = StateChartBuilder::new("failed_on_exit")
@@ -385,7 +482,7 @@ mod tests{
         
         assert_eq!(
             statechart.process_external_event(initial_to_terminal),
-            Err(StateError::FailedCallback(1)),
+            Err(StateChartError::StateError(StateError::FailedCallback(1))),
             "Failed to catch a failed on_exit callback"
         );
 
@@ -395,21 +492,25 @@ mod tests{
     
     #[test]
     fn failed_on_entry() -> Result<(), Box<dyn Error>> {
-        // Define States, one of which will fail its 2nd on_entry callback
-        let mut initial = State::new("INITIAL");
-        let mut terminal = State::new("TERMINAL");
-        terminal.add_on_entry(|| {Ok(())});
-        terminal.add_on_entry(|| {Err(())});
-
-        // Define Event
+        // Define Event and State IDs
         let initial_to_terminal = Event::from("initial_to_terminal")?;
+        let initial_state_id = "INITIAL";
+        let terminal_state_id = "TERMINAL";
 
-        // Define Transition and add it to the initial State
-        let hapless_transition = TransitionBuilder::new("hapless", initial.id())
+        // Build Transition
+        let hapless_transition = TransitionBuilder::new("hapless", initial_state_id)
             .event(initial_to_terminal)?
-            .target_id(terminal.id())?
+            .target_id(terminal_state_id)?
             .build();
-        initial.add_transition(hapless_transition);
+
+        // Build States, one of which will fail its 2nd on_entry callback
+        let initial = StateBuilder::new(initial_state_id)
+            .transition(hapless_transition)?
+            .build()?;
+        let terminal = StateBuilder::new(terminal_state_id)
+            .on_entry(|| {Ok(())})
+            .on_entry(|| {Err(())})
+            .build()?;
         
         // Build the StateChart and process the Event
         let mut statechart = StateChartBuilder::new("failed_on_entry")
@@ -421,8 +522,82 @@ mod tests{
         
         assert_eq!(
             statechart.process_external_event(initial_to_terminal),
-            Err(StateError::FailedCallback(1)),
+            Err(StateChartError::StateError(StateError::FailedCallback(1))),
             "Failed to catch a failed on_entry callback"
+        );
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod builder_tests {
+    
+    use std::error::Error;
+
+    use crate::{
+        state::{
+            StateBuilder,
+            StateBuilderError,
+        },
+        transition::TransitionBuilder,
+    };
+
+    #[test]
+    fn duplicate_initial() -> Result<(), Box<dyn Error>> {
+        let duplicate_id = "duplicate";
+        let builder = StateBuilder::new("state")
+            .initial(duplicate_id)?;
+
+        // Verify a duplicate ID is caught
+        assert_eq!(
+            builder.initial(duplicate_id),
+            Err(StateBuilderError::DuplicateInitialId(duplicate_id)),
+            "Failed to catch duplicate initial State"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn duplicate_transition() -> Result<(), Box<dyn Error>> {
+        let state_id = "source";
+        let transition_id = "transition";
+
+        // Build Transitions to be duplicated
+        let original_transition = TransitionBuilder::new(transition_id, state_id).build();
+        let duplicate_transition = TransitionBuilder::new(transition_id, state_id).build();
+
+        // Verify the duplicate transition is caught
+        let builder = StateBuilder::new(state_id)
+            .transition(original_transition)?;
+
+        assert_eq!(
+            builder.transition(duplicate_transition),
+            Err(StateBuilderError::DuplicateTransition(transition_id)),
+            "Failed to catch duplicate Transition"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn source_mismatch() -> Result<(), Box<dyn Error>> {
+        let correct_source_id = "source";
+        let wrong_source_id = "wrong";
+        let transition_id = "transition";
+
+        // Build Transition with an incorrect source
+        let transition = TransitionBuilder::new(transition_id, wrong_source_id).build();
+
+        // Verify mismatch is caught
+        let builder = StateBuilder::new(correct_source_id)
+            .transition(transition)?;
+        
+        assert_eq!(
+            builder.build(),
+            Err(StateBuilderError::TransitionSourceMismatch(transition_id, wrong_source_id)),
+            "Failed to catch source State mismatch"
         );
 
         Ok(())

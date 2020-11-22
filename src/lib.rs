@@ -94,6 +94,11 @@ pub struct StateChart {
 
 pub type StateChartId = &'static str;
 
+#[derive(Debug, PartialEq)]
+pub enum StateChartError {
+    ReceivedUnregisteredEvent(Event),
+    StateError(StateError),
+}
 
 #[derive(Debug, PartialEq)]
 pub struct StateChartBuilder {
@@ -137,7 +142,7 @@ impl StateChart {
      *  Utility Methods   *
     \*  *  *  *  *  *  *  */
 
-    pub fn process_external_event(&mut self, event: Event) -> Result<(), StateError> {
+    pub fn process_external_event(&mut self, event: Event) -> Result<(), StateChartError> {
         // Collect and process the set of enabled Transitions
         let enabled_transition_ids = self.select_transitions(event)?;
 
@@ -150,13 +155,10 @@ impl StateChart {
      *  Helper Methods    *
     \*  *  *  *  *  *  *  */
 
-    /// Collects the ID(s) of Transition(s) enabled by the given Event.
-    ///
-    /// Returns Ok() if the event was valid, TopLevelError if the event was rejected.
-    ///
-    /// TODO: Fix/Finish comment
-    pub fn select_transitions(&self, event: Event) -> Result<Vec<TransitionId>, StateError> {
-        //TODO: Sanity-check event?
+    fn select_transitions(&self, event: Event) -> Result<Vec<TransitionId>, StateChartError> {
+        if !self.registry.event_is_registered(event) {
+            return Err(StateChartError::ReceivedUnregisteredEvent(event));
+        }
 
         let mut enabled_transitions = Vec::new();
 
@@ -178,7 +180,7 @@ impl StateChart {
     /// 1. Exiting source State(s)
     /// 2. Executing executable content of a Transition
     /// 3. Entering target State(s)
-    fn process_microstep(&mut self, enabled_transition_ids: Vec<TransitionId>) -> Result<(), StateError> {
+    fn process_microstep(&mut self, enabled_transition_ids: Vec<TransitionId>) -> Result<(), StateChartError> {
         //TODO: Sort transition source states into exit order, for now, just copying as-is
         let exit_sorted_transition_ids = enabled_transition_ids.clone();
 
@@ -261,6 +263,7 @@ impl StateChartBuilder {
         Ok(self)
     }
 
+    //OPT: *DESIGN* should push a single ID into the vec and check for duplicates
     pub fn initial(mut self, initial: Vec<StateId>) -> Self {
         self.initial = initial;
 
@@ -288,6 +291,32 @@ impl fmt::Debug for StateChart {
 }
 
 
+/*  *  *  *  *  *  *  *\
+ *  StateChartError   *
+\*  *  *  *  *  *  *  */
+
+impl Error for StateChartError {}
+
+impl fmt::Display for StateChartError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::ReceivedUnregisteredEvent(event) => {
+                write!(f, "Received Event '{}', which is unregistered", event)
+            }
+            Self::StateError(state_err) => {
+                write!(f, "{}", state_err)
+            }
+        }
+    }
+}
+
+impl From<StateError> for StateChartError {
+    fn from (source: StateError) -> Self {
+        Self::StateError(source)
+    }
+}
+
+
 /*  *  *  *  *  *  *  *  *  *\
  *  StateChartBuilderError  *
 \*  *  *  *  *  *  *  *  *  */
@@ -310,54 +339,53 @@ impl fmt::Display for StateChartBuilderError {
 ///////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
-mod state_chart_tests {
+mod tests {
     use std::error::Error;
 
     use crate::{
         StateChartBuilder,
+        StateChartError,
         event::Event,
-        state::State,
+        state::StateBuilder,
         registry::RegistryError,
         transition::TransitionBuilder,
     };
 
     #[test]
     fn hyperion() -> Result<(), Box<dyn Error>>  {
-        // Define state IDs for reference
+        // Define Event and State IDs for reference
+        let go_to_non_imaging   = Event::from("go_to_non_imaging")?;
         let idle_id             = "IDLE";
         let diagnostic_id       = "DIAGNOSTIC";
         let non_imaging_id      = "NON-IMAGING";
         let imaging_standby_id  = "IMAGING STANDBY";
         let imaging_id          = "IMAGING";
 
-        // Define system states
-        let mut idle = State::new(idle_id);
-        let diagnostic = State::new(diagnostic_id);
-        let non_imaging = State::new(non_imaging_id);
-        let imaging_standby = State::new(imaging_standby_id);
-        let imaging = State::new(imaging_id);
-
-        // Define events and transitions
-        let go_to_non_imaging = Event::from("go_to_non_imaging")?;
-
-        let idle_to_non_imaging = TransitionBuilder::new("idle_to_non-imaging", idle.id())
+        // Build Transitions
+        let idle_to_non_imaging = TransitionBuilder::new("idle_to_non-imaging", idle_id)
             .event(go_to_non_imaging)?
-            .target_id(non_imaging.id())?
+            .target_id(non_imaging_id)?
             .build();
-        idle.add_transition(idle_to_non_imaging);
 
-        // Define the `initial` vector
-        let initial_ids = vec![idle.id()];
+        // Build States
+        let idle            = StateBuilder::new(idle_id)
+            .transition(idle_to_non_imaging)?
+            .build()?;
+
+        let diagnostic      = StateBuilder::new(diagnostic_id).build()?;
+        let non_imaging     = StateBuilder::new(non_imaging_id).build()?;
+        let imaging_standby = StateBuilder::new(imaging_standby_id).build()?;
+        let imaging         = StateBuilder::new(imaging_id).build()?;
 
         // Build statechart
         let mut hyperion_statechart = StateChartBuilder::new("hyperion")
+            .initial(vec![idle.id()])
             .state(idle)?
             .state(diagnostic)?
             .state(non_imaging)?
             .state(imaging_standby)?
             .state(imaging)?
             .event(go_to_non_imaging)?
-            .initial(initial_ids)
             .build().unwrap();
 
         // Broadcast a Go To Non-Imaging event
@@ -371,11 +399,11 @@ mod state_chart_tests {
     }
 
     #[test]
-    fn duplicate_state_id() -> Result<(), RegistryError>  {
+    fn duplicate_state_id() -> Result<(), Box<dyn Error>>  {
         // Define states with duplicate IDs
         let duplicate_id = "duplicate";
-        let duplicate_a = State::new(duplicate_id);
-        let duplicate_b = State::new(duplicate_id);
+        let duplicate_a = StateBuilder::new(duplicate_id).build()?;
+        let duplicate_b = StateBuilder::new(duplicate_id).build()?;
 
         // Create the statechart object and add states to it
         let statechart_builder = StateChartBuilder::new("duplicate_chart")
@@ -390,24 +418,41 @@ mod state_chart_tests {
 
         Ok(())
     }
+
+    #[test]
+    fn unregistered_event() -> Result<(), Box<dyn Error>>  {
+        // Create an event but don't register it
+        let unregistered_event = Event::from("unregistered")?;
+
+        let mut statechart = StateChartBuilder::new("statechart").build()?;
+
+        // Verify the unregistered event is rejected
+        assert_eq!(
+            statechart.process_external_event(unregistered_event),
+            Err(StateChartError::ReceivedUnregisteredEvent(unregistered_event)),
+            "Failed to reject an unregistered event"
+        );
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
-mod state_chart_builder_tests {
+mod builder_tests {
 
     use std::error::Error;
 
     use crate::{
         StateChartBuilder,
         StateChartBuilderError,
-        state::State,
+        state::StateBuilder,
     };
 
     #[test]
     fn build_errors() -> Result<(), Box<dyn Error>> {
         // Create states, one will be registered the other will not
-        let unregistered = State::new("unregistered");
-        let registered = State::new("registered");
+        let unregistered = StateBuilder::new("unregistered").build()?;
+        let registered = StateBuilder::new("registered").build()?;
 
         // Attempt to build a StateChart with an unregistered initial ID
         let invalid_builder = StateChartBuilder::new("invalid")

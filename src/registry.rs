@@ -81,6 +81,18 @@ impl Registry {
         self.states.get_mut(id)
     }
 
+    pub fn get_active_state_ids(&self) -> Vec<StateId> {
+        let mut active_state_ids = Vec::new();
+
+        for state in self.states.values() {
+            if state.is_active() {
+                active_state_ids.push(state.id());
+            }
+        }
+
+        active_state_ids
+    }
+
     pub fn get_transition(&self, id: TransitionId) -> Option<&Transition> {
         // Search State map for a State containing this ID
         for state in self.states.values() {
@@ -94,16 +106,8 @@ impl Registry {
         None
     }
 
-    pub fn get_active_state_ids(&self) -> Vec<StateId> {
-        let mut active_state_ids = Vec::new();
-
-        for state in self.states.values() {
-            if state.is_active() {
-                active_state_ids.push(state.id());
-            }
-        }
-
-        active_state_ids
+    pub fn event_is_registered(&self, event: Event) -> bool {
+        self.events.contains(&event)
     }
 
 
@@ -180,7 +184,7 @@ mod tests {
             RegistryError,
         },
         state::{
-            State,
+            StateBuilder,
             StateId,
         },
     };
@@ -191,8 +195,8 @@ mod tests {
         let state_id = "state";
         let event_id = "event";
 
-        let state_a = State::new(state_id);
-        let state_b = State::new(state_id);
+        let state_a = StateBuilder::new(state_id).build()?;
+        let state_b = StateBuilder::new(state_id).build()?;
         let event_a = Event::from(event_id)?;
         let event_b = Event::from(event_id)?;
 

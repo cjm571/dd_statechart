@@ -239,7 +239,6 @@ mod builder_tests {
 
     use crate::{
         event::Event,
-        state::State,
         transition::{
             TransitionBuilder,
             TransitionBuilderError,
@@ -248,12 +247,11 @@ mod builder_tests {
 
     #[test]
     fn duplicate_event() -> Result<(), Box<dyn Error>> {
-        // Define Event and State
+        // Define Event
         let event = Event::from("event")?;
-        let state = State::new("state");
 
         // Verify that duplicate event is caught
-        let builder = TransitionBuilder::new("transition", state.id())
+        let builder = TransitionBuilder::new("transition", "state")
             .event(event)?;
 
         assert_eq!(
@@ -267,17 +265,14 @@ mod builder_tests {
     
     #[test]
     fn duplicate_target() -> Result<(), Box<dyn Error>> {
-        // Define States
-        let source = State::new("source");
-        let target = State::new("target");
-
         // Verify that duplicate target is caught
-        let builder = TransitionBuilder::new("transition", source.id())
-            .target_id(target.id())?;
+        let target_id = "target";
+        let builder = TransitionBuilder::new("transition", "source")
+            .target_id(target_id)?;
 
         assert_eq!(
-            builder.target_id(target.id()),
-            Err(TransitionBuilderError::DuplicateTargetId(target.id())),
+            builder.target_id(target_id),
+            Err(TransitionBuilderError::DuplicateTargetId(target_id)),
             "Failed to catch duplicate target"
         );
 
@@ -286,15 +281,13 @@ mod builder_tests {
     
     #[test]
     fn source_target_collision() -> Result<(), Box<dyn Error>> {
-        // Define State
-        let source = State::new("source");
-
         // Verify that source-target collision is caught
-        let builder = TransitionBuilder::new("transition", source.id());
+        let source_id = "source";
+        let builder = TransitionBuilder::new("transition", source_id);
 
         assert_eq!(
-            builder.target_id(source.id()),
-            Err(TransitionBuilderError::SourceTargetCollision(source.id())),
+            builder.target_id(source_id),
+            Err(TransitionBuilderError::SourceTargetCollision(source_id)),
             "Failed to catch source-target collision"
         );
 
@@ -303,11 +296,8 @@ mod builder_tests {
 
     #[test]
     fn condition_already_set() -> Result<(), Box<dyn Error>> {
-        // Define State
-        let source = State::new("source");
-
         // Verify that already-set condition is caught
-        let builder = TransitionBuilder::new("transition", source.id())
+        let builder = TransitionBuilder::new("transition", "source")
             .cond(|| {true})?;
 
         assert_eq!(
