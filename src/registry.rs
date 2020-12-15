@@ -28,7 +28,6 @@ Purpose:
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 use std::{
-    collections::HashMap,
     error::Error,
     fmt,
 };
@@ -50,10 +49,9 @@ use crate::{
 //  Data Structures
 ///////////////////////////////////////////////////////////////////////////////
 
-//TODO: should this really be called "Registry"?
 #[derive(Debug, Default, PartialEq)]
 pub struct Registry {
-    states: HashMap<StateId, State>,
+    states: Vec<State>,
     events: Vec<Event>,
 }
 
@@ -74,17 +72,39 @@ impl Registry {
     \*  *  *  *  *  *  *  */
     
     pub fn get_state(&self, id: StateId) -> Option<&State> {
-        self.states.get(id)
+        for state in self.states.iter() {
+            if state.id() == id {
+                return Some(state)
+            }
+        }
+
+        None
     }
 
     pub fn get_mut_state(&mut self, id: StateId) -> Option<&mut State> {
-        self.states.get_mut(id)
+        for state in self.states.iter_mut() {
+            if state.id() == id {
+                return Some(state)
+            }
+        }
+
+        None
+    }
+
+    pub fn get_all_state_ids(&self) -> Vec<StateId> {
+        let mut state_ids = Vec::new();
+
+        for state in self.states.iter() {
+            state_ids.push(state.id());
+        }
+
+        state_ids
     }
 
     pub fn get_active_state_ids(&self) -> Vec<StateId> {
         let mut active_state_ids = Vec::new();
 
-        for state in self.states.values() {
+        for state in self.states.iter() {
             if state.is_active() {
                 active_state_ids.push(state.id());
             }
@@ -95,7 +115,7 @@ impl Registry {
 
     pub fn get_transition(&self, id: TransitionId) -> Option<&Transition> {
         // Search State map for a State containing this ID
-        for state in self.states.values() {
+        for state in self.states.iter() {
             for transition in state.transitions() {
                 if id == transition.id() {
                     return Some(transition);
@@ -117,14 +137,15 @@ impl Registry {
 
     pub fn register_state(&mut self, state: State) -> Result<(), RegistryError> {
         // Ensure State is not already registered
-        if self.states.contains_key(state.id()) {
+        if self.states.contains(&state) {
             return Err(RegistryError::StateAlreadyRegistered(state.id()));
         }
         
-        //TODO: Sanity check(s)
+        //TODO: Sanity check(s) for invalid State arrangements
 
         // Add State and ID to the map
-        self.states.insert(state.id(), state);
+        self.states.push(state);
+
         Ok(())
     }
 
@@ -133,8 +154,6 @@ impl Registry {
         if self.events.contains(&event) {
             return Err(RegistryError::EventAlreadyRegistered(event));
         }
-        
-        //TODO: Sanity check(s)
 
         // Add Event and ID to the map
         self.events.push(event);

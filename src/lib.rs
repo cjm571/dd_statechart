@@ -44,6 +44,16 @@ Purpose:
         Final states shall not be supported. Embedded systems are designed to
         run continuously, and therefore should not enter a state that cannot
         be exited.
+    4) §3.2.1 [<scxml>] Attribute Details - `initial` Description
+        "The id of the initial state(s) for the document. If not specified, 
+         the default initial state is the first child state in document order."
+        Multiple initial states shall not be supported.
+        Note: I don't think they're actually supported by the standard either...
+
+
+    OPERATIONAL NOTES
+    1) "Document Order" will be the default order of vectors, i.e., the 0th item
+       in a vector will be the first item in document order.
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
@@ -88,7 +98,7 @@ use crate::{
 #[derive(PartialEq)]
 pub struct StateChart {
     id:         StateChartId,
-    initial:    Vec<StateId>,
+    initial:    Option<StateId>,
     registry:   Registry,
 }
 
@@ -103,13 +113,14 @@ pub enum StateChartError {
 #[derive(Debug, PartialEq)]
 pub struct StateChartBuilder {
     id:         StateChartId,
-    initial:    Vec<StateId>,
+    initial:    Option<StateId>,
     registry:   Registry,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum StateChartBuilderError {
     InitialStateNotRegistered(StateId),
+    NoStatesRegistered,
 }
 
 
@@ -118,15 +129,6 @@ pub enum StateChartBuilderError {
 ///////////////////////////////////////////////////////////////////////////////
 
 impl StateChart {
-    /// Creates a StateChart object with the given ID.
-    pub fn new(id: StateChartId) -> Self {
-        Self {
-            id,
-            initial:    Vec::new(),
-            registry:   Registry::default(),
-        }
-    }
-
 
     /*  *  *  *  *  *  *  *\
      *  Accessor Methods  *
@@ -216,30 +218,37 @@ impl StateChartBuilder {
     pub fn new(id: StateChartId) -> Self {
         Self {
             id,
-            initial:  Vec::new(),
+            initial:  None,
             registry: Registry::default(),
         }
     }
+
 
     /*  *  *  *  *  *  *  *\
      *  Builder Methods   *
     \*  *  *  *  *  *  *  */
     
     pub fn build(mut self) -> Result<StateChart, StateChartBuilderError> {
-        //TODO: Sanity-checks
+        // Ensure at least one State has been registered
+        if self.registry.get_all_state_ids().is_empty() {
+            return Err(StateChartBuilderError::NoStatesRegistered);
+        }
+        
+        // If no initial State ID was provided, set to first doc-order child
+        if self.initial.is_none() {
+            self.initial = Some(self.registry.get_all_state_ids().first().unwrap());
+        }
 
-        // Activate States whose IDs are in the `initial` vector
-        for state_id in &self.initial {
-            if let Some(state) = self.registry.get_mut_state(state_id) {
-                state.activate()
-                //TODO: Probably gotta recurse here for sub-states
-                //      Or not? maybe the activate function could do that...
-            }
-            else {
-                // State ID in the `initial` vector was not found in the Registry.
-                // Therefore the StateChart is invalid
-                return Err(StateChartBuilderError::InitialStateNotRegistered(state_id));
-            }
+        // Activate the Initial State
+        if let Some(state) = self.registry.get_mut_state(self.initial.unwrap()) {
+            state.activate()
+            //TODO: Probably gotta recurse here for sub-states
+            //      Or not? maybe the activate function could do that...
+        }
+        else {
+            // Initial State was not found in the Registry, therefore the StateChart is invalid.
+            //TODO: must also be a top-level state
+            return Err(StateChartBuilderError::InitialStateNotRegistered(self.initial.unwrap()));
         }
         
         Ok(
@@ -264,8 +273,8 @@ impl StateChartBuilder {
     }
 
     //OPT: *DESIGN* should push a single ID into the vec and check for duplicates
-    pub fn initial(mut self, initial: Vec<StateId>) -> Self {
-        self.initial = initial;
+    pub fn initial(mut self, initial: StateId) -> Self {
+        self.initial = Some(initial);
 
         self
     }
@@ -328,6 +337,9 @@ impl fmt::Display for StateChartBuilderError {
         match self {
             Self::InitialStateNotRegistered(state_id) => {
                 write!(f, "ID '{}' is in the `initial` vector, but is not registered", state_id)
+            },
+            Self::NoStatesRegistered => {
+                write!(f, "No States registered")
             }
         }
     }
@@ -352,7 +364,7 @@ mod tests {
     };
 
     #[test]
-    fn hyperion() -> Result<(), Box<dyn Error>>  {
+    fn theia() -> Result<(), Box<dyn Error>>  {
         // Define Event and State IDs for reference
         let go_to_non_imaging   = Event::from("go_to_non_imaging")?;
         let idle_id             = "IDLE";
@@ -378,8 +390,8 @@ mod tests {
         let imaging         = StateBuilder::new(imaging_id).build()?;
 
         // Build statechart
-        let mut hyperion_statechart = StateChartBuilder::new("hyperion")
-            .initial(vec![idle.id()])
+        let mut statechart = StateChartBuilder::new("theia")
+            .initial(idle.id())
             .state(idle)?
             .state(diagnostic)?
             .state(non_imaging)?
@@ -389,11 +401,11 @@ mod tests {
             .build().unwrap();
 
         // Broadcast a Go To Non-Imaging event
-        hyperion_statechart.process_external_event(go_to_non_imaging)?;
+        statechart.process_external_event(go_to_non_imaging)?;
 
         // Verify that IDLE is inactive and NON-IMAGING is active
-        assert_eq!(hyperion_statechart.active_state_ids().contains(&idle_id), false);
-        assert_eq!(hyperion_statechart.active_state_ids().contains(&non_imaging_id), true);
+        assert_eq!(statechart.active_state_ids().contains(&idle_id), false);
+        assert_eq!(statechart.active_state_ids().contains(&non_imaging_id), true);
 
         Ok(())
     }
@@ -424,7 +436,11 @@ mod tests {
         // Create an event but don't register it
         let unregistered_event = Event::from("unregistered")?;
 
-        let mut statechart = StateChartBuilder::new("statechart").build()?;
+        let state = StateBuilder::new("state").build()?;
+
+        let mut statechart = StateChartBuilder::new("statechart")
+            .state(state)?
+            .build()?;
 
         // Verify the unregistered event is rejected
         assert_eq!(
@@ -449,7 +465,7 @@ mod builder_tests {
     };
 
     #[test]
-    fn build_errors() -> Result<(), Box<dyn Error>> {
+    fn initial_state_not_registered() -> Result<(), Box<dyn Error>> {
         // Create states, one will be registered the other will not
         let unregistered = StateBuilder::new("unregistered").build()?;
         let registered = StateBuilder::new("registered").build()?;
@@ -457,12 +473,24 @@ mod builder_tests {
         // Attempt to build a StateChart with an unregistered initial ID
         let invalid_builder = StateChartBuilder::new("invalid")
             .state(registered)?
-            .initial(vec![unregistered.id()]);
+            .initial(unregistered.id());
 
         assert_eq!(
             invalid_builder.build(),
             Err(StateChartBuilderError::InitialStateNotRegistered(unregistered.id())),
             "Failed to detect unregistered ID in the initial vector"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn no_states_registered() -> Result<(), Box<dyn Error>> {
+        
+        assert_eq!(
+            StateChartBuilder::new("no_states").build(),
+            Err(StateChartBuilderError::NoStatesRegistered),
+            "Failed to catch that no states were registered"
         );
 
         Ok(())

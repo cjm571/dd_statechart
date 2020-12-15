@@ -48,18 +48,17 @@ use crate::{
 #[derive(Default, PartialEq)]
 pub struct State {
     id:             StateId,
+    substates:      Vec<State>,
     is_active:      bool,
-    initial_ids:    Vec<StateId>,
+    initial_id:     Option<StateId>,
     transitions:    Vec<Transition>,
     on_entry:       Vec<Callback>,
     on_exit:        Vec<Callback>,
-    //TODO: Substates
 }
 
 pub type StateId = &'static str;
 
-//TODO: Specify Result error type (generic, probably?) for short-circuiting failed transitions
-/// Convenience alias for callbacks to be executed by on_entry, on_exit
+//OPT: *DESIGN* Would it be useful to specify an error type here? Even if it's just Box<dyn Error>?
 pub type Callback = fn() -> Result<(), ()>;
 
 #[derive(PartialEq)]
@@ -72,8 +71,9 @@ pub enum StateError {
 #[derive(Debug, PartialEq)]
 pub struct StateBuilder {
     id:             StateId,
+    substates:      Vec<State>,
     is_active:      bool,
-    initial_ids:    Vec<StateId>,
+    initial_id:     Option<StateId>,
     transitions:    Vec<Transition>,
     on_entry:       Vec<Callback>,
     on_exit:        Vec<Callback>,
@@ -81,9 +81,10 @@ pub struct StateBuilder {
 
 #[derive(Debug, PartialEq)]
 pub enum StateBuilderError {
-    DuplicateInitialId(StateId),
+    DuplicateSubstate(StateId),
     DuplicateTransition(TransitionId),
     TransitionSourceMismatch(TransitionId, StateId),
+    InitialIsNotChild(StateId),
 }
 
 
@@ -228,7 +229,8 @@ impl StateBuilder {
         Self {
             id,
             is_active:      false,
-            initial_ids:    Vec::new(),
+            substates:      Vec::new(),
+            initial_id:     None,
             transitions:    Vec::new(),
             on_entry:       Vec::new(),
             on_exit:        Vec::new(),
@@ -240,7 +242,26 @@ impl StateBuilder {
      *  Builder Methods   *
     \*  *  *  *  *  *  *  */
 
-    pub fn build(self) -> Result<State, StateBuilderError> {
+    pub fn build(mut self) -> Result<State, StateBuilderError> {
+        // Sanity checks for child states, if they exist
+        if !self.substates.is_empty() {
+            // If no initial ID was provided, set to first doc-order child
+            if self.initial_id.is_none() {
+                self.initial_id = Some(self.substates.first().unwrap().id());
+            }
+
+            // Ensure that initial ID matches a child State
+            let mut child_matched = false;
+            for substate in &self.substates {
+                if substate.id() == self.initial_id.unwrap() {
+                    child_matched = true;
+                }
+            }
+            if !child_matched {
+                return Err(StateBuilderError::InitialIsNotChild(self.initial_id.unwrap()));
+            }
+        }
+
         // Ensure all Transitions' source States match this one
         for transition in &self.transitions {
             if transition.source_id() != self.id {
@@ -248,14 +269,12 @@ impl StateBuilder {
             }
         }
 
-        //TODO: When substates implemented, need to ensure that initial vector contains
-        //      only IDs that match substates' IDs
-
         Ok(
             State {
                 id:             self.id,
+                substates:      self.substates,
                 is_active:      self.is_active,
-                initial_ids:    self.initial_ids,
+                initial_id:     self.initial_id,
                 transitions:    self.transitions,
                 on_entry:       self.on_entry,
                 on_exit:        self.on_exit,
@@ -263,15 +282,26 @@ impl StateBuilder {
         )        
     }
 
-    pub fn initial(mut self, initial_id: StateId) -> Result<Self, StateBuilderError> {
-        // Ensure the ID is not a duplicate
-        if self.initial_ids.contains(&initial_id) {
-            return Err(StateBuilderError::DuplicateInitialId(initial_id));
+    pub fn substate(mut self, state: State) -> Result<Self, StateBuilderError> {
+        // Ensure the substate is not a duplicate
+        if state.id() == self.id {
+            return Err(StateBuilderError::DuplicateSubstate(state.id()));
         }
-        
-        self.initial_ids.push(&initial_id);
+        for substate in &self.substates {
+            if state.id() == substate.id() {
+                return Err(StateBuilderError::DuplicateSubstate(state.id()));
+            }
+        }
+
+        self.substates.push(state);
 
         Ok(self)
+    }
+
+    pub fn initial(mut self, state_id: StateId) -> Self {
+        self.initial_id = Some(state_id);
+
+        self
     }
 
     pub fn transition(mut self, transition: Transition) -> Result<Self, StateBuilderError> {
@@ -315,8 +345,9 @@ impl fmt::Debug for State {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("State")
             .field("id",            &self.id)
+            .field("substates",     &self.substates)
             .field("is_active",     &self.is_active)
-            .field("initial_ids",   &self.initial_ids)
+            .field("initial_id",    &self.initial_id)
             .field("transitions",   &self.transitions)
             .field("on_entry",      &self.on_entry)
             .field("on_exit",       &self.on_exit)
@@ -372,15 +403,18 @@ impl Error for StateBuilderError {}
 impl fmt::Display for StateBuilderError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::DuplicateInitialId(state_id) => {
-                write!(f, "State '{}' is a duplicate of an existing initial State", state_id)
+            Self::DuplicateSubstate(state_id) => {
+                write!(f, "Substate '{}' is a duplicate of an existing Substate or the parent", state_id)
             },
             Self::DuplicateTransition(transition_id) => {
                 write!(f, "Transition '{}' is a duplicate of an existing Transition", transition_id)
             },
             Self::TransitionSourceMismatch(transition_id, state_id) => {
                 write!(f, "Transition '{}' source State '{}' does not match parent State", transition_id, state_id)
-            }
+            },
+            Self::InitialIsNotChild(initial_id) => {
+                write!(f, "Initial ID '{}' does not match any child State IDs", initial_id)
+            },
         }
     }
 }
@@ -435,7 +469,7 @@ mod tests {
 
         // Build StateChart
         let mut hapless_statechart = StateChartBuilder::new("hapless")
-            .initial(vec![initial.id()])
+            .initial(initial.id())
             .state(initial)?
             .state(unreachable)?
             .event(go_to_unreachable)?
@@ -474,7 +508,7 @@ mod tests {
         
         // Build the StateChart and process the Event
         let mut statechart = StateChartBuilder::new("failed_on_exit")
-            .initial(vec![initial.id()])
+            .initial(initial.id())
             .state(initial)?
             .state(terminal)?
             .event(initial_to_terminal)?
@@ -514,7 +548,7 @@ mod tests {
         
         // Build the StateChart and process the Event
         let mut statechart = StateChartBuilder::new("failed_on_entry")
-            .initial(vec![initial.id()])
+            .initial(initial.id())
             .state(initial)?
             .state(terminal)?
             .event(initial_to_terminal)?
@@ -542,22 +576,6 @@ mod builder_tests {
         },
         transition::TransitionBuilder,
     };
-
-    #[test]
-    fn duplicate_initial() -> Result<(), Box<dyn Error>> {
-        let duplicate_id = "duplicate";
-        let builder = StateBuilder::new("state")
-            .initial(duplicate_id)?;
-
-        // Verify a duplicate ID is caught
-        assert_eq!(
-            builder.initial(duplicate_id),
-            Err(StateBuilderError::DuplicateInitialId(duplicate_id)),
-            "Failed to catch duplicate initial State"
-        );
-
-        Ok(())
-    }
 
     #[test]
     fn duplicate_transition() -> Result<(), Box<dyn Error>> {
@@ -598,6 +616,56 @@ mod builder_tests {
             builder.build(),
             Err(StateBuilderError::TransitionSourceMismatch(transition_id, wrong_source_id)),
             "Failed to catch source State mismatch"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn duplicate_substate() -> Result<(), Box<dyn Error>> {
+        // Verify that duplicates of parent state are caught
+        let parent_id  = "parent";
+        let parent_dup_state = StateBuilder::new(parent_id).build()?;
+
+        let parent_dup_builder = StateBuilder::new(parent_id);
+
+        assert_eq!(
+            parent_dup_builder.substate(parent_dup_state),
+            Err(StateBuilderError::DuplicateSubstate(parent_id)),
+            "Failed to catch substate duplicate of parent"
+        );
+
+        // Verify that duplicate substates are caught
+        let duplicate_id = "duplicate";
+        let dup_state_a = StateBuilder::new(duplicate_id).build()?;
+        let dup_state_b = StateBuilder::new(duplicate_id).build()?;
+
+        let substate_dup_builder = StateBuilder::new("parent")
+            .substate(dup_state_a)?;
+
+        assert_eq!(
+            substate_dup_builder.substate(dup_state_b),
+            Err(StateBuilderError::DuplicateSubstate(duplicate_id)),
+            "Failed to catch substate duplicate of existing substate"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn initial_not_child() -> Result<(), Box<dyn Error>> {
+        let nonchild_id = "nonchild";
+
+        let child = StateBuilder::new("child").build()?;
+
+        let builder = StateBuilder::new("parent")
+            .substate(child)?
+            .initial(nonchild_id);
+
+        assert_eq!(
+            builder.build(),
+            Err(StateBuilderError::InitialIsNotChild(nonchild_id)),
+            "Failed to catch initial ID that matched no children"
         );
 
         Ok(())

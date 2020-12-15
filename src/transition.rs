@@ -131,6 +131,7 @@ impl TransitionBuilder {
     \*  *  *  *  *  *  *  */
 
     pub fn build(self) -> Transition {
+        //TODO: must have at least one of event, cond, or target
         Transition {
             id:         self.id,
             events:     self.events,
