@@ -45,8 +45,8 @@ Purpose:
         run continuously, and therefore should not enter a state that cannot
         be exited.
     4) §3.2.1 [<scxml>] Attribute Details - `initial` Description
-        "The id of the initial state(s) for the document. If not specified, 
-         the default initial state is the first child state in document order."
+         "The id of the initial state(s) for the document. If not specified, 
+          the default initial state is the first child state in document order."
         Multiple initial states shall not be supported.
         Note: I don't think they're actually supported by the standard either...
 
@@ -68,6 +68,7 @@ use std::{
 ///////////////////////////////////////////////////////////////////////////////
 
 pub mod event;
+pub mod parser;
 pub mod registry;
 pub mod state;
 pub mod transition;

@@ -1,0 +1,5 @@
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+    version="2.0"
+    datamodel="null"
+    initial="off">
+</scxml>
