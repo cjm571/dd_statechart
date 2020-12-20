@@ -40,10 +40,15 @@ Purpose:
           <invoke> Invokes an external service. Occurs 0 or more times.
           See 6.4 <invoke> for 	details.”
         <datamodel> amd <invoke> items shall not be supported.
+
     3) §3.7 <final>
-        Final states shall not be supported. Embedded systems are designed to
+        Final States shall not be supported. Embedded systems are designed to
         run continuously, and therefore should not enter a state that cannot
         be exited.
+    3a) §5.5 <donedata>
+        This element shall not be supported, as it is triggered by entering a
+        Final State, which is not supported.
+
     4) §3.2.1 [<scxml>] Attribute Details - `initial` Description
          "The id of the initial state(s) for the document. If not specified, 
           the default initial state is the first child state in document order."
@@ -58,6 +63,7 @@ Purpose:
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 use std::{
+    collections::VecDeque,
     error::Error,
     fmt,
 };
@@ -67,6 +73,7 @@ use std::{
 //  Module Declarations
 ///////////////////////////////////////////////////////////////////////////////
 
+pub mod datamodel;
 pub mod event;
 pub mod parser;
 pub mod registry;
@@ -74,6 +81,7 @@ pub mod state;
 pub mod transition;
 
 use crate::{
+    datamodel::SystemVariables,
     event::Event,
     registry::{
         Registry,
@@ -98,9 +106,10 @@ use crate::{
 /// Contains a list of all nodes and events that make up the statechart.
 #[derive(PartialEq)]
 pub struct StateChart {
-    id:         StateChartId,
-    initial:    Option<StateId>,
-    registry:   Registry,
+    sys_vars:       SystemVariables,
+    initial:        Option<StateId>,
+    registry:       Registry,
+    internal_queue: VecDeque<Event>,
 }
 
 pub type StateChartId = &'static str;
@@ -146,11 +155,47 @@ impl StateChart {
     \*  *  *  *  *  *  *  */
 
     pub fn process_external_event(&mut self, event: Event) -> Result<(), StateChartError> {
-        // Collect and process the set of enabled Transitions
-        let enabled_transition_ids = self.select_transitions(event)?;
+        // Ensure the given Event is registered
+        if !self.registry.event_is_registered(event) {
+            return Err(StateChartError::ReceivedUnregisteredEvent(event));
+        }
 
-        // Perform microstep processing for the current Event
-        self.process_microstep(enabled_transition_ids)
+        // Set the _event System Variable to the given Event
+        self.sys_vars.set_event(event);
+        
+        // Collect and process the set of enabled Transitions
+        let mut enabled_transition_ids = self.select_transitions(Some(event))?;
+
+        //OPT: *STYLE* I don't like this loop, it's not very easy to tell what's being processed in the microstep
+        // Enter Microstep processing loop
+        while !enabled_transition_ids.is_empty() {
+            self.process_microstep(enabled_transition_ids)?;
+            
+            // Select eventless Transitions
+            enabled_transition_ids = self.select_transitions(None)?;
+            
+            // Found eventless Transitions, return to top of loop to process a Microstep
+            if !enabled_transition_ids.is_empty() {
+                continue;
+            }
+            // No eventless Transitions found, check the internal queue for Events
+            else if self.internal_queue.is_empty() {
+                break; // Nothing left to process, job done!
+            }
+            else {
+                // Pop the event off the queue
+                let internal_event = self.internal_queue.pop_front().unwrap();
+
+                // Set the _event System Variable to the internal Event
+                self.sys_vars.set_event(internal_event);
+
+                // Select transitions for the internal Event and return to top of the loop
+                enabled_transition_ids = self.select_transitions(Some(internal_event))?;
+                continue;
+            }
+        }
+
+        Ok(())
     }
 
 
@@ -158,19 +203,16 @@ impl StateChart {
      *  Helper Methods    *
     \*  *  *  *  *  *  *  */
 
-    fn select_transitions(&self, event: Event) -> Result<Vec<TransitionId>, StateChartError> {
-        if !self.registry.event_is_registered(event) {
-            return Err(StateChartError::ReceivedUnregisteredEvent(event));
-        }
-
+    fn select_transitions(&self, event: Option<Event>) -> Result<Vec<TransitionId>, StateChartError> {
         let mut enabled_transitions = Vec::new();
 
         // Traverse the map of states and send the event to each for evaluation
         for state_id in &self.registry.get_active_state_ids() {
             let state = self.registry.get_state(state_id).unwrap();
-            let enabled_transition = state.evaluate_event(event)?.unwrap();
 
-            enabled_transitions.push(enabled_transition);
+            if let Some(enabled_transition) = state.evaluate_event(event)? {
+                enabled_transitions.push(enabled_transition);
+            }
         }
 
         Ok(enabled_transitions)
@@ -189,10 +231,13 @@ impl StateChart {
 
         // Exit source State(s) in "Exit Order"
         for transition_id in exit_sorted_transition_ids {
-            let source_state_id = self.registry.get_transition(transition_id).unwrap().source_id();
-            let source_state = self.registry.get_mut_state(source_state_id).unwrap();
+            // Only operate on Transitions with targets
+            if !self.registry.get_transition(transition_id).unwrap().target_ids().is_empty() {
+                let source_state_id = self.registry.get_transition(transition_id).unwrap().source_id();
+                let source_state = self.registry.get_mut_state(source_state_id).unwrap();
 
-            source_state.exit()?;
+                source_state.exit()?;
+            }
         }
 
         //TODO: Perform executable content of Transition(s)
@@ -254,9 +299,10 @@ impl StateChartBuilder {
         
         Ok(
             StateChart {
-                id:         self.id,
-                initial:    self.initial,
-                registry:   self.registry,
+                sys_vars:       SystemVariables::new(self.id),
+                initial:        self.initial,
+                registry:       self.registry,
+                internal_queue: VecDeque::new(),
             }
         )
     }
@@ -293,9 +339,10 @@ impl StateChartBuilder {
 impl fmt::Debug for StateChart {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("StateChart")
-            .field("id", &self.id)
-            .field("initial", &self.initial)
-            .field("registry", &self.registry)
+            .field("sys_vars",          &self.sys_vars)
+            .field("initial",           &self.initial)
+            .field("registry",          &self.registry)
+            .field("internal_queue",    &self.internal_queue)
             .finish()
     }
 }
@@ -359,8 +406,8 @@ mod tests {
         StateChartBuilder,
         StateChartError,
         event::Event,
-        state::StateBuilder,
         registry::RegistryError,
+        state::StateBuilder,
         transition::TransitionBuilder,
     };
 
@@ -448,6 +495,52 @@ mod tests {
             statechart.process_external_event(unregistered_event),
             Err(StateChartError::ReceivedUnregisteredEvent(unregistered_event)),
             "Failed to reject an unregistered event"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn eventless_transition() -> Result<(), Box<dyn Error>> {
+        let start_id = "start";
+        let end_id = "end";
+
+        // Create an event for the eventful Transition
+        let event_id = "test.event";
+        let event = Event::from(event_id)?;
+
+        let eventful = TransitionBuilder::new("eventful", start_id)
+            .event(event)?
+            .build();
+
+        // Create the eventless Transition
+        let eventless = TransitionBuilder::new("eventless", start_id)
+            .target_id(end_id)?
+            .build();
+
+        // Create a State using the 2 Transitions
+        let start = StateBuilder::new(start_id)
+            .transition(eventful)?
+            .transition(eventless)?
+            .build()?;
+        
+        // Create target State
+        let end = StateBuilder::new(end_id).build()?;
+
+        // Create a StateChart containing all of the above
+        let mut statechart = StateChartBuilder::new("statechart")
+            .state(start)?
+            .state(end)?
+            .event(event)?
+            .build()?;
+        
+        // Send the test Event to the statechart, and verify that the eventless transition is also executed
+        statechart.process_external_event(event)?;
+
+        assert_eq!(
+            statechart.active_state_ids().first().unwrap(),
+            &end_id,
+            "Failed to trigger eventless transition."
         );
 
         Ok(())

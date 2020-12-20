@@ -44,7 +44,7 @@ use crate::{
 #[derive(PartialEq)]
 pub struct Transition {
     id:         TransitionId,
-    events:  Vec<Event>,
+    events:     Vec<Event>,
     cond:       Condition,
     source_id:  StateId,
     target_ids: Vec<StateId>,
@@ -59,7 +59,7 @@ pub type Condition = fn() -> bool;
 #[derive(Debug, PartialEq)]
 pub struct TransitionBuilder {
     id:         TransitionId,
-    events:  Vec<Event>,
+    events:     Vec<Event>,
     cond:       Condition,
     cond_set:   bool,
     source_id:  StateId,
@@ -110,6 +110,8 @@ impl Transition {
     /// Evaluates the guard condition for this Transition
     pub fn evaluate_condition(&self) -> bool {
         (self.cond)()
+        //TODO: If condition has returned an error, an 'error.execution' event must be placed on the internal event queue
+        //      See §5.9.1
     }
 }
 
@@ -121,7 +123,7 @@ impl TransitionBuilder {
             events:     Vec::new(),
             cond:       || {true},
             cond_set:   false,
-            source_id: source_state_id,
+            source_id:  source_state_id,
             target_ids: Vec::new(),
         }
     }

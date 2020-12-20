@@ -1,6 +1,6 @@
 [package]
 name = "dd_statechart"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["CJ McAllister <cjm571@gmail.com>"]
 edition = "2018"
 
@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 roxmltree = "0.13"
+uuid = { version = "0.8", features = ["v4"] }

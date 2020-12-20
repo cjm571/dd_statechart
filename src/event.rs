@@ -48,11 +48,20 @@ const EMPTY_ID_NODE_ARRAY: EventIdNodeArray = [""; MAX_ID_NODES];
 //  Data Structures
 ///////////////////////////////////////////////////////////////////////////////
 
+//TODO: Need to align this struct with §5.10.1
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Event {
-    id_nodes: EventIdNodeArray,
+    id_nodes:   EventIdNodeArray,
+    event_type: EventType,
 }
 type EventIdNodeArray = [&'static str; MAX_ID_NODES];
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum EventType {
+    Platform,   // Raised by the platform itself, such as error events
+    Internal,   // Raised by <raise>/<send> with _internal as the target
+    External,   // All other events
+}
 
 #[derive(Debug, PartialEq)]
 pub enum EventError {
@@ -98,6 +107,8 @@ impl Event {
         Ok(
             Self {
                 id_nodes: composed_nodes,
+                event_type: EventType::Platform, //TODO: Hardcoded default at the moment
+                                                 //TODO: Need to figure out how to pass the "origin" info to this module
             }
         )
     }

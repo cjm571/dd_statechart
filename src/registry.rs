@@ -143,7 +143,7 @@ impl Registry {
         
         //TODO: Sanity check(s) for invalid State arrangements
 
-        // Add State and ID to the map
+        // Push State into the vector
         self.states.push(state);
 
         Ok(())
@@ -155,7 +155,7 @@ impl Registry {
             return Err(RegistryError::EventAlreadyRegistered(event));
         }
 
-        // Add Event and ID to the map
+        // Push Event into the vector
         self.events.push(event);
         Ok(())
     }

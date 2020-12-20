@@ -162,12 +162,25 @@ impl State {
     ///
     /// On failure, returns a vector of Transitions that matched the given Event, but
     /// failed their respective Condition.
-    pub fn evaluate_event(&self, event: Event) -> Result<Option<TransitionId>, StateError> {
-        // Check for Event match in each of this State's Transitions
+    pub fn evaluate_event(&self, event: Option<Event>) -> Result<Option<TransitionId>, StateError> {
         let mut enable_candidates = Vec::new();
-        for transition in &self.transitions {
-            for transition_event in transition.events() {
-                if transition_event == &event {
+        
+        // Handle evaluation of a non-null Event
+        if let Some(event) = event {
+            // Check for Event match in each of this State's Transitions
+            for transition in &self.transitions {
+                for transition_event in transition.events() {
+                    if transition_event == &event {
+                        enable_candidates.push(transition);
+                    }
+                }
+            }
+        }
+        // Handle evaluation of a "Null" Event
+        else {
+            // Check for eventless Transitions in this State
+            for transition in &self.transitions {
+                if transition.events().is_empty() {
                     enable_candidates.push(transition);
                 }
             }
