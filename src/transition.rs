@@ -41,7 +41,7 @@ use crate::{
 
 /// Represents a (single-target or multicast) transition from the current
 /// (source) state to a target state
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Transition {
     id:         TransitionId,
     events:     Vec<Event>,
@@ -50,7 +50,7 @@ pub struct Transition {
     target_ids: Vec<StateId>,
 }
 
-pub type TransitionId = &'static str;
+pub type TransitionId = String;
 
 /// Convenience alias for boolean expressions to be used as transition guards
 pub type Condition = fn() -> bool;
@@ -86,7 +86,8 @@ impl Transition {
     \*  *  *  *  *  *  *  */
 
     pub fn id(&self) -> TransitionId {
-        self.id
+        //TODO: Possible extraneous clone
+        self.id.clone()
     }
 
     pub fn events(&self) -> &Vec<Event> {
@@ -94,7 +95,7 @@ impl Transition {
     }
 
     pub fn source_id(&self) -> StateId {
-        self.source_id
+        self.source_id.clone()
     }
 
     pub fn target_ids(&self) -> Vec<StateId> {
@@ -117,9 +118,9 @@ impl Transition {
 
 
 impl TransitionBuilder {
-    pub fn new(id: TransitionId, source_state_id: StateId) -> Self {
+    pub fn new(source_state_id: StateId) -> Self {
         Self {
-            id,
+            id:         String::new(),
             events:     Vec::new(),
             cond:       || {true},
             cond_set:   false,
@@ -134,8 +135,19 @@ impl TransitionBuilder {
 
     pub fn build(self) -> Transition {
         //TODO: must have at least one of event, cond, or target
+
+        // Construct ID fingerprint
+        let mut fingerprint = String::new();
+        fingerprint.push_str(&self.source_id);
+        for target_id in &self.target_ids {
+            fingerprint.push_str(&target_id);
+        }
+        for event in &self.events {
+            fingerprint.push_str(&event.id());
+        }        
+
         Transition {
-            id:         self.id,
+            id:         fingerprint,
             events:     self.events,
             cond:       self.cond,
             source_id:  self.source_id,
@@ -254,11 +266,11 @@ mod builder_tests {
         let event = Event::from("event")?;
 
         // Verify that duplicate event is caught
-        let builder = TransitionBuilder::new("transition", "state")
-            .event(event)?;
+        let builder = TransitionBuilder::new(String::from("state"))
+            .event(event.clone())?;
 
         assert_eq!(
-            builder.event(event),
+            builder.event(event.clone()),
             Err(TransitionBuilderError::DuplicateEventId(event)),
             "Failed to catch duplicate event"
         );
@@ -268,13 +280,14 @@ mod builder_tests {
     
     #[test]
     fn duplicate_target() -> Result<(), Box<dyn Error>> {
+        //TODO: Extraneous clones
         // Verify that duplicate target is caught
-        let target_id = "target";
-        let builder = TransitionBuilder::new("transition", "source")
-            .target_id(target_id)?;
+        let target_id = String::from("target");
+        let builder = TransitionBuilder::new(String::from("source"))
+            .target_id(target_id.clone())?;
 
         assert_eq!(
-            builder.target_id(target_id),
+            builder.target_id(target_id.clone()),
             Err(TransitionBuilderError::DuplicateTargetId(target_id)),
             "Failed to catch duplicate target"
         );
@@ -284,12 +297,13 @@ mod builder_tests {
     
     #[test]
     fn source_target_collision() -> Result<(), Box<dyn Error>> {
+        //TODO: Extraneous clones
         // Verify that source-target collision is caught
-        let source_id = "source";
-        let builder = TransitionBuilder::new("transition", source_id);
+        let source_id = String::from("source");
+        let builder = TransitionBuilder::new(source_id.clone());
 
         assert_eq!(
-            builder.target_id(source_id),
+            builder.target_id(source_id.clone()),
             Err(TransitionBuilderError::SourceTargetCollision(source_id)),
             "Failed to catch source-target collision"
         );
@@ -300,7 +314,7 @@ mod builder_tests {
     #[test]
     fn condition_already_set() -> Result<(), Box<dyn Error>> {
         // Verify that already-set condition is caught
-        let builder = TransitionBuilder::new("transition", "source")
+        let builder = TransitionBuilder::new(String::from("source"))
             .cond(|| {true})?;
 
         assert_eq!(

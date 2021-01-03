@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       name="microwave"
+       version="1.0"
+       datamodel="ecmascript"
+       initial="off">
+
+  <state>
+    <!-- off state -->
+    <transition event="turn.on" target="on"/>
+  </state>
+  
+  <state id="on">
+    <transition event="turn.off" target="off"/>
+  </state>
+  
+</scxml>

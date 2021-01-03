@@ -45,7 +45,7 @@ use crate::{
 /// Represents a state within the statechart.
 /// 
 /// May contain one or more of: initial states, transitions, entry/exit callbacks, substates
-#[derive(Default, PartialEq)]
+#[derive(Clone, Default, PartialEq)]
 pub struct State {
     id:             StateId,
     substates:      Vec<State>,
@@ -56,7 +56,7 @@ pub struct State {
     on_exit:        Vec<Callback>,
 }
 
-pub type StateId = &'static str;
+pub type StateId = String;
 
 //OPT: *DESIGN* Would it be useful to specify an error type here? Even if it's just Box<dyn Error>?
 pub type Callback = fn() -> Result<(), ()>;
@@ -99,7 +99,7 @@ impl State {
     \*  *  *  *  *  *  *  */
 
     pub fn id(&self) -> StateId {
-        self.id
+        self.id.clone()
     }
 
     pub fn is_active(&self) -> bool {
@@ -255,6 +255,7 @@ impl StateBuilder {
      *  Builder Methods   *
     \*  *  *  *  *  *  *  */
 
+    //TODO: Make this a non-consuming Builder
     pub fn build(mut self) -> Result<State, StateBuilderError> {
         // Sanity checks for child states, if they exist
         if !self.substates.is_empty() {
@@ -266,7 +267,8 @@ impl StateBuilder {
             // Ensure that initial ID matches a child State
             let mut child_matched = false;
             for substate in &self.substates {
-                if substate.id() == self.initial_id.unwrap() {
+                //TODO: Initial ID cannot be copied due to StateId == String. should be &str
+                if substate.id() == self.initial_id.clone().unwrap() {
                     child_matched = true;
                 }
             }
@@ -460,38 +462,38 @@ mod tests {
 
     #[test]
     fn failed_condition() -> Result<(), Box<dyn Error>> {
+        //TODO: extraneous clone()s
         // Define Event and State IDs
         let go_to_unreachable = Event::from("go_to_unreachable")?;
-        let initial_state_id = "INITIAL";
-        let unreachable_state_id = "UNREACHABLE";
+        let initial_state_id = String::from("INITIAL");
+        let unreachable_state_id = String::from("UNREACHABLE");
 
         // Build initial->unreachable Transition
-        let initial_to_unreachable_id = "initial_to_unreachable";
-        let initial_to_unreachable = TransitionBuilder::new(initial_to_unreachable_id, initial_state_id)
-            .event(go_to_unreachable)?
+        let initial_to_unreachable = TransitionBuilder::new(initial_state_id.clone())
+            .event(go_to_unreachable.clone())?
             .cond(always_false)?
-            .target_id(unreachable_state_id)?
+            .target_id(unreachable_state_id.clone())?
             .build();
 
             
         // Build States
         let initial = StateBuilder::new(initial_state_id)
-            .transition(initial_to_unreachable)?
+            .transition(initial_to_unreachable.clone())?
             .build()?;
         let unreachable = StateBuilder::new(unreachable_state_id).build()?;
 
         // Build StateChart
-        let mut hapless_statechart = StateChartBuilder::new("hapless")
+        let mut hapless_statechart = StateChartBuilder::new(String::from("hapless"))
             .initial(initial.id())
             .state(initial)?
             .state(unreachable)?
-            .event(go_to_unreachable)?
+            .event(go_to_unreachable.clone())?
             .build().unwrap();
 
         // Broadcast the event and verify that the transition failed its guard condition
         assert_eq!(
             hapless_statechart.process_external_event(go_to_unreachable),
-            Err(StateChartError::StateError(StateError::FailedConditions(vec![initial_to_unreachable_id]))),
+            Err(StateChartError::StateError(StateError::FailedConditions(vec![initial_to_unreachable.id()]))),
             "Failed to detect failed Transition due to failed Condition." 
         );
 
@@ -500,15 +502,16 @@ mod tests {
 
     #[test]
     fn failed_on_exit() -> Result<(), Box<dyn Error>> {
+        //TODO: Extraneous clones
         // Define Event and State IDs
         let initial_to_terminal = Event::from("initial_to_terminal")?;
-        let initial_state_id = "INITIAL";
-        let terminal_state_id = "TERMINAL";
+        let initial_state_id = String::from("INITIAL");
+        let terminal_state_id = String::from("TERMINAL");
 
         // Build Transition
-        let hapless_transition = TransitionBuilder::new("hapless", initial_state_id)
-            .event(initial_to_terminal)?
-            .target_id(terminal_state_id)?
+        let hapless_transition = TransitionBuilder::new(initial_state_id.clone())
+            .event(initial_to_terminal.clone())?
+            .target_id(terminal_state_id.clone())?
             .build();
 
         // Build States, one of which will fail its 2nd on_exit callback
@@ -520,11 +523,11 @@ mod tests {
         let terminal = StateBuilder::new(terminal_state_id).build()?;
         
         // Build the StateChart and process the Event
-        let mut statechart = StateChartBuilder::new("failed_on_exit")
+        let mut statechart = StateChartBuilder::new(String::from("failed_on_exit"))
             .initial(initial.id())
             .state(initial)?
             .state(terminal)?
-            .event(initial_to_terminal)?
+            .event(initial_to_terminal.clone())?
             .build().unwrap();
         
         assert_eq!(
@@ -541,13 +544,13 @@ mod tests {
     fn failed_on_entry() -> Result<(), Box<dyn Error>> {
         // Define Event and State IDs
         let initial_to_terminal = Event::from("initial_to_terminal")?;
-        let initial_state_id = "INITIAL";
-        let terminal_state_id = "TERMINAL";
+        let initial_state_id = String::from("INITIAL");
+        let terminal_state_id = String::from("TERMINAL");
 
         // Build Transition
-        let hapless_transition = TransitionBuilder::new("hapless", initial_state_id)
-            .event(initial_to_terminal)?
-            .target_id(terminal_state_id)?
+        let hapless_transition = TransitionBuilder::new(initial_state_id.clone())
+            .event(initial_to_terminal.clone())?
+            .target_id(terminal_state_id.clone())?
             .build();
 
         // Build States, one of which will fail its 2nd on_entry callback
@@ -560,11 +563,11 @@ mod tests {
             .build()?;
         
         // Build the StateChart and process the Event
-        let mut statechart = StateChartBuilder::new("failed_on_entry")
+        let mut statechart = StateChartBuilder::new(String::from("failed_on_entry"))
             .initial(initial.id())
             .state(initial)?
             .state(terminal)?
-            .event(initial_to_terminal)?
+            .event(initial_to_terminal.clone())?
             .build().unwrap();
         
         assert_eq!(
@@ -592,20 +595,20 @@ mod builder_tests {
 
     #[test]
     fn duplicate_transition() -> Result<(), Box<dyn Error>> {
-        let state_id = "source";
-        let transition_id = "transition";
+        let state_id = String::from("source");
 
         // Build Transitions to be duplicated
-        let original_transition = TransitionBuilder::new(transition_id, state_id).build();
-        let duplicate_transition = TransitionBuilder::new(transition_id, state_id).build();
+        //TODO: extraneous clone()s
+        let original_transition = TransitionBuilder::new(state_id.clone()).build();
+        let duplicate_transition = TransitionBuilder::new( state_id.clone()).build();
 
         // Verify the duplicate transition is caught
         let builder = StateBuilder::new(state_id)
-            .transition(original_transition)?;
+            .transition(original_transition.clone())?;
 
         assert_eq!(
             builder.transition(duplicate_transition),
-            Err(StateBuilderError::DuplicateTransition(transition_id)),
+            Err(StateBuilderError::DuplicateTransition(original_transition.id())),
             "Failed to catch duplicate Transition"
         );
 
@@ -614,20 +617,20 @@ mod builder_tests {
 
     #[test]
     fn source_mismatch() -> Result<(), Box<dyn Error>> {
-        let correct_source_id = "source";
-        let wrong_source_id = "wrong";
-        let transition_id = "transition";
+        //TODO: Extraneous clones
+        let correct_source_id = String::from("source");
+        let wrong_source_id = String::from("wrong");
 
         // Build Transition with an incorrect source
-        let transition = TransitionBuilder::new(transition_id, wrong_source_id).build();
+        let transition = TransitionBuilder::new(wrong_source_id.clone()).build();
 
         // Verify mismatch is caught
         let builder = StateBuilder::new(correct_source_id)
-            .transition(transition)?;
+            .transition(transition.clone())?;
         
         assert_eq!(
             builder.build(),
-            Err(StateBuilderError::TransitionSourceMismatch(transition_id, wrong_source_id)),
+            Err(StateBuilderError::TransitionSourceMismatch(transition.id(), wrong_source_id)),
             "Failed to catch source State mismatch"
         );
 
@@ -636,24 +639,25 @@ mod builder_tests {
 
     #[test]
     fn duplicate_substate() -> Result<(), Box<dyn Error>> {
+        //TODO: Extraneous clones()
         // Verify that duplicates of parent state are caught
-        let parent_id  = "parent";
-        let parent_dup_state = StateBuilder::new(parent_id).build()?;
+        let parent_id  = String::from("parent");
+        let parent_dup_state = StateBuilder::new(parent_id.clone()).build()?;
 
-        let parent_dup_builder = StateBuilder::new(parent_id);
+        let parent_dup_builder = StateBuilder::new(parent_id.clone());
 
         assert_eq!(
             parent_dup_builder.substate(parent_dup_state),
-            Err(StateBuilderError::DuplicateSubstate(parent_id)),
+            Err(StateBuilderError::DuplicateSubstate(parent_id.clone())),
             "Failed to catch substate duplicate of parent"
         );
 
         // Verify that duplicate substates are caught
-        let duplicate_id = "duplicate";
-        let dup_state_a = StateBuilder::new(duplicate_id).build()?;
-        let dup_state_b = StateBuilder::new(duplicate_id).build()?;
+        let duplicate_id = String::from("duplicate");
+        let dup_state_a = StateBuilder::new(duplicate_id.clone()).build()?;
+        let dup_state_b = StateBuilder::new(duplicate_id.clone()).build()?;
 
-        let substate_dup_builder = StateBuilder::new("parent")
+        let substate_dup_builder = StateBuilder::new(parent_id)
             .substate(dup_state_a)?;
 
         assert_eq!(
@@ -667,13 +671,14 @@ mod builder_tests {
 
     #[test]
     fn initial_not_child() -> Result<(), Box<dyn Error>> {
-        let nonchild_id = "nonchild";
+        //TODO: Extraneous clones()
+        let nonchild_id = String::from("nonchild");
 
-        let child = StateBuilder::new("child").build()?;
+        let child = StateBuilder::new(String::from("child")).build()?;
 
-        let builder = StateBuilder::new("parent")
+        let builder = StateBuilder::new(String::from("parent"))
             .substate(child)?
-            .initial(nonchild_id);
+            .initial(nonchild_id.clone());
 
         assert_eq!(
             builder.build(),

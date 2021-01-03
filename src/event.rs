@@ -36,25 +36,15 @@ use std::{
 
 
 ///////////////////////////////////////////////////////////////////////////////
-//  Named Constants
-///////////////////////////////////////////////////////////////////////////////
-
-const MAX_ID_NODES: usize = 8;
-
-const EMPTY_ID_NODE_ARRAY: EventIdNodeArray = [""; MAX_ID_NODES];
-
-
-///////////////////////////////////////////////////////////////////////////////
 //  Data Structures
 ///////////////////////////////////////////////////////////////////////////////
 
 //TODO: Need to align this struct with §5.10.1
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Event {
-    id_nodes:   EventIdNodeArray,
+    id_nodes:   Vec<String>,
     event_type: EventType,
 }
-type EventIdNodeArray = [&'static str; MAX_ID_NODES];
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum EventType {
@@ -65,9 +55,8 @@ pub enum EventType {
 
 #[derive(Debug, PartialEq)]
 pub enum EventError {
-    IdExceedsMaxNodes(&'static str),
-    IdContainsDuplicates(&'static str),
-    IdNodeIsEmpty(&'static str, usize),
+    IdContainsDuplicates(String),
+    IdNodeIsEmpty(String, usize),
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -75,18 +64,13 @@ pub enum EventError {
 ///////////////////////////////////////////////////////////////////////////////
 
 impl Event {
-    pub fn from(source_str: &'static str) -> Result<Self, EventError> {
+    pub fn from(source_str: &str) -> Result<Self, EventError> {
         let source_nodes: Vec<&str> = source_str.split('.').collect();
-
-        // Ensure node count does not exceed max
-        if source_nodes.len() > MAX_ID_NODES {
-            return Err(EventError::IdExceedsMaxNodes(source_str));
-        }
-
+        
         // Ensure no node is empty
         for (idx, node) in source_nodes.iter().enumerate() {
             if node.is_empty() {
-                return Err(EventError::IdNodeIsEmpty(source_str, idx));
+                return Err(EventError::IdNodeIsEmpty(String::from(source_str), idx));
             }
         }
         
@@ -95,13 +79,13 @@ impl Event {
         deduped_nodes.sort_unstable();
         deduped_nodes.dedup();
         if source_nodes.len() != deduped_nodes.len() {
-            return Err(EventError::IdContainsDuplicates(source_str));
+            return Err(EventError::IdContainsDuplicates(String::from(source_str)));
         }
 
         // Checks passed, compose the array
-        let mut composed_nodes: EventIdNodeArray = EMPTY_ID_NODE_ARRAY;
-        for (idx, node) in source_nodes.iter().enumerate() {
-            composed_nodes[idx] = *node;
+        let mut composed_nodes = Vec::new();
+        for node in source_nodes.iter() {
+            composed_nodes.push(String::from(*node));
         }
 
         Ok(
@@ -111,6 +95,21 @@ impl Event {
                                                  //TODO: Need to figure out how to pass the "origin" info to this module
             }
         )
+    }
+    
+
+    /*  *  *  *  *  *  *  *\
+     *  Accessor Methods  *
+    \*  *  *  *  *  *  *  */
+
+    pub fn id(&self) -> String {
+        let mut composed_id = String::new();
+
+        for node in &self.id_nodes {
+            composed_id.push_str(node);
+        }
+
+        composed_id
     }
 }
 
@@ -151,9 +150,6 @@ impl Error for EventError {}
 impl fmt::Display for EventError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::IdExceedsMaxNodes(source) => {
-                write!(f, "source string '{}' exceeds maximum ID node count of {}", source, MAX_ID_NODES)
-            },
             Self::IdContainsDuplicates(source) => {
                 write!(f, "source string '{}' contains duplicate ID nodes", source)
             },
@@ -179,18 +175,6 @@ mod tests {
 
 
     #[test]
-    fn id_exceeds_max_nodes() {
-        let too_many_nodes = "this.is.way.too.many.nodes.it.will.fail";
-
-        // Verify that excessive nodes are caught
-        assert_eq!(
-            Event::from(too_many_nodes),
-            Err(EventError::IdExceedsMaxNodes(too_many_nodes)),
-            "Failed to catch excessive ID nodes"
-        );
-    }
-
-    #[test]
     fn id_contains_duplicates() {
         let valid_string = "error.send.failed";
         let invalid_string = "error.send.error";
@@ -205,7 +189,7 @@ mod tests {
         // Verify invalid string handling
         assert_eq!(
             Event::from(invalid_string),
-            Err(EventError::IdContainsDuplicates(invalid_string)),
+            Err(EventError::IdContainsDuplicates(String::from(invalid_string))),
             "Failed to reject invalid event descriptor"
         );
     }
@@ -217,7 +201,7 @@ mod tests {
         // Verify empty node is caught
         assert_eq!(
             Event::from(empty_node),
-            Err(EventError::IdNodeIsEmpty(empty_node, 3)),
+            Err(EventError::IdNodeIsEmpty(String::from(empty_node), 3)),
             "Failed to catch empty node"
         );
     }

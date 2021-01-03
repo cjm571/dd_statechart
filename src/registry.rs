@@ -49,7 +49,7 @@ use crate::{
 //  Data Structures
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Registry {
     states: Vec<State>,
     events: Vec<Event>,
@@ -193,7 +193,6 @@ impl fmt::Display for RegistryError {
 
 #[cfg(test)]
 mod tests {
-
     use std::error::Error;
 
     use crate::{
@@ -208,14 +207,15 @@ mod tests {
         },
     };
 
+
     #[test]
     fn already_registered() -> Result<(), Box<dyn Error>> {
         // Create States and Events to be double-registered
         let state_id = "state";
         let event_id = "event";
 
-        let state_a = StateBuilder::new(state_id).build()?;
-        let state_b = StateBuilder::new(state_id).build()?;
+        let state_a = StateBuilder::new(String::from(state_id)).build()?;
+        let state_b = StateBuilder::new(String::from(state_id)).build()?;
         let event_a = Event::from(event_id)?;
         let event_b = Event::from(event_id)?;
 
@@ -227,7 +227,7 @@ mod tests {
             "Valid State registration failed"
         );
         assert_eq!(
-            registry.register_event(event_a),
+            registry.register_event(event_a.clone()),
             Ok(()),
             "Valid Event registration failed"
         );
@@ -235,7 +235,7 @@ mod tests {
         // Verify that double-registration fails for both elements
         assert_eq!(
             registry.register_state(state_b),
-            Err(RegistryError::StateAlreadyRegistered(state_id)),
+            Err(RegistryError::StateAlreadyRegistered(String::from(state_id))),
             "Failed to reject State double-registration"
         );
         assert_eq!(
@@ -253,19 +253,19 @@ mod tests {
         let mut registry = Registry::default();
 
         assert_eq!(
-            registry.get_state("nonexistent"),
+            registry.get_state(String::from("nonexistent")),
             None,
             "get_state() somehow found a nonexistent State"
         );
 
         assert_eq!(
-            registry.get_mut_state("nonexistent"),
+            registry.get_mut_state(String::from("nonexistent")),
             None,
             "get_mut_state() somehow found a nonexistent State"
         );
 
         assert_eq!(
-            registry.get_transition("nonexistent"),
+            registry.get_transition(String::new()),
             None,
            "get_transition() somehow found a nonexistent Transition"
         );

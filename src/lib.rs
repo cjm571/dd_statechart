@@ -34,22 +34,25 @@ Purpose:
         Omitted IDs shall be treated as errors, and the input SCXML shall be
         rejected.
 
-    2) §3.3.2 [<state>] Children
+    2) §3.3.1 [<state>] Attribute Details
+        The 'id' field shall be required for all <state> elements.
+
+    3) §3.3.2 [<state>] Children
          “<datamodel> Defines part or all of the data model. Occurs 0 or
           1 times. See 5.2 <datamodel>
           <invoke> Invokes an external service. Occurs 0 or more times.
           See 6.4 <invoke> for 	details.”
         <datamodel> amd <invoke> items shall not be supported.
 
-    3) §3.7 <final>
+    4) §3.7 <final>
         Final States shall not be supported. Embedded systems are designed to
         run continuously, and therefore should not enter a state that cannot
         be exited.
-    3a) §5.5 <donedata>
+    4a) §5.5 <donedata>
         This element shall not be supported, as it is triggered by entering a
         Final State, which is not supported.
 
-    4) §3.2.1 [<scxml>] Attribute Details - `initial` Description
+    5) §3.2.1 [<scxml>] Attribute Details - `initial` Description
          "The id of the initial state(s) for the document. If not specified, 
           the default initial state is the first child state in document order."
         Multiple initial states shall not be supported.
@@ -61,6 +64,8 @@ Purpose:
        in a vector will be the first item in document order.
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+#![feature(const_in_array_repeat_expressions)]
 
 use std::{
     collections::VecDeque,
@@ -106,13 +111,13 @@ use crate::{
 /// Contains a list of all nodes and events that make up the statechart.
 #[derive(PartialEq)]
 pub struct StateChart {
-    sys_vars:       SystemVariables,
     initial:        Option<StateId>,
-    registry:       Registry,
     internal_queue: VecDeque<Event>,
+    registry:       Registry,
+    sys_vars:       SystemVariables,
 }
 
-pub type StateChartId = &'static str;
+pub type StateChartId = String;
 
 #[derive(Debug, PartialEq)]
 pub enum StateChartError {
@@ -122,9 +127,9 @@ pub enum StateChartError {
 
 #[derive(Debug, PartialEq)]
 pub struct StateChartBuilder {
-    id:         StateChartId,
     initial:    Option<StateId>,
     registry:   Registry,
+    sys_vars:   SystemVariables,
 }
 
 #[derive(Debug, PartialEq)]
@@ -156,12 +161,12 @@ impl StateChart {
 
     pub fn process_external_event(&mut self, event: Event) -> Result<(), StateChartError> {
         // Ensure the given Event is registered
-        if !self.registry.event_is_registered(event) {
+        if !self.registry.event_is_registered(event.clone()) {
             return Err(StateChartError::ReceivedUnregisteredEvent(event));
         }
 
         // Set the _event System Variable to the given Event
-        self.sys_vars.set_event(event);
+        self.sys_vars.set_event(event.clone());
         
         // Collect and process the set of enabled Transitions
         let mut enabled_transition_ids = self.select_transitions(Some(event))?;
@@ -187,7 +192,7 @@ impl StateChart {
                 let internal_event = self.internal_queue.pop_front().unwrap();
 
                 // Set the _event System Variable to the internal Event
-                self.sys_vars.set_event(internal_event);
+                self.sys_vars.set_event(internal_event.clone());
 
                 // Select transitions for the internal Event and return to top of the loop
                 enabled_transition_ids = self.select_transitions(Some(internal_event))?;
@@ -207,10 +212,10 @@ impl StateChart {
         let mut enabled_transitions = Vec::new();
 
         // Traverse the map of states and send the event to each for evaluation
-        for state_id in &self.registry.get_active_state_ids() {
+        for state_id in self.registry.get_active_state_ids() {
             let state = self.registry.get_state(state_id).unwrap();
 
-            if let Some(enabled_transition) = state.evaluate_event(event)? {
+            if let Some(enabled_transition) = state.evaluate_event(event.clone())? {
                 enabled_transitions.push(enabled_transition);
             }
         }
@@ -232,7 +237,8 @@ impl StateChart {
         // Exit source State(s) in "Exit Order"
         for transition_id in exit_sorted_transition_ids {
             // Only operate on Transitions with targets
-            if !self.registry.get_transition(transition_id).unwrap().target_ids().is_empty() {
+            //TODO: Possible extraneous clone
+            if !self.registry.get_transition(transition_id.clone()).unwrap().target_ids().is_empty() {
                 let source_state_id = self.registry.get_transition(transition_id).unwrap().source_id();
                 let source_state = self.registry.get_mut_state(source_state_id).unwrap();
 
@@ -243,7 +249,7 @@ impl StateChart {
         //TODO: Perform executable content of Transition(s)
         
         //TODO: Sort transition source states into entry order, for now, just copying as-is
-        let entry_sorted_transition_ids = enabled_transition_ids.clone();
+        let entry_sorted_transition_ids = enabled_transition_ids;
 
         // Enter target State(s) in "Entry Order"
         for transition_id in entry_sorted_transition_ids {
@@ -263,9 +269,9 @@ impl StateChart {
 impl StateChartBuilder {
     pub fn new(id: StateChartId) -> Self {
         Self {
-            id,
             initial:  None,
             registry: Registry::default(),
+            sys_vars: SystemVariables::new(id),
         }
     }
 
@@ -274,7 +280,7 @@ impl StateChartBuilder {
      *  Builder Methods   *
     \*  *  *  *  *  *  *  */
     
-    pub fn build(mut self) -> Result<StateChart, StateChartBuilderError> {
+    pub fn build(&mut self) -> Result<StateChart, StateChartBuilderError> {
         // Ensure at least one State has been registered
         if self.registry.get_all_state_ids().is_empty() {
             return Err(StateChartBuilderError::NoStatesRegistered);
@@ -282,11 +288,12 @@ impl StateChartBuilder {
         
         // If no initial State ID was provided, set to first doc-order child
         if self.initial.is_none() {
-            self.initial = Some(self.registry.get_all_state_ids().first().unwrap());
+            self.initial = Some(self.registry.get_all_state_ids().first().unwrap().clone());
         }
 
         // Activate the Initial State
-        if let Some(state) = self.registry.get_mut_state(self.initial.unwrap()) {
+        //TODO: Initial cannot be copied due to StateId being a String. should be made into a &str
+        if let Some(state) = self.registry.get_mut_state(self.initial.clone().unwrap()) {
             state.activate()
             //TODO: Probably gotta recurse here for sub-states
             //      Or not? maybe the activate function could do that...
@@ -294,34 +301,39 @@ impl StateChartBuilder {
         else {
             // Initial State was not found in the Registry, therefore the StateChart is invalid.
             //TODO: must also be a top-level state
-            return Err(StateChartBuilderError::InitialStateNotRegistered(self.initial.unwrap()));
+            return Err(StateChartBuilderError::InitialStateNotRegistered(self.initial.clone().unwrap()));
         }
         
         Ok(
             StateChart {
-                sys_vars:       SystemVariables::new(self.id),
-                initial:        self.initial,
-                registry:       self.registry,
+                sys_vars:       self.sys_vars.clone(),
+                initial:        self.initial.clone(),
+                registry:       self.registry.clone(),
                 internal_queue: VecDeque::new(),
             }
         )
     }
 
-    pub fn state(mut self, state: State) -> Result<Self, RegistryError>{
+    pub fn state(&mut self, state: State) -> Result<&mut Self, RegistryError>{
         self.registry.register_state(state)?;
 
         Ok(self)
     }
 
-    pub fn event(mut self, event: Event) -> Result<Self, RegistryError> {
+    pub fn event(&mut self, event: Event) -> Result<&mut Self, RegistryError> {
         self.registry.register_event(event)?;
 
         Ok(self)
     }
 
-    //OPT: *DESIGN* should push a single ID into the vec and check for duplicates
-    pub fn initial(mut self, initial: StateId) -> Self {
+    pub fn initial(&mut self, initial: StateId) -> &mut Self {
         self.initial = Some(initial);
+
+        self
+    }
+
+    pub fn data_member(&mut self, id: String, value: u32) -> &mut Self {
+        self.sys_vars.set_data_member(id, value);
 
         self
     }
@@ -413,40 +425,41 @@ mod tests {
 
     #[test]
     fn theia() -> Result<(), Box<dyn Error>>  {
+        //TODO: Extraneous clones
         // Define Event and State IDs for reference
         let go_to_non_imaging   = Event::from("go_to_non_imaging")?;
-        let idle_id             = "IDLE";
-        let diagnostic_id       = "DIAGNOSTIC";
-        let non_imaging_id      = "NON-IMAGING";
-        let imaging_standby_id  = "IMAGING STANDBY";
-        let imaging_id          = "IMAGING";
+        let idle_id             = String::from("IDLE");
+        let diagnostic_id       = String::from("DIAGNOSTIC");
+        let non_imaging_id      = String::from("NON-IMAGING");
+        let imaging_standby_id  = String::from("IMAGING STANDBY");
+        let imaging_id          = String::from("IMAGING");
 
         // Build Transitions
-        let idle_to_non_imaging = TransitionBuilder::new("idle_to_non-imaging", idle_id)
-            .event(go_to_non_imaging)?
-            .target_id(non_imaging_id)?
+        let idle_to_non_imaging = TransitionBuilder::new(idle_id.clone())
+            .event(go_to_non_imaging.clone())?
+            .target_id(non_imaging_id.clone())?
             .build();
 
         // Build States
-        let idle            = StateBuilder::new(idle_id)
+        let idle            = StateBuilder::new(idle_id.clone())
             .transition(idle_to_non_imaging)?
             .build()?;
 
         let diagnostic      = StateBuilder::new(diagnostic_id).build()?;
-        let non_imaging     = StateBuilder::new(non_imaging_id).build()?;
+        let non_imaging     = StateBuilder::new(non_imaging_id.clone()).build()?;
         let imaging_standby = StateBuilder::new(imaging_standby_id).build()?;
         let imaging         = StateBuilder::new(imaging_id).build()?;
 
         // Build statechart
-        let mut statechart = StateChartBuilder::new("theia")
+        let mut statechart = StateChartBuilder::new(String::from("theia"))
             .initial(idle.id())
             .state(idle)?
             .state(diagnostic)?
             .state(non_imaging)?
             .state(imaging_standby)?
             .state(imaging)?
-            .event(go_to_non_imaging)?
-            .build().unwrap();
+            .event(go_to_non_imaging.clone())?
+            .build()?;
 
         // Broadcast a Go To Non-Imaging event
         statechart.process_external_event(go_to_non_imaging)?;
@@ -460,14 +473,15 @@ mod tests {
 
     #[test]
     fn duplicate_state_id() -> Result<(), Box<dyn Error>>  {
+        //TODO: Extraneous clones
         // Define states with duplicate IDs
-        let duplicate_id = "duplicate";
-        let duplicate_a = StateBuilder::new(duplicate_id).build()?;
-        let duplicate_b = StateBuilder::new(duplicate_id).build()?;
+        let duplicate_id = String::from("duplicate");
+        let duplicate_a = StateBuilder::new(duplicate_id.clone()).build()?;
+        let duplicate_b = StateBuilder::new(duplicate_id.clone()).build()?;
 
         // Create the statechart object and add states to it
-        let statechart_builder = StateChartBuilder::new("duplicate_chart")
-            .state(duplicate_a)?;
+        let mut statechart_builder = StateChartBuilder::new(String::from("duplicate_chart"));
+        statechart_builder.state(duplicate_a)?;
 
         // Verify that adding the duplicate ID results in an error
         assert_eq!(
@@ -484,15 +498,15 @@ mod tests {
         // Create an event but don't register it
         let unregistered_event = Event::from("unregistered")?;
 
-        let state = StateBuilder::new("state").build()?;
+        let state = StateBuilder::new(String::from("state")).build()?;
 
-        let mut statechart = StateChartBuilder::new("statechart")
+        let mut statechart = StateChartBuilder::new(String::from("statechart"))
             .state(state)?
             .build()?;
 
         // Verify the unregistered event is rejected
         assert_eq!(
-            statechart.process_external_event(unregistered_event),
+            statechart.process_external_event(unregistered_event.clone()),
             Err(StateChartError::ReceivedUnregisteredEvent(unregistered_event)),
             "Failed to reject an unregistered event"
         );
@@ -502,20 +516,21 @@ mod tests {
 
     #[test]
     fn eventless_transition() -> Result<(), Box<dyn Error>> {
-        let start_id = "start";
-        let end_id = "end";
+        //TODO: Extraneous clones
+        let start_id = String::from("start");
+        let end_id = String::from("end");
 
         // Create an event for the eventful Transition
         let event_id = "test.event";
         let event = Event::from(event_id)?;
 
-        let eventful = TransitionBuilder::new("eventful", start_id)
-            .event(event)?
+        let eventful = TransitionBuilder::new(start_id.clone())
+            .event(event.clone())?
             .build();
 
         // Create the eventless Transition
-        let eventless = TransitionBuilder::new("eventless", start_id)
-            .target_id(end_id)?
+        let eventless = TransitionBuilder::new(start_id.clone())
+            .target_id(end_id.clone())?
             .build();
 
         // Create a State using the 2 Transitions
@@ -525,13 +540,13 @@ mod tests {
             .build()?;
         
         // Create target State
-        let end = StateBuilder::new(end_id).build()?;
+        let end = StateBuilder::new(end_id.clone()).build()?;
 
         // Create a StateChart containing all of the above
-        let mut statechart = StateChartBuilder::new("statechart")
+        let mut statechart = StateChartBuilder::new(String::from("statechart"))
             .state(start)?
             .state(end)?
-            .event(event)?
+            .event(event.clone())?
             .build()?;
         
         // Send the test Event to the statechart, and verify that the eventless transition is also executed
@@ -561,11 +576,12 @@ mod builder_tests {
     #[test]
     fn initial_state_not_registered() -> Result<(), Box<dyn Error>> {
         // Create states, one will be registered the other will not
-        let unregistered = StateBuilder::new("unregistered").build()?;
-        let registered = StateBuilder::new("registered").build()?;
+        let unregistered = StateBuilder::new(String::from("unregistered")).build()?;
+        let registered = StateBuilder::new(String::from("registered")).build()?;
 
         // Attempt to build a StateChart with an unregistered initial ID
-        let invalid_builder = StateChartBuilder::new("invalid")
+        let mut invalid_builder = StateChartBuilder::new(String::from("invalid"));
+        invalid_builder
             .state(registered)?
             .initial(unregistered.id());
 
@@ -582,7 +598,7 @@ mod builder_tests {
     fn no_states_registered() -> Result<(), Box<dyn Error>> {
         
         assert_eq!(
-            StateChartBuilder::new("no_states").build(),
+            StateChartBuilder::new(String::from("no_states")).build(),
             Err(StateChartBuilderError::NoStatesRegistered),
             "Failed to catch that no states were registered"
         );

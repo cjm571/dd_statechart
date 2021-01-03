@@ -21,8 +21,6 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-extern crate uuid;
-
 use std::collections::HashMap;
 
 use crate::{
@@ -37,13 +35,13 @@ use uuid::Uuid;
 //  Data Structures
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SystemVariables {
     _event:         Option<Event>,
     _sessionid:     Uuid,
     _name:          StateChartId,
     _ioprocessors:  Vec<String>,
-    _x:             DataMembers,
+    _x:             HashMap<String, u32>,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -64,7 +62,7 @@ impl SystemVariables {
             _sessionid:     Uuid::new_v4(),
             _name:          name,
             _ioprocessors:  Vec::new(),
-            _x:             DataMembers::default()
+            _x:             HashMap::default()
         }
     }
 
@@ -74,7 +72,12 @@ impl SystemVariables {
     \*  *  *  *  *  *  *  */
 
     pub fn _event(&self) -> Option<Event> {
-        self._event
+        if let Some(event) = &self._event {
+            Some(event.clone())
+        }
+        else {
+            None
+        }
     }
 
 
@@ -84,5 +87,10 @@ impl SystemVariables {
 
     pub fn set_event(&mut self, event: Event) {
         self._event = Some(event);
+    }
+
+    pub fn set_data_member(&mut self, id: String, value: u32) {
+        //OPT: *DESIGN* Gracefully handle this Option
+        self._x.insert(id, value);
     }
 }
