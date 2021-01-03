@@ -65,8 +65,6 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#![feature(const_in_array_repeat_expressions)]
-
 use std::{
     collections::VecDeque,
     error::Error,
