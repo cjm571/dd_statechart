@@ -27,26 +27,27 @@ use std::{
     error::Error,
     fmt,
     fs,
-    path::Path,
+    io::Read,
 };
 
 use crate::{
     StateChart,
     StateChartBuilder,
+    StateChartBuilderError,
     event::{
         Event,
         EventError,
     },
+    registry::RegistryError,
     state::{
         StateBuilder,
+        StateBuilderError,
         StateId,
-    },
-    transition::{
+    }, transition::{
         Transition,
         TransitionBuilder,
         TransitionBuilderError,
-    },
-};
+    }};
 
 use uuid::Uuid;
 
@@ -64,8 +65,10 @@ const VALID_DATAMODEL: &str = "ecmascript";
 //  Data Structures
 ///////////////////////////////////////////////////////////////////////////////
 
-//TODO: Investigate whether it's necessary for this to be an object
+#[derive(Debug, PartialEq)]
 pub struct Parser {
+    path:               String,
+    content:            String,
     statechart_builder: StateChartBuilder,
 }
 
@@ -75,10 +78,16 @@ pub enum ParserError {
     InvalidScxmlNamespace(String),
     InvalidScxmlVersion(String),
     InvalidDataModel(String),
+    InvalidDataItem(roxmltree::NodeId),
     StateHasNoId(roxmltree::NodeId),
 
     // Wrappers
     EventError(EventError),
+    IoError(std::io::ErrorKind),
+    RegistryError(RegistryError),
+    RoxmlTreeError(roxmltree::Error),
+    StateBuilderError(StateBuilderError),
+    StateChartBuilderError(StateChartBuilderError),
     TransitionBuilderError(TransitionBuilderError),
 }
 
@@ -93,11 +102,25 @@ pub enum ValidElementClass {
 ///////////////////////////////////////////////////////////////////////////////
 
 impl Parser {
-    pub fn parse<P: AsRef<Path>>(&mut self, path: P) -> Result<StateChart, ParserError> {
-        // Read the file into a string for use by the XML parser
-        //OPT: *DESIGN* Do something smarter than unwrap here
-        let content = fs::read_to_string(path).unwrap();
-        let parsed_content = roxmltree::Document::parse(content.as_str()).unwrap();
+    /// Creates a new Parser object for the SCXML file at the given path.
+    pub fn new(path: &str) -> Result<Self, ParserError> {
+        // Attempt to open the file at the given path
+        let mut file = fs::File::open(path)?;
+        let mut file_contents = String::new();
+        file.read_to_string(&mut file_contents)?;
+        
+        Ok(
+            Self {
+                path:               String::from(path),
+                content:            file_contents,
+                statechart_builder: StateChartBuilder::default(),
+            }
+        )
+    }
+
+    pub fn parse(&mut self) -> Result<StateChart, ParserError> {
+        // Parse contents of the SCXML file into an roxmltree::Document
+        let parsed_content = roxmltree::Document::parse(self.content.as_str())?;
 
         // Ensure the document is properly structured
         Self::validate_structure(&parsed_content)?;
@@ -106,11 +129,11 @@ impl Parser {
 
         // Get StateChart name from <scxml>, if specified
         if let Some(chart_name) = parsed_content.root_element().attribute("name") {
-            self.statechart_builder = StateChartBuilder::new(String::from(chart_name));
+            self.statechart_builder.name(chart_name);
         }
         else {
             // Name was not specified, generate a UUID
-            self.statechart_builder = StateChartBuilder::new(Uuid::new_v4().to_string());
+            self.statechart_builder.name(Uuid::new_v4().to_string().as_str());
         }
 
         // Begin iterating through the parsed content
@@ -122,8 +145,7 @@ impl Parser {
             }
         }
 
-        //OPT: *DESIGN* Do something smarter than unwrap here
-        Ok(self.statechart_builder.build().unwrap())
+        Ok(self.statechart_builder.build()?)
     }
 
 
@@ -173,21 +195,35 @@ impl Parser {
     fn parse_element(element: roxmltree::Node, statechart_builder: &mut StateChartBuilder) -> Result<(), ParserError> {
         // Match the element class to the appropriate handling function
         match ValidElementClass::from(element.tag_name().name()) {
-            ValidElementClass::DataModel    => Self::parse_datamodel(element, statechart_builder),
+            ValidElementClass::DataModel    => Self::parse_datamodel(element, statechart_builder)?,
             ValidElementClass::State        => Self::parse_state(element, statechart_builder)?,
         }
 
         Ok(())
     }
 
-    fn parse_datamodel(element: roxmltree::Node, statechart_builder: &mut StateChartBuilder) {
+    fn parse_datamodel(element: roxmltree::Node, statechart_builder: &mut StateChartBuilder) -> Result<(), ParserError> {
         // Collect all <data> children
         for child in element.children() {
             // Skip text and comment nodes
             if !child.is_comment() && !child.is_text() {
+                let id;
+                if let Some(id_val) = child.attribute("id") {
+                    id = String::from(id_val);
+                }
+                else {
+                    return Err(ParserError::InvalidDataItem(element.id()));
+                }
+
+                let value;
+                if let Some(expr_val) = child.attribute("expr") {
+                    value = String::from(expr_val);
+                }
+                else {
+                    return Err(ParserError::InvalidDataItem(element.id()));
+                }
+
                 // Add data item to the System Variables of the StateChart
-                let id = String::from(child.attribute("id").unwrap());
-                let value = String::from(child.attribute("expr").unwrap());
                 //TODO: Need smart handling of all possible 'expr' values
                 //      Maybe some fancy enum shenanigans?
                 if let Ok(converted_value) = value.parse::<u32>() {
@@ -213,9 +249,10 @@ impl Parser {
                 }
             }
         }
+
+        Ok(())
     }
 
-    //TODO: Do something smarter than these unwrap()s
     fn parse_state(element: roxmltree::Node, statechart_builder: &mut StateChartBuilder) -> Result<(), ParserError> {
         let mut initial_specified = false;
 
@@ -245,7 +282,7 @@ impl Parser {
 
                 // Handle <transition>
                 if child.tag_name().name() == "transition" {
-                    state_builder = state_builder.transition(Self::parse_transition(child, String::from(state_id)).unwrap()).unwrap();
+                    state_builder = state_builder.transition(Self::parse_transition(child, String::from(state_id))?)?;
                 }
 
                 // Handle <initial>, if not already specified
@@ -263,13 +300,12 @@ impl Parser {
             }
         }
 
-        let state = state_builder.build().unwrap();
-        statechart_builder.state(state).unwrap();
+        let state = state_builder.build()?;
+        statechart_builder.state(state)?;
 
         Ok(())
     }
 
-    //TODO: Do something smarter than these unwrap()s
     fn parse_transition(element: roxmltree::Node, parent_id: StateId) -> Result<Transition, ParserError> {
         let mut transition_builder = TransitionBuilder::new(parent_id);
 
@@ -289,7 +325,7 @@ impl Parser {
 
         // Set target State
         if let Some(target_id) = element.attribute("target") {
-            transition_builder = transition_builder.target_id(String::from(target_id)).unwrap();
+            transition_builder = transition_builder.target_id(String::from(target_id))?;
         }
         
 
@@ -301,15 +337,6 @@ impl Parser {
 ///////////////////////////////////////////////////////////////////////////////
 //  Trait Implementations
 ///////////////////////////////////////////////////////////////////////////////
-
-
-impl Default for Parser {
-    fn default() -> Self {
-        Self {
-            statechart_builder: StateChartBuilder::new(String::from("")),
-        }
-    }
-}
 
 /*  *  *  *  *  *  *  *\
  *     ParserError    *
@@ -329,15 +356,33 @@ impl fmt::Display for ParserError {
             Self::InvalidDataModel(datamodel) => {
                 write!(f, "Invalid SCXML Datamodel '{}', expected '{}'", datamodel, VALID_DATAMODEL)
             },
+            Self::InvalidDataItem(node_id) => {
+                write!(f, "Invalid Data Item '{:?}'", node_id)
+            },
             Self::StateHasNoId(node_id) => {
                 write!(f, "Node ID {:?} is a <state> element with no 'id' attribute", node_id)
             },
             Self::EventError(event_error) => {
                 write!(f, "EventError '{:?}' encountered while parsing", event_error)
             },
+            Self::IoError(io_err_kind) => {
+                write!(f, "IoError of kind '{:?}' encountered when attempting to create Parser object", io_err_kind)
+            },
+            Self::RegistryError(reg_error) => {
+                write!(f, "RegistryError '{:?}' encountered while parsing", reg_error)
+            },
+            Self::RoxmlTreeError(roxmltree_error) => {
+                write!(f, "roxmltree::Error '{:?}' encountered while parsing", roxmltree_error)
+            },
+            Self::StateBuilderError(sb_error) => {
+                write!(f, "StateBuilderError '{:?}' encountered while parsing", sb_error)
+            },
+            Self::StateChartBuilderError(scb_error) => {
+                write!(f, "StateChartBuilderError '{:?}' encountered while parsing", scb_error)
+            },
             Self::TransitionBuilderError(tb_error) => {
                 write!(f, "TransitionBuilderError '{:?}' encountered while parsing", tb_error)
-            }
+            },
         }
     }
 }
@@ -345,6 +390,36 @@ impl fmt::Display for ParserError {
 impl From<EventError> for ParserError {
     fn from(src: EventError) -> Self {
         Self::EventError(src)
+    }
+}
+
+impl From<std::io::Error> for ParserError {
+    fn from(src: std::io::Error) -> Self {
+        Self::IoError(src.kind())
+    }
+}
+
+impl From<RegistryError> for ParserError {
+    fn from(src: RegistryError) -> Self {
+        Self::RegistryError(src)
+    }
+}
+
+impl From<roxmltree::Error> for ParserError {
+    fn from(src: roxmltree::Error) -> Self {
+        Self::RoxmlTreeError(src)
+    }
+}
+
+impl From<StateBuilderError> for ParserError {
+    fn from(src: StateBuilderError) -> Self {
+        Self::StateBuilderError(src)
+    }
+}
+
+impl From<StateChartBuilderError> for ParserError {
+    fn from(src: StateChartBuilderError) -> Self {
+        Self::StateChartBuilderError(src)
     }
 }
 
@@ -378,88 +453,197 @@ impl From<&str> for ValidElementClass {
 #[cfg(test)]
 mod tests {
 
-    use crate::parser::{
-        Parser,
-        ParserError
+    use std::error::Error;
+
+    use crate::{
+        StateChartBuilderError,
+        event::{
+            Event,
+            EventError,
+        },
+        parser::{
+            Parser,
+            ParserError
+        },
+        registry::RegistryError,
+        state::StateBuilderError,
+        transition::TransitionBuilderError,
     };
 
 
     #[test]
-    fn namespace() {
-        let mut parser_a = Parser::default();
-        let mut parser_b = Parser::default();
-
+    fn namespace() -> Result<(), Box<dyn Error>> {
+        let mut parser_a = Parser::new("res/test_cases/namespace_empty.scxml")?;
+        let mut parser_b = Parser::new("res/test_cases/namespace_invalid.scxml")?;
         // Verify that the empty namespace is caught
         assert_eq!(
-            parser_a.parse("res/test_cases/namespace_empty.scxml"),
-            Err(ParserError::InvalidScxmlNamespace(String::new())),
-            "Failed to detect empty SCXML namespace"
+            parser_a.parse(),
+            Err(ParserError::InvalidScxmlNamespace(String::new()))
         );
 
         // Verify that an invalid namespace is caught
         assert_eq!(
-            parser_b.parse("res/test_cases/namespace_invalid.scxml"),
-            Err(ParserError::InvalidScxmlNamespace(String::from("http://invalid.namespace"))),
-            "Failed to detect invalid SCXML namespace"
+            parser_b.parse(),
+            Err(ParserError::InvalidScxmlNamespace(String::from("http://invalid.namespace")))
         );
+
+        Ok(())
     }
 
     #[test]
-    fn version() {
-        let mut parser_a = Parser::default();
-        let mut parser_b = Parser::default();
+    fn version() -> Result<(), Box<dyn Error>> {
+        let mut parser_a = Parser::new("res/test_cases/version_empty.scxml")?;
+        let mut parser_b = Parser::new("res/test_cases/version_invalid.scxml")?;
 
         // Verify that the empty version is caught
         assert_eq!(
-            parser_a.parse("res/test_cases/version_empty.scxml"),
-            Err(ParserError::InvalidScxmlVersion(String::new())),
-            "Failed to detect empty SCXML version"
+            parser_a.parse(),
+            Err(ParserError::InvalidScxmlVersion(String::new()))
         );
 
         // Verify that an invalid version is caught
         assert_eq!(
-            parser_b.parse("res/test_cases/version_invalid.scxml"),
-            Err(ParserError::InvalidScxmlVersion(String::from("2.0"))),
-            "Failed to detect invalid SCXML version"
+            parser_b.parse(),
+            Err(ParserError::InvalidScxmlVersion(String::from("2.0")))
         );
+
+        Ok(())
     }
 
     #[test]
-    fn datamodel() {
-        let mut parser_a = Parser::default();
-        let mut parser_b = Parser::default();
+    fn datamodel() -> Result<(), Box<dyn Error>> {
+        let mut parser_a = Parser::new("res/test_cases/datamodel_empty.scxml")?;
+        let mut parser_b = Parser::new("res/test_cases/datamodel_invalid.scxml")?;
 
         // Verify that the empty datamodel is allowed
         assert_eq!(
-            parser_a.parse("res/test_cases/datamodel_empty.scxml").is_ok(),
-            true,
-            "Failed to accept empty SCXML datamodel"
+            parser_a.parse().is_ok(),
+            true
         );
 
         // Verify that an invalid datamodel is caught
         assert_eq!(
-            parser_b.parse("res/test_cases/datamodel_invalid.scxml"),
-            Err(ParserError::InvalidDataModel(String::from("someotherscript"))),
-            "Failed to detect invalid SCXML datamodel"
+            parser_b.parse(),
+            Err(ParserError::InvalidDataModel(String::from("someotherscript")))
         );
+
+        Ok(())
     }
 
     #[test]
-    fn no_id_state() {
-        let mut parser = Parser::default();
+    fn data_item_invalid() -> Result<(), Box<dyn Error>> {
+        let mut parser = Parser::new("res/test_cases/data_item_invalid.scxml")?;
 
         assert_eq!(
-            parser.parse("res/test_cases/state_no_id.scxml"),
-            Err(ParserError::StateHasNoId(roxmltree::NodeId::new(3))),
-            "Failed to detect <state> with no `id`"
+            parser.parse(),
+            Err(ParserError::InvalidDataItem(roxmltree::NodeId::new(3)))
         );
+
+        Ok(())
     }
 
     #[test]
-    fn microwave() {
-        let mut parser = Parser::default();
+    fn no_id_state() -> Result<(), Box<dyn Error>> {
+        let mut parser = Parser::new("res/test_cases/state_no_id.scxml")?;
+
+        assert_eq!(
+            parser.parse(),
+            Err(ParserError::StateHasNoId(roxmltree::NodeId::new(3)))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn event_error() -> Result<(), Box<dyn Error>> {
+        let mut parser = Parser::new("res/test_cases/event_invalid_id.scxml")?;
+
+        assert_eq!(
+            parser.parse(),
+            Err(ParserError::EventError(EventError::IdContainsDuplicates(String::from("turn.on.on"))))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn io_error() -> Result<(), Box<dyn Error>> {
+        // Attempt to create a parser for a file that does not exist
+        assert_eq!(
+            Parser::new("res/test_cases/does_not_exist.scxml"),
+            Err(ParserError::IoError(std::io::ErrorKind::NotFound))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn registry_error() -> Result<(), Box<dyn Error>> {
+        let mut parser = Parser::new("res/test_cases/registry_invalid_dup_state.scxml")?;
+
+        assert_eq!(
+            parser.parse(),
+            Err(ParserError::RegistryError(RegistryError::StateAlreadyRegistered(String::from("duplicate"))))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn roxmltree_error() -> Result<(), Box<dyn Error>> {
+        let mut parser = Parser::new("res/test_cases/xml_invalid.scxml")?;
+
+        assert_eq!(
+            parser.parse(),
+            Err(ParserError::RoxmlTreeError(roxmltree::Error::NoRootNode))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn state_builder_error() -> Result<(), Box<dyn Error>> {
+        let mut parser = Parser::new("res/test_cases/state_invalid_initial.scxml")?;
+
+        assert_eq!(
+            parser.parse(),
+            Err(ParserError::StateBuilderError(StateBuilderError::InitialIsNotChild(String::from("dne"))))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn statechart_builder_error() -> Result<(), Box<dyn Error>> {
+        let mut parser = Parser::new("res/test_cases/statechart_invalid_no_states.scxml")?;
+
+        assert_eq!(
+            parser.parse(),
+            Err(ParserError::StateChartBuilderError(StateChartBuilderError::NoStatesRegistered))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn transition_builder_error() -> Result<(), Box<dyn Error>> {
+        let mut parser = Parser::new("res/test_cases/transition_invalid_dup_event.scxml")?;
+
+        assert_eq!(
+            parser.parse(),
+            Err(ParserError::TransitionBuilderError(TransitionBuilderError::DuplicateEventId(Event::from("turn.on")?)))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn microwave() -> Result<(), Box<dyn Error>> {
+        let mut parser = Parser::new("res/examples/01_microwave.scxml")?;
 
         // Parse microwave example scxml doc
-        parser.parse("res/examples/01_microwave.scxml").unwrap();
+        parser.parse()?;
+
+        Ok(())
     }
 }

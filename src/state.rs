@@ -257,6 +257,11 @@ impl StateBuilder {
 
     //TODO: Make this a non-consuming Builder
     pub fn build(mut self) -> Result<State, StateBuilderError> {
+        // No-child `initial` sanity check
+        if self.substates.is_empty() && self.initial_id.is_some() {
+            return Err(StateBuilderError::InitialIsNotChild(self.initial_id.unwrap()));
+        }
+
         // Sanity checks for child states, if they exist
         if !self.substates.is_empty() {
             // If no initial ID was provided, set to first doc-order child
@@ -483,7 +488,7 @@ mod tests {
         let unreachable = StateBuilder::new(unreachable_state_id).build()?;
 
         // Build StateChart
-        let mut hapless_statechart = StateChartBuilder::new(String::from("hapless"))
+        let mut hapless_statechart = StateChartBuilder::default()
             .initial(initial.id())
             .state(initial)?
             .state(unreachable)?
@@ -523,7 +528,7 @@ mod tests {
         let terminal = StateBuilder::new(terminal_state_id).build()?;
         
         // Build the StateChart and process the Event
-        let mut statechart = StateChartBuilder::new(String::from("failed_on_exit"))
+        let mut statechart = StateChartBuilder::default()
             .initial(initial.id())
             .state(initial)?
             .state(terminal)?
@@ -563,7 +568,7 @@ mod tests {
             .build()?;
         
         // Build the StateChart and process the Event
-        let mut statechart = StateChartBuilder::new(String::from("failed_on_entry"))
+        let mut statechart = StateChartBuilder::default()
             .initial(initial.id())
             .state(initial)?
             .state(terminal)?

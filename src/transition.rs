@@ -116,7 +116,7 @@ impl Transition {
     }
 }
 
-
+//TODO: Make this a non-consuming builder
 impl TransitionBuilder {
     pub fn new(source_state_id: StateId) -> Self {
         Self {

@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       name="microwave"
+       version="1.0"
+       datamodel="ecmascript"
+       initial="off">
+
+  <datamodel>
+    <data id="cook_time" expr="5"/>
+    <data expr="true"/>
+    <data id="timer" expr="0"/>
+  </datamodel>
+
+  <state id="off">
+    <transition event="turn.on" target="on"/>
+  </state>
+  
+  <state id="on">
+    <transition event="turn.off" target="off"/>
+  </state>
+  
+</scxml>

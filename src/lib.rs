@@ -123,7 +123,7 @@ pub enum StateChartError {
     StateError(StateError),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct StateChartBuilder {
     initial:    Option<StateId>,
     registry:   Registry,
@@ -265,14 +265,6 @@ impl StateChart {
 
 
 impl StateChartBuilder {
-    pub fn new(id: StateChartId) -> Self {
-        Self {
-            initial:  None,
-            registry: Registry::default(),
-            sys_vars: SystemVariables::new(id),
-        }
-    }
-
 
     /*  *  *  *  *  *  *  *\
      *  Builder Methods   *
@@ -310,6 +302,12 @@ impl StateChartBuilder {
                 internal_queue: VecDeque::new(),
             }
         )
+    }
+
+    pub fn name(&mut self, name: &str) -> &mut Self {
+        self.sys_vars.set_name(String::from(name));
+
+        self
     }
 
     pub fn state(&mut self, state: State) -> Result<&mut Self, RegistryError>{
@@ -449,7 +447,8 @@ mod tests {
         let imaging         = StateBuilder::new(imaging_id).build()?;
 
         // Build statechart
-        let mut statechart = StateChartBuilder::new(String::from("theia"))
+        let mut statechart = StateChartBuilder::default()
+            .name("theia")
             .initial(idle.id())
             .state(idle)?
             .state(diagnostic)?
@@ -470,7 +469,7 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_state_id() -> Result<(), Box<dyn Error>>  {
+    fn duplicate_state_id() -> Result<(), Box<dyn Error>> {
         //TODO: Extraneous clones
         // Define states with duplicate IDs
         let duplicate_id = String::from("duplicate");
@@ -478,7 +477,7 @@ mod tests {
         let duplicate_b = StateBuilder::new(duplicate_id.clone()).build()?;
 
         // Create the statechart object and add states to it
-        let mut statechart_builder = StateChartBuilder::new(String::from("duplicate_chart"));
+        let mut statechart_builder = StateChartBuilder::default();
         statechart_builder.state(duplicate_a)?;
 
         // Verify that adding the duplicate ID results in an error
@@ -498,7 +497,7 @@ mod tests {
 
         let state = StateBuilder::new(String::from("state")).build()?;
 
-        let mut statechart = StateChartBuilder::new(String::from("statechart"))
+        let mut statechart = StateChartBuilder::default()
             .state(state)?
             .build()?;
 
@@ -541,7 +540,7 @@ mod tests {
         let end = StateBuilder::new(end_id.clone()).build()?;
 
         // Create a StateChart containing all of the above
-        let mut statechart = StateChartBuilder::new(String::from("statechart"))
+        let mut statechart = StateChartBuilder::default()
             .state(start)?
             .state(end)?
             .event(event.clone())?
@@ -578,7 +577,7 @@ mod builder_tests {
         let registered = StateBuilder::new(String::from("registered")).build()?;
 
         // Attempt to build a StateChart with an unregistered initial ID
-        let mut invalid_builder = StateChartBuilder::new(String::from("invalid"));
+        let mut invalid_builder = StateChartBuilder::default();
         invalid_builder
             .state(registered)?
             .initial(unregistered.id());
@@ -596,7 +595,7 @@ mod builder_tests {
     fn no_states_registered() -> Result<(), Box<dyn Error>> {
         
         assert_eq!(
-            StateChartBuilder::new(String::from("no_states")).build(),
+            StateChartBuilder::default().build(),
             Err(StateChartBuilderError::NoStatesRegistered),
             "Failed to catch that no states were registered"
         );

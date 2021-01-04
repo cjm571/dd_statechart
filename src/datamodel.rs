@@ -56,15 +56,6 @@ struct DataMembers {
 ///////////////////////////////////////////////////////////////////////////////
 
 impl SystemVariables {
-    pub fn new(name: StateChartId) -> Self {
-        Self {
-            _event:         None,
-            _sessionid:     Uuid::new_v4(),
-            _name:          name,
-            _ioprocessors:  Vec::new(),
-            _x:             HashMap::default()
-        }
-    }
 
 
     /*  *  *  *  *  *  *  *\
@@ -85,6 +76,10 @@ impl SystemVariables {
      *  Mutator Methods   *
     \*  *  *  *  *  *  *  */
 
+    pub fn set_name(&mut self, name: String) {
+        self._name = name;
+    }
+
     pub fn set_event(&mut self, event: Event) {
         self._event = Some(event);
     }
@@ -94,3 +89,21 @@ impl SystemVariables {
         self._x.insert(id, value);
     }
 }
+
+
+///////////////////////////////////////////////////////////////////////////////
+//  Trait Implementations
+///////////////////////////////////////////////////////////////////////////////
+
+impl Default for SystemVariables {
+    fn default() -> Self {
+        Self {
+            _event:         None,
+            _sessionid:     Uuid::new_v4(),
+            _name:          String::new(),
+            _ioprocessors:  Vec::new(),
+            _x:             HashMap::default()
+        }
+    }
+}
+
