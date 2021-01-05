@@ -492,7 +492,6 @@ mod tests {
             .initial(initial.id())
             .state(initial)?
             .state(unreachable)?
-            .event(go_to_unreachable.clone())?
             .build().unwrap();
 
         // Broadcast the event and verify that the transition failed its guard condition
@@ -532,7 +531,6 @@ mod tests {
             .initial(initial.id())
             .state(initial)?
             .state(terminal)?
-            .event(initial_to_terminal.clone())?
             .build().unwrap();
         
         assert_eq!(
@@ -572,7 +570,6 @@ mod tests {
             .initial(initial.id())
             .state(initial)?
             .state(terminal)?
-            .event(initial_to_terminal.clone())?
             .build().unwrap();
         
         assert_eq!(

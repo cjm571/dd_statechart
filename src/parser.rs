@@ -40,6 +40,7 @@ use crate::{
     },
     registry::RegistryError,
     state::{
+        State,
         StateBuilder,
         StateBuilderError,
         StateId,
@@ -75,9 +76,12 @@ pub struct Parser {
 #[derive(Debug, PartialEq)]
 pub enum ParserError {
     // Primary
+    InitialNodeChildless(String /* Stringified XML Tree Node */),
+    InitialTransitionTargetless(String /* Stringified XML Tree Node */),
     InvalidScxmlNamespace(String),
     InvalidScxmlVersion(String),
     InvalidDataModel(String),
+    //FIXME: convert to stringified node
     InvalidDataItem(roxmltree::NodeId),
     StateHasNoId(roxmltree::NodeId),
 
@@ -125,7 +129,10 @@ impl Parser {
         // Ensure the document is properly structured
         Self::validate_structure(&parsed_content)?;
 
-        //TODO: Handle attributes of <scxml> root element
+        // Get Initial State from <scxml>, if specified
+        if let Some(initial) = parsed_content.root_element().attribute("initial") {
+            self.statechart_builder.initial(String::from(initial));
+        }
 
         // Get StateChart name from <scxml>, if specified
         if let Some(chart_name) = parsed_content.root_element().attribute("name") {
@@ -150,7 +157,7 @@ impl Parser {
 
 
     /*  *  *  *  *  *  *  *\
-        *  Helper Methods    *
+     *  Helper Methods    *
     \*  *  *  *  *  *  *  */
 
     fn validate_structure(document: &roxmltree::Document) -> Result<(), ParserError> {
@@ -186,8 +193,6 @@ impl Parser {
             }
         }
         // NOTE: Not specifying datamodel is allowable - ECMAScript will be assumed.
-
-        //TODO: More structural checks?
         
         Ok(())
     }
@@ -196,7 +201,9 @@ impl Parser {
         // Match the element class to the appropriate handling function
         match ValidElementClass::from(element.tag_name().name()) {
             ValidElementClass::DataModel    => Self::parse_datamodel(element, statechart_builder)?,
-            ValidElementClass::State        => Self::parse_state(element, statechart_builder)?,
+            ValidElementClass::State        => {
+                statechart_builder.state(Self::parse_state(element)?)?;
+            },
         }
 
         Ok(())
@@ -242,7 +249,6 @@ impl Parser {
                         0);
                 }
                 else {
-                    //TODO: Come up with better marker for unrecognized expr type
                     statechart_builder.sys_vars.set_data_member(
                         id,
                         0xDEADBEEF);
@@ -253,7 +259,7 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_state(element: roxmltree::Node, statechart_builder: &mut StateChartBuilder) -> Result<(), ParserError> {
+    fn parse_state(element: roxmltree::Node) -> Result<State, ParserError> {
         let mut initial_specified = false;
 
         // Get ID attribute to create StateBuilder
@@ -286,11 +292,31 @@ impl Parser {
                 }
 
                 // Handle <initial>, if not already specified
-                if !initial_specified {
-
+                if !initial_specified && child.tag_name().name() == "initial" {
+                    // Get the target of the internal <transition>'s target
+                    // If the internal <transition> does not exist, the document is not well-formed
+                    for grandchild in child.children() {
+                        // Skip text and comment nodes
+                        if !grandchild.is_comment() && !grandchild.is_text() {
+                            if let Some(initial) = grandchild.attribute("target") {
+                                state_builder = state_builder.initial(String::from(initial));
+                                initial_specified = true;
+                            }
+                            else {
+                                return Err(ParserError::InitialTransitionTargetless(format!("{:?}", element)));
+                            }
+                        }
+                    }
+                    // Ensure that a <transition> element was found, otherwise the document is not well-formed
+                    if !initial_specified {
+                        return Err(ParserError::InitialNodeChildless(format!("{:?}", element)));
+                    }
                 }
 
-                //TODO: Handle <state>
+                // Handle <state>
+                if child.tag_name().name() == "state" {
+                    state_builder = state_builder.substate(Self::parse_state(child)?)?;
+                }
 
                 //FEAT: Handle <parallel>
 
@@ -300,10 +326,7 @@ impl Parser {
             }
         }
 
-        let state = state_builder.build()?;
-        statechart_builder.state(state)?;
-
-        Ok(())
+        Ok(state_builder.build()?)
     }
 
     fn parse_transition(element: roxmltree::Node, parent_id: StateId) -> Result<Transition, ParserError> {
@@ -347,6 +370,12 @@ impl Error for ParserError {}
 impl fmt::Display for ParserError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Self::InitialNodeChildless(parent_state) => {
+                write!(f, "State '{}' contains a childless <initial> element", parent_state)
+            },
+            Self::InitialTransitionTargetless(parent_state) => {
+                write!(f, "State '{}' contains an <initial> element with a targetless <transition>", parent_state)
+            },
             Self::InvalidScxmlNamespace(namespace) => {
                 write!(f, "Invalid SCXML Namespace '{}', expected '{}'", namespace, VALID_SCXML_NAMESPACE)
             },
@@ -472,6 +501,26 @@ mod tests {
 
 
     #[test]
+    fn initial_node_errors() -> Result<(), Box<dyn Error>> {
+        let state_string = String::from("Element { tag_name: {http://www.w3.org/2005/07/scxml}state, attributes: [Attribute { name: id, value: \"on\" }], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }");
+
+        let mut parser_childless = Parser::new("res/test_cases/initial_node_childless.scxml")?;
+        let mut parser_targetless = Parser::new("res/test_cases/initial_transition_targetless.scxml")?;
+
+        assert_eq!(
+            parser_childless.parse(),
+            Err(ParserError::InitialNodeChildless(state_string.clone()))
+        );
+
+        assert_eq!(
+            parser_targetless.parse(),
+            Err(ParserError::InitialTransitionTargetless(state_string))
+        );
+
+        Ok(())
+    }
+
+    #[test]
     fn namespace() -> Result<(), Box<dyn Error>> {
         let mut parser_a = Parser::new("res/test_cases/namespace_empty.scxml")?;
         let mut parser_b = Parser::new("res/test_cases/namespace_invalid.scxml")?;
@@ -583,7 +632,7 @@ mod tests {
 
         assert_eq!(
             parser.parse(),
-            Err(ParserError::RegistryError(RegistryError::StateAlreadyRegistered(String::from("duplicate"))))
+            Err(ParserError::RegistryError(RegistryError::EventAlreadyRegistered(Event::from("turn.on")?)))
         );
 
         Ok(())
@@ -642,7 +691,14 @@ mod tests {
         let mut parser = Parser::new("res/examples/01_microwave.scxml")?;
 
         // Parse microwave example scxml doc
-        parser.parse()?;
+        let mut statechart = parser.parse()?;
+        eprintln!("Active State(s): {:#?}", statechart.active_state_ids());
+
+        // Send turn-on event
+        let turn_on = Event::from("turn.on")?;
+
+        statechart.process_external_event(turn_on)?;
+        eprintln!("Active State(s): {:#?}", statechart.active_state_ids());
 
         Ok(())
     }

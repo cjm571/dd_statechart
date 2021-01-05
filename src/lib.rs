@@ -310,14 +310,17 @@ impl StateChartBuilder {
         self
     }
 
-    pub fn state(&mut self, state: State) -> Result<&mut Self, RegistryError>{
+    pub fn state(&mut self, state: State) -> Result<&mut Self, RegistryError> {
+        // Iterate through State's Transitions to register Events
+        for transition in state.transitions() {
+            for event in transition.events() {
+                //OPT: *DESIGN* Should the registry just take references and perform an internal clone?
+                self.registry.register_event(event.clone())?;
+            }
+        }
+        
+        // Register the State
         self.registry.register_state(state)?;
-
-        Ok(self)
-    }
-
-    pub fn event(&mut self, event: Event) -> Result<&mut Self, RegistryError> {
-        self.registry.register_event(event)?;
 
         Ok(self)
     }
@@ -455,7 +458,6 @@ mod tests {
             .state(non_imaging)?
             .state(imaging_standby)?
             .state(imaging)?
-            .event(go_to_non_imaging.clone())?
             .build()?;
 
         // Broadcast a Go To Non-Imaging event
@@ -543,7 +545,6 @@ mod tests {
         let mut statechart = StateChartBuilder::default()
             .state(start)?
             .state(end)?
-            .event(event.clone())?
             .build()?;
         
         // Send the test Event to the statechart, and verify that the eventless transition is also executed

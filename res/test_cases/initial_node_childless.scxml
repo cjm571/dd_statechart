@@ -2,6 +2,7 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        name="microwave"
        version="1.0"
+       datamodel="ecmascript"
        initial="off">
 
   <!--  trivial 5 second microwave oven example -->
@@ -18,7 +19,6 @@
 
   <state id="on">
     <initial>
-        <transition target="idle"/>
     </initial>
     <!-- on/pause state -->
 
