@@ -34,6 +34,10 @@ use crate::{
     StateChart,
     StateChartBuilder,
     StateChartBuilderError,
+    condition::{
+        Condition,
+        ConditionError,
+    },
     event::{
         Event,
         EventError,
@@ -81,11 +85,11 @@ pub enum ParserError {
     InvalidScxmlNamespace(String),
     InvalidScxmlVersion(String),
     InvalidDataModel(String),
-    //FIXME: convert to stringified node
-    InvalidDataItem(roxmltree::NodeId),
-    StateHasNoId(roxmltree::NodeId),
+    InvalidDataItem(String /* Stringified XML Tree Node */),
+    StateHasNoId(String /* Stringified XML Tree Node */),
 
     // Wrappers
+    ConditionError(ConditionError),
     EventError(EventError),
     IoError(std::io::ErrorKind),
     RegistryError(RegistryError),
@@ -219,7 +223,7 @@ impl Parser {
                     id = String::from(id_val);
                 }
                 else {
-                    return Err(ParserError::InvalidDataItem(element.id()));
+                    return Err(ParserError::InvalidDataItem(format!("{:?}", element)));
                 }
 
                 let value;
@@ -227,7 +231,7 @@ impl Parser {
                     value = String::from(expr_val);
                 }
                 else {
-                    return Err(ParserError::InvalidDataItem(element.id()));
+                    return Err(ParserError::InvalidDataItem(format!("{:?}", element)));
                 }
 
                 // Add data item to the System Variables of the StateChart
@@ -268,7 +272,7 @@ impl Parser {
             state_id = id;
         }
         else {
-            return Err(ParserError::StateHasNoId(element.id()));
+            return Err(ParserError::StateHasNoId(format!("{:?}", element)));
         }
         let mut state_builder = StateBuilder::new(String::from(state_id));
 
@@ -343,8 +347,12 @@ impl Parser {
             }
         }
 
-        //TODO: Parse guard condition
-        //TODO: Parse conditional statements into functions
+        // Parse guard condition
+        if let Some(cond_str) = element.attribute("cond") {
+            let cond = Condition::new(cond_str)?;
+            
+            transition_builder = transition_builder.cond(cond)?;
+        }
 
         // Set target State
         if let Some(target_id) = element.attribute("target") {
@@ -391,6 +399,9 @@ impl fmt::Display for ParserError {
             Self::StateHasNoId(node_id) => {
                 write!(f, "Node ID {:?} is a <state> element with no 'id' attribute", node_id)
             },
+            Self::ConditionError(cond_error) => {
+                write!(f, "ConditionError '{:?}' encountered while parsing", cond_error)
+            },
             Self::EventError(event_error) => {
                 write!(f, "EventError '{:?}' encountered while parsing", event_error)
             },
@@ -413,6 +424,12 @@ impl fmt::Display for ParserError {
                 write!(f, "TransitionBuilderError '{:?}' encountered while parsing", tb_error)
             },
         }
+    }
+}
+
+impl From<ConditionError> for ParserError {
+    fn from(src: ConditionError) -> Self {
+        Self::ConditionError(src)
     }
 }
 
@@ -486,6 +503,7 @@ mod tests {
 
     use crate::{
         StateChartBuilderError,
+        condition::ConditionError,
         event::{
             Event,
             EventError,
@@ -581,11 +599,12 @@ mod tests {
 
     #[test]
     fn data_item_invalid() -> Result<(), Box<dyn Error>> {
+        let state_string = String::from("Element { tag_name: {http://www.w3.org/2005/07/scxml}datamodel, attributes: [], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }");
         let mut parser = Parser::new("res/test_cases/data_item_invalid.scxml")?;
 
         assert_eq!(
             parser.parse(),
-            Err(ParserError::InvalidDataItem(roxmltree::NodeId::new(3)))
+            Err(ParserError::InvalidDataItem(state_string))
         );
 
         Ok(())
@@ -593,11 +612,24 @@ mod tests {
 
     #[test]
     fn no_id_state() -> Result<(), Box<dyn Error>> {
+        let state_string = String::from("Element { tag_name: {http://www.w3.org/2005/07/scxml}state, attributes: [], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }");
         let mut parser = Parser::new("res/test_cases/state_no_id.scxml")?;
 
         assert_eq!(
             parser.parse(),
-            Err(ParserError::StateHasNoId(roxmltree::NodeId::new(3)))
+            Err(ParserError::StateHasNoId(state_string))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn condition_error() -> Result<(), Box<dyn Error>> {
+        let mut parser = Parser::new("res/test_cases/cond_invalid.scxml")?;
+
+        assert_eq!(
+            parser.parse(),
+            Err(ParserError::ConditionError(ConditionError::InvalidArgumentCount))
         );
 
         Ok(())
@@ -692,13 +724,19 @@ mod tests {
 
         // Parse microwave example scxml doc
         let mut statechart = parser.parse()?;
-        eprintln!("Active State(s): {:#?}", statechart.active_state_ids());
+        eprintln!("*** Initial Active State(s):\n{:#?}", statechart.active_state_ids());
+        eprintln!("*** Initial Data Model:\n{:#?}", statechart.sys_vars);
 
         // Send turn-on event
+        eprintln!("*** Sending 'turn.on' Event...");
         let turn_on = Event::from("turn.on")?;
-
         statechart.process_external_event(turn_on)?;
-        eprintln!("Active State(s): {:#?}", statechart.active_state_ids());
+
+        eprintln!("*** Active State(s):\n{:#?}", statechart.active_state_ids());
+        assert_eq!(
+            statechart.active_state_ids(),
+            vec![String::from("on"), String::from("cooking")],
+        );
 
         Ok(())
     }

@@ -1,6 +1,6 @@
 [package]
 name = "dd_statechart"
-version = "0.1.7"
+version = "0.1.8"
 authors = ["CJ McAllister <cjm571@gmail.com>"]
 edition = "2018"
 

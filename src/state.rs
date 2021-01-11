@@ -30,6 +30,7 @@ use std::{
 };
 
 use crate::{
+    datamodel::SystemVariables,
     event::Event,
     transition::{
         Transition,
@@ -64,7 +65,7 @@ pub type Callback = fn() -> Result<(), ()>;
 #[derive(PartialEq)]
 pub enum StateError {
     FailedCallback(usize),
-    FailedConditions(Vec<TransitionId>),
+    SubstatesSpecifiedWithoutInitial,
 }
 
 
@@ -106,6 +107,10 @@ impl State {
         self.is_active
     }
 
+    pub fn substates(&self) -> &Vec<State> {
+        &self.substates
+    }
+
     pub fn transitions(&self) -> &Vec<Transition> {
         &self.transitions
     }
@@ -122,6 +127,10 @@ impl State {
     pub fn deactivate(&mut self) {
         self.is_active = false;
     }
+
+    pub fn mut_substates(&mut self) -> &mut Vec<State> {
+        &mut self.substates
+    }
     
 
     /*  *  *  *  *  *  *  *\
@@ -135,10 +144,29 @@ impl State {
         // Activate the State
         self.activate();
 
+        // If substates exist, enter the initial substate
+        for substate in &mut self.substates {
+            if let Some(initial_id) = &self.initial_id {
+                if &substate.id() == initial_id {
+                    substate.enter()?;
+                }
+            }
+            else {
+                return Err(StateError::SubstatesSpecifiedWithoutInitial);
+            }
+        }
+
         Ok(())
     }
 
     pub fn exit(&mut self) -> Result<(), StateError> {
+        // If substates exist, exit the active substate(s)
+        for substate in &mut self.substates {
+            if substate.is_active() {
+                substate.exit()?;
+            }
+        }
+        
         // Execute any on_exit callbacks
         self.execute_on_exit()?;
         
@@ -149,28 +177,15 @@ impl State {
     }
     
 
-    /// Evaluates the given Event against this State's set of Transitions to determine
-    /// if any should be Enabled.
-    ///
-    /// Per §3.13 of th SCXML Standard, the "document order" of Transitions must
-    /// be considered when resolving conflicts between Transitions. So the first
-    /// Transition to be enabled will short-circuit the evaluation of further
-    /// Transitions.
-    ///
-    /// On success, returns a vector the target State ID(s) of the Enabled Transition.
-    /// Note that this vector may be empty if no Transitions match the given Event.
-    ///
-    /// On failure, returns a vector of Transitions that matched the given Event, but
-    /// failed their respective Condition.
-    pub fn evaluate_event(&self, event: Option<Event>) -> Result<Option<TransitionId>, StateError> {
+    pub fn evaluate_event(&self, event: Option<Event>, sys_vars: &SystemVariables) -> Option<TransitionId> {
         let mut enable_candidates = Vec::new();
         
         // Handle evaluation of a non-null Event
-        if let Some(event) = event {
+        if let Some(event) = &event {
             // Check for Event match in each of this State's Transitions
             for transition in &self.transitions {
                 for transition_event in transition.events() {
-                    if transition_event == &event {
+                    if transition_event == event {
                         enable_candidates.push(transition);
                     }
                 }
@@ -186,26 +201,16 @@ impl State {
             }
         }
 
-        // If no candidates were identified, stop here and return an empty vector
-        if enable_candidates.is_empty() {
-            return Ok(None);
-        }
-
         // Check candidates' Conditions
-        let mut failed_candidates = Vec::new();
         for candidate in enable_candidates {
-            if candidate.evaluate_condition() {
+            if candidate.evaluate_condition(sys_vars) {
                 // Short-circuit and return the Target of the first Transition to be Enabled
-                return Ok(Some(candidate.id()))
-            }
-            else {
-                // Add failed candidates' IDs to a list for potential error output
-                failed_candidates.push(candidate.id());
+                return Some(candidate.id())
             }
         }
 
-        // All candidates failed to pass their Condition, return an error
-        Err(StateError::FailedConditions(failed_candidates))
+        // Either no candidates identified, or none passed their guard condition
+        None
     }
 
     
@@ -390,11 +395,10 @@ impl fmt::Debug for StateError {
                     .field("Index", idx)
                     .finish()
             },
-            Self::FailedConditions(transitions) => {
-                f.debug_struct("FailedCondition(s)")
-                    .field("transitions", transitions)
+            Self::SubstatesSpecifiedWithoutInitial => {
+                f.debug_struct("SubstatesSpecifiedWithoutInitial")
                     .finish()
-            }
+            },
         }
     }
 }
@@ -405,9 +409,9 @@ impl fmt::Display for StateError {
             Self::FailedCallback(idx) => {
                 write!(f, "callback at index {} failed", idx)
             },
-            Self::FailedConditions(transitions) => {
-                write!(f, "conditions failed in transition(s) {:?}", transitions)
-            }
+            Self::SubstatesSpecifiedWithoutInitial => {
+                write!(f, "State has substates but no Initial State")
+            },
         }
     }
 }
@@ -427,10 +431,10 @@ impl fmt::Display for StateBuilderError {
                 write!(f, "Substate '{}' is a duplicate of an existing Substate or the parent", state_id)
             },
             Self::DuplicateTransition(transition_id) => {
-                write!(f, "Transition '{}' is a duplicate of an existing Transition", transition_id)
+                write!(f, "Transition '{:?}' is a duplicate of an existing Transition", transition_id)
             },
             Self::TransitionSourceMismatch(transition_id, state_id) => {
-                write!(f, "Transition '{}' source State '{}' does not match parent State", transition_id, state_id)
+                write!(f, "Transition '{:?}' source State '{}' does not match parent State", transition_id, state_id)
             },
             Self::InitialIsNotChild(initial_id) => {
                 write!(f, "Initial ID '{}' does not match any child State IDs", initial_id)
@@ -460,49 +464,6 @@ mod tests {
         transition::TransitionBuilder,
     };
 
-
-    /// Constvenience function for use as an "anti-null conditional"
-    const fn always_false() -> bool { false }
-
-
-    #[test]
-    fn failed_condition() -> Result<(), Box<dyn Error>> {
-        //TODO: extraneous clone()s
-        // Define Event and State IDs
-        let go_to_unreachable = Event::from("go_to_unreachable")?;
-        let initial_state_id = String::from("INITIAL");
-        let unreachable_state_id = String::from("UNREACHABLE");
-
-        // Build initial->unreachable Transition
-        let initial_to_unreachable = TransitionBuilder::new(initial_state_id.clone())
-            .event(go_to_unreachable.clone())?
-            .cond(always_false)?
-            .target_id(unreachable_state_id.clone())?
-            .build();
-
-            
-        // Build States
-        let initial = StateBuilder::new(initial_state_id)
-            .transition(initial_to_unreachable.clone())?
-            .build()?;
-        let unreachable = StateBuilder::new(unreachable_state_id).build()?;
-
-        // Build StateChart
-        let mut hapless_statechart = StateChartBuilder::default()
-            .initial(initial.id())
-            .state(initial)?
-            .state(unreachable)?
-            .build().unwrap();
-
-        // Broadcast the event and verify that the transition failed its guard condition
-        assert_eq!(
-            hapless_statechart.process_external_event(go_to_unreachable),
-            Err(StateChartError::StateError(StateError::FailedConditions(vec![initial_to_unreachable.id()]))),
-            "Failed to detect failed Transition due to failed Condition." 
-        );
-
-        Ok(())
-    }
 
     #[test]
     fn failed_on_exit() -> Result<(), Box<dyn Error>> {

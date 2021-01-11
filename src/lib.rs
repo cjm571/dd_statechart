@@ -76,6 +76,7 @@ use std::{
 //  Module Declarations
 ///////////////////////////////////////////////////////////////////////////////
 
+pub mod condition;
 pub mod datamodel;
 pub mod event;
 pub mod parser;
@@ -167,7 +168,7 @@ impl StateChart {
         self.sys_vars.set_event(event.clone());
         
         // Collect and process the set of enabled Transitions
-        let mut enabled_transition_ids = self.select_transitions(Some(event))?;
+        let mut enabled_transition_ids = self.select_transitions(Some(event));
 
         //OPT: *STYLE* I don't like this loop, it's not very easy to tell what's being processed in the microstep
         // Enter Microstep processing loop
@@ -175,7 +176,7 @@ impl StateChart {
             self.process_microstep(enabled_transition_ids)?;
             
             // Select eventless Transitions
-            enabled_transition_ids = self.select_transitions(None)?;
+            enabled_transition_ids = self.select_transitions(None);
             
             // Found eventless Transitions, return to top of loop to process a Microstep
             if !enabled_transition_ids.is_empty() {
@@ -193,7 +194,7 @@ impl StateChart {
                 self.sys_vars.set_event(internal_event.clone());
 
                 // Select transitions for the internal Event and return to top of the loop
-                enabled_transition_ids = self.select_transitions(Some(internal_event))?;
+                enabled_transition_ids = self.select_transitions(Some(internal_event));
                 continue;
             }
         }
@@ -206,19 +207,19 @@ impl StateChart {
      *  Helper Methods    *
     \*  *  *  *  *  *  *  */
 
-    fn select_transitions(&self, event: Option<Event>) -> Result<Vec<TransitionId>, StateChartError> {
+    fn select_transitions(&self, event: Option<Event>) -> Vec<TransitionId> {
         let mut enabled_transitions = Vec::new();
 
         // Traverse the map of states and send the event to each for evaluation
         for state_id in self.registry.get_active_state_ids() {
             let state = self.registry.get_state(state_id).unwrap();
 
-            if let Some(enabled_transition) = state.evaluate_event(event.clone())? {
+            if let Some(enabled_transition) = state.evaluate_event(event.clone(), &self.sys_vars) {
                 enabled_transitions.push(enabled_transition);
             }
         }
 
-        Ok(enabled_transitions)
+        enabled_transitions
     }
 
     /// Processes a single set of Enabled Transitions.

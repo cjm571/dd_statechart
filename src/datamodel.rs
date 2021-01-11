@@ -71,6 +71,10 @@ impl SystemVariables {
         }
     }
 
+    pub fn _x(&self) -> &HashMap<String, u32> {
+        &self._x
+    }
+
 
     /*  *  *  *  *  *  *  *\
      *  Mutator Methods   *

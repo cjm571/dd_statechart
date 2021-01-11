@@ -72,9 +72,13 @@ impl Registry {
     \*  *  *  *  *  *  *  */
     
     pub fn get_state(&self, id: StateId) -> Option<&State> {
-        for state in self.states.iter() {
+        for state in &self.states {
             if state.id() == id {
                 return Some(state)
+            }
+
+            if let Some(state) = Self::get_substates(state, id.clone()) {
+                return Some(state);
             }
         }
 
@@ -82,9 +86,13 @@ impl Registry {
     }
 
     pub fn get_mut_state(&mut self, id: StateId) -> Option<&mut State> {
-        for state in self.states.iter_mut() {
+        for state in &mut self.states {
             if state.id() == id {
                 return Some(state)
+            }
+
+            if let Some(state) = Self::get_mut_substates(state, id.clone()) {
+                return Some(state);
             }
         }
 
@@ -94,8 +102,9 @@ impl Registry {
     pub fn get_all_state_ids(&self) -> Vec<StateId> {
         let mut state_ids = Vec::new();
 
-        for state in self.states.iter() {
+        for state in &self.states {
             state_ids.push(state.id());
+            state_ids.append(&mut Self::get_all_substate_ids(state));
         }
 
         state_ids
@@ -104,9 +113,10 @@ impl Registry {
     pub fn get_active_state_ids(&self) -> Vec<StateId> {
         let mut active_state_ids = Vec::new();
 
-        for state in self.states.iter() {
+        for state in &self.states {
             if state.is_active() {
                 active_state_ids.push(state.id());
+                active_state_ids.append(&mut Self::get_active_substate_ids(state));
             }
         }
 
@@ -115,11 +125,15 @@ impl Registry {
 
     pub fn get_transition(&self, id: TransitionId) -> Option<&Transition> {
         // Search State map for a State containing this ID
-        for state in self.states.iter() {
+        for state in &self.states {
             for transition in state.transitions() {
                 if id == transition.id() {
                     return Some(transition);
                 }
+            }
+
+            if let Some(transition) = Self::get_substate_transitions(state, id.clone()) {
+                return Some(transition);
             }
         }
 
@@ -158,6 +172,82 @@ impl Registry {
         // Push Event into the vector
         self.events.push(event);
         Ok(())
+    }
+
+
+    /*  *  *  *  *  *  *  *\
+     *  Helper Methods    *
+    \*  *  *  *  *  *  *  */
+
+    fn get_substates(state: &State, id: StateId) -> Option<&State> {
+        for substate in state.substates() {
+            if substate.id() == id {
+                return Some(substate)
+            }
+
+
+            if let Some(substate) = Self::get_substates(substate, id.clone()) {
+                return Some(substate);
+            }
+        }
+
+        None
+    }
+    
+
+    fn get_mut_substates(state: &mut State, id: StateId) -> Option<&mut State> {
+        for substate in state.mut_substates() {
+            if substate.id() == id {
+                return Some(substate)
+            }
+
+
+            if let Some(substate) = Self::get_mut_substates(substate, id.clone()) {
+                return Some(substate);
+            }
+        }
+
+        None
+    }
+
+    fn get_all_substate_ids(state: &State) -> Vec<StateId> {
+        let mut substate_ids = Vec::new();
+        
+        for substate in state.substates() {
+            substate_ids.push(substate.id());
+            substate_ids.append(&mut Self::get_all_substate_ids(substate));
+        }
+
+        substate_ids
+    }
+
+    fn get_active_substate_ids(state: &State) -> Vec<StateId> {
+        let mut active_substate_ids = Vec::new();
+        
+        for substate in state.substates() {
+            if substate.is_active() {
+                active_substate_ids.push(substate.id());
+                active_substate_ids.append(&mut Self::get_active_substate_ids(substate));
+            }
+        }
+
+        active_substate_ids
+    }
+
+    fn get_substate_transitions(state: &State, id: TransitionId) -> Option<&Transition> {
+        for substate in state.substates() {
+            for transition in substate.transitions() {
+                if id == transition.id() {
+                    return Some(transition);
+                }
+            }
+
+            if let Some(transition) = Self::get_substate_transitions(substate, id.clone()) {
+                return Some(transition);
+            }
+        }
+
+        None
     }
 }
 
@@ -205,6 +295,7 @@ mod tests {
             StateBuilder,
             StateId,
         },
+        transition::TransitionId,
     };
 
 
@@ -265,7 +356,7 @@ mod tests {
         );
 
         assert_eq!(
-            registry.get_transition(String::new()),
+            registry.get_transition(TransitionId::default()),
             None,
            "get_transition() somehow found a nonexistent Transition"
         );

@@ -30,6 +30,8 @@ use std::{
 };
 
 use crate::{
+    condition::Condition,
+    datamodel::SystemVariables,
     event::Event,
     state::StateId,
 };
@@ -50,10 +52,13 @@ pub struct Transition {
     target_ids: Vec<StateId>,
 }
 
-pub type TransitionId = String;
-
-/// Convenience alias for boolean expressions to be used as transition guards
-pub type Condition = fn() -> bool;
+#[derive(Clone, Default, PartialEq)]
+pub struct TransitionId {
+    source:     StateId,
+    events:     Vec<String>,
+    cond:       String,
+    targets:    Vec<StateId>,
+}
 
 
 #[derive(Debug, PartialEq)]
@@ -109,8 +114,9 @@ impl Transition {
     \*  *  *  *  *  *  *  */
     
     /// Evaluates the guard condition for this Transition
-    pub fn evaluate_condition(&self) -> bool {
-        (self.cond)()
+    pub fn evaluate_condition(&self, sys_vars: &SystemVariables) -> bool {
+        self.cond.evaluate(sys_vars)
+        
         //TODO: If condition has returned an error, an 'error.execution' event must be placed on the internal event queue
         //      See §5.9.1
     }
@@ -120,9 +126,9 @@ impl Transition {
 impl TransitionBuilder {
     pub fn new(source_state_id: StateId) -> Self {
         Self {
-            id:         String::new(),
+            id:         TransitionId::default(),
             events:     Vec::new(),
-            cond:       || {true},
+            cond:       Condition::default(),
             cond_set:   false,
             source_id:  source_state_id,
             target_ids: Vec::new(),
@@ -137,20 +143,27 @@ impl TransitionBuilder {
         //TODO: must have at least one of event, cond, or target
 
         // Construct ID fingerprint
-        let mut fingerprint = String::new();
-        fingerprint.push_str(&self.source_id);
+        let mut targets = Vec::new();
         for target_id in &self.target_ids {
-            fingerprint.push_str(&target_id);
+            targets.push(target_id.clone());
         }
+        let mut events = Vec::new();
         for event in &self.events {
-            fingerprint.push_str(&event.id());
-        }        
+            events.push(event.id());
+        }
+
+        let id = TransitionId {
+            source: self.source_id.clone(),
+            events,
+            cond:   self.cond.to_string(),
+            targets,
+        };
 
         Transition {
-            id:         fingerprint,
+            id,
             events:     self.events,
             cond:       self.cond,
-            source_id:  self.source_id,
+            source_id:  self.source_id.clone(),
             target_ids: self.target_ids,
         }
     }
@@ -207,11 +220,27 @@ impl TransitionBuilder {
 impl fmt::Debug for Transition {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Transition")
-            .field("id", &self.id)
-            .field("event", &self.events)
-            .field("cond", &self.cond)
-            .field("source_id", &self.source_id)
-            .field("target_ids", &self.target_ids)
+            .field("id",            &self.id)
+            .field("event",         &self.events)
+            .field("cond",          &self.cond)
+            .field("source_id",     &self.source_id)
+            .field("target_ids",    &self.target_ids)
+            .finish()
+    }
+}
+
+
+/*  *  *  *  *  *  *  *\
+ *    TransitionId    *
+\*  *  *  *  *  *  *  */
+
+impl fmt::Debug for TransitionId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("TransitionId")
+            .field("source",    &self.source)
+            .field("events",    &self.events)
+            .field("cond",      &self.cond)
+            .field("targets",   &self.targets)
             .finish()
     }
 }
@@ -253,6 +282,7 @@ mod builder_tests {
     use std::error::Error;
 
     use crate::{
+        condition::Condition,
         event::Event,
         transition::{
             TransitionBuilder,
@@ -315,10 +345,10 @@ mod builder_tests {
     fn condition_already_set() -> Result<(), Box<dyn Error>> {
         // Verify that already-set condition is caught
         let builder = TransitionBuilder::new(String::from("source"))
-            .cond(|| {true})?;
+            .cond(Condition::default())?;
 
         assert_eq!(
-            builder.cond(|| {true}),
+            builder.cond(Condition::default()),
             Err(TransitionBuilderError::ConditionAlreadySet),
             "Failed to catch already-set condition"
         );

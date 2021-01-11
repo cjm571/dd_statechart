@@ -24,7 +24,7 @@
     <!-- on/pause state -->
 
     <transition event="turn.off" target="off"/>
-    <transition cond="timer >= cook_time" target="off"/>
+    <transition cond="timer >= cook_time > too_many_args" target="off"/>
 
     <state id="idle">
       <!-- default immediate transition if door is shut -->

@@ -107,7 +107,9 @@ impl Event {
 
         for node in &self.id_nodes {
             composed_id.push_str(node);
+            composed_id.push('.');
         }
+        composed_id.pop();
 
         composed_id
     }
