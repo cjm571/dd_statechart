@@ -664,7 +664,7 @@ mod tests {
 
         assert_eq!(
             parser.parse(),
-            Err(ParserError::RegistryError(RegistryError::EventAlreadyRegistered(Event::from("turn.on")?)))
+            Err(ParserError::RegistryError(RegistryError::StateAlreadyRegistered(String::from("duplicate"))))
         );
 
         Ok(())
@@ -730,7 +730,7 @@ mod tests {
         // Send turn-on event
         eprintln!("*** Sending 'turn.on' Event...");
         let turn_on = Event::from("turn.on")?;
-        statechart.process_external_event(turn_on)?;
+        statechart.process_external_event(&turn_on)?;
 
         eprintln!("*** Active State(s):\n{:#?}", statechart.active_state_ids());
         assert_eq!(

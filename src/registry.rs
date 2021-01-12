@@ -157,20 +157,12 @@ impl Registry {
         
         //TODO: Sanity check(s) for invalid State arrangements
 
+        // Traverse State and Substates for Events
+        self.register_events_and_traverse_substates(&state)?;
+
         // Push State into the vector
         self.states.push(state);
 
-        Ok(())
-    }
-
-    pub fn register_event(&mut self, event: Event) -> Result<(), RegistryError> {
-        // Ensure Event is not already registered
-        if self.events.contains(&event) {
-            return Err(RegistryError::EventAlreadyRegistered(event));
-        }
-
-        // Push Event into the vector
-        self.events.push(event);
         Ok(())
     }
 
@@ -178,6 +170,33 @@ impl Registry {
     /*  *  *  *  *  *  *  *\
      *  Helper Methods    *
     \*  *  *  *  *  *  *  */
+
+    fn register_event(&mut self, event: Event) -> Result<(), RegistryError> {
+        // Ensure Event is not already registered
+        if self.events.contains(&event) {
+            return Err(RegistryError::EventAlreadyRegistered(event));
+        }
+        
+        // Push Event into the vector
+        self.events.push(event);
+        Ok(())
+    }
+
+    fn register_events_and_traverse_substates(&mut self, state: &State) -> Result<(), RegistryError> {
+        // Check current State's Transitions for Events
+        for transition in state.transitions() {
+            for event in transition.events() {
+                self.register_event(event.clone())?;
+            }
+        }
+
+        // Traverse Substates for Events
+        for substate in state.substates() {
+            self.register_events_and_traverse_substates(substate)?;
+        }
+
+        Ok(())
+    }
 
     fn get_substates(state: &State, id: StateId) -> Option<&State> {
         for substate in state.substates() {

@@ -158,17 +158,17 @@ impl StateChart {
      *  Utility Methods   *
     \*  *  *  *  *  *  *  */
 
-    pub fn process_external_event(&mut self, event: Event) -> Result<(), StateChartError> {
+    pub fn process_external_event(&mut self, event: &Event) -> Result<(), StateChartError> {
         // Ensure the given Event is registered
         if !self.registry.event_is_registered(event.clone()) {
-            return Err(StateChartError::ReceivedUnregisteredEvent(event));
+            return Err(StateChartError::ReceivedUnregisteredEvent(event.clone()));
         }
 
         // Set the _event System Variable to the given Event
         self.sys_vars.set_event(event.clone());
         
         // Collect and process the set of enabled Transitions
-        let mut enabled_transition_ids = self.select_transitions(Some(event));
+        let mut enabled_transition_ids = self.select_transitions(Some(event.clone()));
 
         //OPT: *STYLE* I don't like this loop, it's not very easy to tell what's being processed in the microstep
         // Enter Microstep processing loop
@@ -311,15 +311,7 @@ impl StateChartBuilder {
         self
     }
 
-    pub fn state(&mut self, state: State) -> Result<&mut Self, RegistryError> {
-        // Iterate through State's Transitions to register Events
-        for transition in state.transitions() {
-            for event in transition.events() {
-                //OPT: *DESIGN* Should the registry just take references and perform an internal clone?
-                self.registry.register_event(event.clone())?;
-            }
-        }
-        
+    pub fn state(&mut self, state: State) -> Result<&mut Self, RegistryError> {        
         // Register the State
         self.registry.register_state(state)?;
 
@@ -462,7 +454,7 @@ mod tests {
             .build()?;
 
         // Broadcast a Go To Non-Imaging event
-        statechart.process_external_event(go_to_non_imaging)?;
+        statechart.process_external_event(&go_to_non_imaging)?;
 
         // Verify that IDLE is inactive and NON-IMAGING is active
         assert_eq!(statechart.active_state_ids().contains(&idle_id), false);
@@ -506,7 +498,7 @@ mod tests {
 
         // Verify the unregistered event is rejected
         assert_eq!(
-            statechart.process_external_event(unregistered_event.clone()),
+            statechart.process_external_event(&unregistered_event),
             Err(StateChartError::ReceivedUnregisteredEvent(unregistered_event)),
             "Failed to reject an unregistered event"
         );
@@ -549,7 +541,7 @@ mod tests {
             .build()?;
         
         // Send the test Event to the statechart, and verify that the eventless transition is also executed
-        statechart.process_external_event(event)?;
+        statechart.process_external_event(&event)?;
 
         assert_eq!(
             statechart.active_state_ids().first().unwrap(),

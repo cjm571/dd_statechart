@@ -495,7 +495,7 @@ mod tests {
             .build().unwrap();
         
         assert_eq!(
-            statechart.process_external_event(initial_to_terminal),
+            statechart.process_external_event(&initial_to_terminal),
             Err(StateChartError::StateError(StateError::FailedCallback(1))),
             "Failed to catch a failed on_exit callback"
         );
@@ -534,7 +534,7 @@ mod tests {
             .build().unwrap();
         
         assert_eq!(
-            statechart.process_external_event(initial_to_terminal),
+            statechart.process_external_event(&initial_to_terminal),
             Err(StateChartError::StateError(StateError::FailedCallback(1))),
             "Failed to catch a failed on_entry callback"
         );
