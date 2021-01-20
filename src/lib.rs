@@ -79,6 +79,7 @@ use std::{
 pub mod condition;
 pub mod datamodel;
 pub mod event;
+pub mod interpreter;
 pub mod parser;
 pub mod registry;
 pub mod state;

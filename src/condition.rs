@@ -290,7 +290,7 @@ impl fmt::Display for ConditionError {
             },
             Self::InvalidOperation(op) => {
                 write!(f, "Invalid operation '{}' in Condition statement", op)
-            }
+            },
         }
     }
 }
