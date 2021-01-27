@@ -64,13 +64,13 @@ impl<'c> Lexer<'c> {
      *  Utility Methods   *
     \*  *  *  *  *  *  *  */
     
-    pub fn scan_tokens(&mut self) -> Result<Vec<Token>, LexerError> {
+    pub fn scan(&mut self) -> Result<Vec<Token>, LexerError> {
         let mut tokens = Vec::new();
 
         // Iterate through the end of the expression string
         while self.expr_iter.peek().is_some() {
             // Only push tokens - whitespace is skipped
-            if let Some(token) = self.scan_token()? {
+            if let Some(token) = self.scan_single()? {
                 tokens.push(token);
             }
         }
@@ -83,7 +83,7 @@ impl<'c> Lexer<'c> {
      *   Helper Methods   *
     \*  *  *  *  *  *  *  */
 
-    fn scan_token(&mut self) -> Result<Option<Token>, LexerError> {
+    fn scan_single(&mut self) -> Result<Option<Token>, LexerError> {
         if let Some(character) = self.consume_character() {
             
             // Construct a token based on matching the first character, interrogating subsequent characters if necessary
@@ -206,6 +206,7 @@ impl<'c> Lexer<'c> {
         let mut string_chars = Vec::new();
         let start = self.position;
         
+        //OPT: *STYLE* Replace a lot of these while-is-some loops with if let None = loop {} trickery
         // Continually peek the next character until closing ' or end of expression is encountered
         while self.expr_iter.peek().is_some() && self.expr_iter.peek().unwrap() != &'\'' {
             // Consume the character and add it to the char vector
@@ -327,7 +328,7 @@ mod tests {
         let expr_str = "_event.data[0] == 'OPER.PLUS'";
         let mut lexer = Lexer::new(expr_str);
 
-        eprintln!("Tokens from '{}':\n{:?}", expr_str, lexer.scan_tokens());
+        eprintln!("Tokens from '{}':\n{:?}", expr_str, lexer.scan());
 
         Ok(())
     }
@@ -338,12 +339,12 @@ mod tests {
         let mut lexer_b = Lexer::new("5.5.5");
         
         assert_eq!(
-            lexer_a.scan_tokens(),
+            lexer_a.scan(),
             Err(LexerError::UnexpectedCharacter(String::from('`'), 1)),
         );
         
         assert_eq!(
-            lexer_b.scan_tokens(),
+            lexer_b.scan(),
             Err(LexerError::UnexpectedCharacter(String::from('.'), 4)),
         );
 
@@ -355,7 +356,7 @@ mod tests {
         let mut lexer = Lexer::new("'unterm_string_literal");
         
         assert_eq!(
-            lexer.scan_tokens(),
+            lexer.scan(),
             Err(LexerError::UnterminatedStringLiteral(String::from("unterm_string_literal"), 1)),
         );
 

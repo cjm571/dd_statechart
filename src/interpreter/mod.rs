@@ -25,13 +25,16 @@ Purpose:
 ///////////////////////////////////////////////////////////////////////////////
 
 pub mod lexer;
+pub mod parser;
 
 
 ///////////////////////////////////////////////////////////////////////////////
 //  Data Structures
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug, PartialEq)]
+//OPT: *DESIGN* May be useful to stratify into arithmetic, logical, etc.
+//              Could avoid duplication of subsets of the enum in submodules
+#[derive(Clone, Debug, PartialEq)]
 pub enum Token {
     // Single-Character Tokens
     // NOTE: Semicolons are not supported
@@ -63,4 +66,43 @@ pub enum Token {
     String(String),
     Integer(i32),
     Float(f32),
+}
+
+
+///////////////////////////////////////////////////////////////////////////////
+//  Unit Tests
+///////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+
+    use std::error::Error;
+
+    use crate::interpreter::{
+        lexer::Lexer,
+        parser::Parser,
+    };
+
+
+    type TestResult = Result<(), Box<dyn Error>>;
+
+
+    #[test]
+    fn no_identifiers() -> TestResult {
+        let cond_str = "-5 != (10 / 2 * (3 + 1)) == true";
+        eprintln!("Processing string '{}'...", cond_str);
+
+        // Create the Lexer instance and scan for Tokens
+        let mut lexer = Lexer::new(cond_str);
+        let tokens = lexer.scan()?;
+
+        // Create the Parser instance and parse the Tokens into an Expression
+        let mut parser = Parser::new(&tokens);
+        let expr = parser.parse()?;
+
+        // Pretty-Print the Expression
+        eprintln!("*** Result ***\n{}", expr);
+        
+        Ok(())
+    }
 }
