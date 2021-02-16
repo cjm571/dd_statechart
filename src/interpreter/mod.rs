@@ -24,6 +24,7 @@ Purpose:
 //  Module Declarations
 ///////////////////////////////////////////////////////////////////////////////
 
+pub mod evaluator;
 pub mod lexer;
 pub mod parser;
 
@@ -65,7 +66,7 @@ pub enum Token {
     Identifier(String),
     String(String),
     Integer(i32),
-    Float(f32),
+    Float(f64),
 }
 
 

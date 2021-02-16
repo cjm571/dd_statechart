@@ -60,7 +60,8 @@ pub enum ParserError {
 
 pub type ParserResult = Result<Expression, ParserError>;
 
-#[derive(Debug, PartialEq)]
+//FIXME: Move all these to the top-level module
+#[derive(Clone, Debug, PartialEq)]
 pub enum Expression {
     Literal(Literal),
     Unary(Unary),
@@ -68,30 +69,43 @@ pub enum Expression {
     Grouping(Box<Self>),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Literal {
     Integer(i32),
-    Float(f32),
+    Float(f64),
     String(String),
     True,
     False,
     Null,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Default)]
+pub struct Null {}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Unary {
     Negation(Box<Expression>),
     Not(Box<Expression>),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Operator {
+    Logical(LogicalOperator),
+    Arithmetic(ArithmeticOperator),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum LogicalOperator {
     EqualTo,
     NotEqualTo,
     GreaterThan,
     GreaterThanOrEqualTo,
     LessThan,
     LessThanOrEqualTo,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ArithmeticOperator {
     Plus,
     Minus,
     Star,
@@ -341,16 +355,8 @@ impl fmt::Display for Unary {
 impl fmt::Display for Operator {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::EqualTo               => write!(f, "=="),
-            Self::NotEqualTo            => write!(f, "!="),
-            Self::GreaterThan           => write!(f, ">"),
-            Self::GreaterThanOrEqualTo  => write!(f, ">="),
-            Self::LessThan              => write!(f, "<"),
-            Self::LessThanOrEqualTo     => write!(f, "<="),
-            Self::Plus                  => write!(f, "+"),
-            Self::Minus                 => write!(f, "-"),
-            Self::Star                  => write!(f, "*"),
-            Self::Slash                 => write!(f, "/"),
+            Self::Logical(op)       => write!(f, "{}", op),
+            Self::Arithmetic(op)    => write!(f, "{}", op),
         }
     }
 }
@@ -361,17 +367,52 @@ impl TryFrom<&Token> for Operator {
 
     fn try_from(src: &Token) -> Result<Self, Self::Error> {
         match src {
-            Token::EqualEqual           => Ok(Self::EqualTo),
-            Token::BangEqual            => Ok(Self::NotEqualTo),
-            Token::GreaterThan          => Ok(Self::GreaterThan),
-            Token::GreaterThanOrEqualTo => Ok(Operator::GreaterThanOrEqualTo),
-            Token::LessThan             => Ok(Self::LessThan),
-            Token::LessThanOrEqualTo    => Ok(Self::LessThanOrEqualTo),
-            Token::Plus                 => Ok(Self::Plus),
-            Token::Minus                => Ok(Self::Minus),
-            Token::Star                 => Ok(Self::Star),
-            Token::Slash                => Ok(Self::Slash),
+            Token::EqualEqual           => Ok(Self::Logical(LogicalOperator::EqualTo)),
+            Token::BangEqual            => Ok(Self::Logical(LogicalOperator::NotEqualTo)),
+            Token::GreaterThan          => Ok(Self::Logical(LogicalOperator::GreaterThan)),
+            Token::GreaterThanOrEqualTo => Ok(Self::Logical(LogicalOperator::GreaterThanOrEqualTo)),
+            Token::LessThan             => Ok(Self::Logical(LogicalOperator::LessThan)),
+            Token::LessThanOrEqualTo    => Ok(Self::Logical(LogicalOperator::LessThanOrEqualTo)),
+            Token::Plus                 => Ok(Self::Arithmetic(ArithmeticOperator::Plus)),
+            Token::Minus                => Ok(Self::Arithmetic(ArithmeticOperator::Minus)),
+            Token::Star                 => Ok(Self::Arithmetic(ArithmeticOperator::Star)),
+            Token::Slash                => Ok(Self::Arithmetic(ArithmeticOperator::Slash)),
             _                           => Err(ParserError::InvalidOperatorConversion),
+        }
+    }
+}
+
+
+/*  *  *  *  *  *  *  *\
+ *   LogicalOperator  *
+\*  *  *  *  *  *  *  */
+
+impl fmt::Display for LogicalOperator {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::EqualTo               => write!(f, "=="),
+            Self::NotEqualTo            => write!(f, "!="),
+            Self::GreaterThan           => write!(f, ">"),
+            Self::GreaterThanOrEqualTo  => write!(f, ">="),
+            Self::LessThan              => write!(f, "<"),
+            Self::LessThanOrEqualTo     => write!(f, "<="),
+        }
+    }
+}
+
+
+
+/*  *  *  *  *  *  *  *\
+ * ArithmeticOperator *
+\*  *  *  *  *  *  *  */
+
+impl fmt::Display for ArithmeticOperator {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Plus  => write!(f, "+"),
+            Self::Minus => write!(f, "-"),
+            Self::Star  => write!(f, "*"),
+            Self::Slash => write!(f, "/"),
         }
     }
 }
@@ -391,6 +432,7 @@ mod tests {
 
     use crate::interpreter::{
         Token,
+        lexer::Lexer,
         parser::{
             Parser,
             ParserError,
@@ -398,6 +440,7 @@ mod tests {
             Literal,
             Unary,
             Operator,
+            ArithmeticOperator,
         },
     };
 
@@ -407,23 +450,17 @@ mod tests {
 
     #[test]
     fn output_test() -> TestResult {
-        let expr = Expression::Binary(
-            Box::new(Expression::Unary(
-                Unary::Negation(
-                    Box::new(Expression::Literal(
-                        Literal::Integer(123)
-                    ))
-                )
-            )),
-            Operator::Star,
-            Box::new(Expression::Grouping(
-                Box::new(Expression::Literal(
-                    Literal::Float(45.67)
-                ))
-            ))
-        );
+        let expr_str = "-123 * (45.67)";
 
-        eprintln!("Expression '-123 * (45.67)' pretty-printed:\n{}", expr);
+        // Tokenize the expresion string
+        let mut lexer = Lexer::new(expr_str);
+        let tokens = lexer.scan()?;
+        
+        // Parse the tokens
+        let mut parser = Parser::new(&tokens);
+        let expr = parser.parse()?;
+
+        eprintln!("Expression '{}' \"pretty\"-printed:\n{}", expr_str, expr);
 
         let pretty_expr = format!("{}", expr);
         assert_eq!(
@@ -441,7 +478,7 @@ mod tests {
 
         assert_eq!(
             Operator::try_from(&valid_token),
-            Ok(Operator::Plus)
+            Ok(Operator::Arithmetic(ArithmeticOperator::Plus))
         );
 
         assert_eq!(
@@ -474,7 +511,7 @@ mod tests {
             Ok(
                 Expression::Binary(
                     Box::new(Expression::Literal(Literal::Integer(1))),
-                    Operator::Plus,
+                    Operator::Arithmetic(ArithmeticOperator::Plus),
                     Box::new(Expression::Grouping(
                         Box::new(Expression::Literal(Literal::Integer(2)))
                     ))
