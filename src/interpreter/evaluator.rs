@@ -41,7 +41,7 @@ use crate::interpreter::parser::{
 ///////////////////////////////////////////////////////////////////////////////
 
 pub struct Evaluator {
-    expr: Box<Expression>,
+    expr: Expression,
 }
 
 
@@ -101,7 +101,7 @@ impl<T: 'static + PartialEq + PartialOrd + fmt::Debug> EvaluatedValue for T {
 ///////////////////////////////////////////////////////////////////////////////
 
 impl Evaluator {
-    pub fn new(expr: Box<Expression>)  -> Self {
+    pub fn new(expr: Expression)  -> Self {
         Self { expr }
     }
 
@@ -110,8 +110,8 @@ impl Evaluator {
      *  Utility Methods   *
     \*  *  *  *  *  *  *  */
 
-    pub fn evaluate(&mut self) -> Result<Box<dyn EvaluatedValue>, EvaluatorError> {
-        //FIXME: Suss clone()
+    pub fn evaluate(&self) -> Result<Box<dyn EvaluatedValue>, EvaluatorError> {
+        //FIXME: Bad clone()...
         Self::eval_expr(self.expr.clone())
     }
 
@@ -120,11 +120,11 @@ impl Evaluator {
      *   Helper Methods   *
     \*  *  *  *  *  *  *  */
 
-    fn eval_expr(expr: Box<Expression>) -> Result<Box<dyn EvaluatedValue>, EvaluatorError> {
+    fn eval_expr(expr: Expression) -> Result<Box<dyn EvaluatedValue>, EvaluatorError> {
         //FIXME: DEBUG DELETE
         eprintln!("*** ENTER eval_expr ***");
 
-        match *expr {
+        match expr {
             Expression::Literal(literal)        => {
                 //FIXME: DEBUG DELETE and REVERT
                 // Ok(Self::eval_literal(literal))
@@ -139,7 +139,7 @@ impl Evaluator {
             },
             Expression::Unary(unary)            => Ok(Self::eval_unary(unary)?),
             Expression::Binary(left, op, right) => Ok(Self::eval_binary(op, left, right)?),
-            Expression::Grouping(inner_expr)    => Self::eval_expr(inner_expr),
+            Expression::Grouping(inner_expr)    => Self::eval_expr(*inner_expr),
         }
     }
 
@@ -194,7 +194,7 @@ impl Evaluator {
     fn eval_unary(unary: Unary) -> Result<Box<dyn EvaluatedValue>, EvaluatorError> {
         match unary {
             Unary::Negation(expr) => {
-                let value = Self::eval_expr(expr.clone())?;
+                let value = Self::eval_expr(*expr.clone())?;
                 
                 // First check if the value is a String, as this is an error
                 if let Some(as_string) = value.as_any().downcast_ref::<String>() {
@@ -224,12 +224,12 @@ impl Evaluator {
                 }
 
                 // Value could not be downcast into any of the expected types, return error
-                Err(EvaluatorError::UnknownNegation(expr.clone()))
+                Err(EvaluatorError::UnknownNegation(expr))
 
                 //FIXME: HANDLE NULL
             },
             Unary::Not(expr) => {
-                let value = Self::eval_expr(expr.clone())?;
+                let value = Self::eval_expr(*expr)?;
                 
                 // First check if the value is bool - we can actually do something
                 // sensible with those
@@ -250,8 +250,8 @@ impl Evaluator {
         eprintln!("*** ENTER eval_binary ***");
         
         //FIXME: Bad clone()...
-        let left_value = Self::eval_expr(left.clone())?;
-        let right_value = Self::eval_expr(right.clone())?;
+        let left_value = Self::eval_expr(*left.clone())?;
+        let right_value = Self::eval_expr(*right.clone())?;
 
         match op {
             /* Arithmetic Operations */
@@ -387,7 +387,7 @@ mod tests {
             Operator::Arithmetic(ArithmeticOperator::Plus),
             Box::new(Expression::Literal(Literal::Integer(2))),
         );
-        let mut evaluator = Evaluator::new(Box::new(expr.clone()));
+        let evaluator = Evaluator::new(expr.clone());
 
         eprintln!("Evaluating Expression '{}'...", expr.clone());
 
@@ -423,7 +423,7 @@ mod tests {
             Operator::Logical(LogicalOperator::EqualTo),
             Box::new(Expression::Literal(Literal::Integer(int_val))),
         );
-        let mut evaluator = Evaluator::new(Box::new(expr.clone()));
+        let evaluator = Evaluator::new(expr.clone());
 
         eprintln!("Evaluating Expression '{}'...", expr.clone());
 
