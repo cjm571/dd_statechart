@@ -20,7 +20,7 @@ Purpose:
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 use std::{
-    any::Any,
+    any::{Any, TypeId},
     cmp::Ordering,
     error::Error,
     fmt,
@@ -111,7 +111,7 @@ impl Evaluator {
     \*  *  *  *  *  *  *  */
 
     pub fn evaluate(&self) -> Result<Box<dyn EvaluatedValue>, EvaluatorError> {
-        //FIXME: Bad clone()...
+        //OPT: *DESIGN* Bad clone()... Figure out how to use a reference correctly
         Self::eval_expr(self.expr.clone())
     }
 
@@ -121,22 +121,8 @@ impl Evaluator {
     \*  *  *  *  *  *  *  */
 
     fn eval_expr(expr: Expression) -> Result<Box<dyn EvaluatedValue>, EvaluatorError> {
-        //FIXME: DEBUG DELETE
-        eprintln!("*** ENTER eval_expr ***");
-
         match expr {
-            Expression::Literal(literal)        => {
-                //FIXME: DEBUG DELETE and REVERT
-                // Ok(Self::eval_literal(literal))
-
-                let value = Self::eval_literal(literal);
-                if let Some(value) = value.as_any().downcast_ref::<&i32>() {
-                    eprintln!("Successfully downcast to &i32!");
-                    eprintln!("Returning '{}' TypeId: {:?}\n", value, value.as_any().type_id());
-                }
-                
-                Ok(Box::new(value))
-            },
+            Expression::Literal(literal)        => Ok(Self::eval_literal(literal)),
             Expression::Unary(unary)            => Ok(Self::eval_unary(unary)?),
             Expression::Binary(left, op, right) => Ok(Self::eval_binary(op, left, right)?),
             Expression::Grouping(inner_expr)    => Self::eval_expr(*inner_expr),
@@ -144,48 +130,14 @@ impl Evaluator {
     }
 
     fn eval_literal(literal: Literal) -> Box<dyn EvaluatedValue> {
-        //FIXME: DEBUG DELETE
-        eprintln!("*** ENTER eval_literal ***");
-
         match literal {
-            Literal::Integer(value) => {
-                //FIXME: DEBUG DELETE
-                let value_as_any = &value as &dyn Any;
-                eprintln!("Returning '{}' TypeId: {:?}\n", value, value_as_any.type_id());
-                Box::new(value)
-            },
-            Literal::Float(value) => {
-                //FIXME: DEBUG DELETE
-                let value_as_any = &value as &dyn Any;
-                eprintln!("Returning '{}' TypeId: {:?}\n", value, value_as_any.type_id());
-                Box::new(value)
-            },
-            Literal::String(value) => {
-                //FIXME: DEBUG DELETE
-                let value_as_any = &value as &dyn Any;
-                eprintln!("Returning '{}' TypeId: {:?}\n", value, value_as_any.type_id());
-                Box::new(value)
-            },
-            Literal::True => {
-                //FIXME: DEBUG DELETE
-                let value = true;
-                let value_as_any = &value as &dyn Any;
-                eprintln!("Returning '{}' TypeId: {:?}\n", value, value_as_any.type_id());
-                Box::new(true)
-            },
-            Literal::False => {
-                //FIXME: DEBUG DELETE
-                let value = false;
-                let value_as_any = &value as &dyn Any;
-                eprintln!("Returning '{}' TypeId: {:?}\n", value, value_as_any.type_id());
-                Box::new(false)
-            },
-            Literal::Null => {
-                //FIXME: DEBUG DELETE and REVERT
-                // return None
-                let value = -99999;
-                let value_as_any = &value as &dyn Any;
-                eprintln!("Returning '{}' TypeId: {:?}\n", value, value_as_any.type_id());
+            Literal::Integer(value) => Box::new(value),
+            Literal::Float(value)   => Box::new(value),
+            Literal::String(value)  => Box::new(value),
+            Literal::True           => Box::new(true),
+            Literal::False          => Box::new(false),
+            Literal::Null           => {
+                //FIXME: HANDLE NULL
                 Box::new(-99999)
             },
         }
@@ -197,14 +149,14 @@ impl Evaluator {
                 let value = Self::eval_expr(*expr.clone())?;
                 
                 // First check if the value is a String, as this is an error
-                if let Some(as_string) = value.as_any().downcast_ref::<String>() {
+                if let Some(as_string) = (*value).as_any().downcast_ref::<String>() {
                     return Err(EvaluatorError::StringNegation(as_string.clone()));
                 }
 
                 // Booleans must be handled differently, because the
                 // Negation operator in ECMAscript changes their type to
                 // an integer
-                if let Some(as_bool) = value.as_any().downcast_ref::<bool>() {
+                if let Some(as_bool) = (*value).as_any().downcast_ref::<bool>() {
                     // '-true' evaluates to -1, because reasons
                     if as_bool == &true {
                         return Ok(Box::new(-1));
@@ -216,10 +168,10 @@ impl Evaluator {
                 }
 
                 // The remaining variants can be handled by simple negation
-                if let Some(as_int) = value.as_any().downcast_ref::<i32>() {
+                if let Some(as_int) = (*value).as_any().downcast_ref::<i32>() {
                     return Ok(Box::new(-as_int));
                 }
-                if let Some(as_float) = value.as_any().downcast_ref::<f64>() {
+                if let Some(as_float) = (*value).as_any().downcast_ref::<f64>() {
                     return Ok(Box::new(-as_float));
                 }
 
@@ -233,7 +185,7 @@ impl Evaluator {
                 
                 // First check if the value is bool - we can actually do something
                 // sensible with those
-                if let Some(as_bool) = value.as_any().downcast_ref::<bool>() {
+                if let Some(as_bool) = (*value).as_any().downcast_ref::<bool>() {
                     Ok(Box::new(!as_bool))
                 }
                 // All non-bool values evaluate to 'false' when Notted
@@ -246,10 +198,7 @@ impl Evaluator {
     }
 
     fn eval_binary(op: Operator, left: Box<Expression>, right: Box<Expression>) -> Result<Box<dyn EvaluatedValue>, EvaluatorError> {
-        //FIXME: DEBUG DELETE
-        eprintln!("*** ENTER eval_binary ***");
-        
-        //FIXME: Bad clone()...
+        //OPT: *DESIGN* Bad clone()... Figure out how to use a reference correctly
         let left_value = Self::eval_expr(*left.clone())?;
         let right_value = Self::eval_expr(*right.clone())?;
 
@@ -262,36 +211,20 @@ impl Evaluator {
                 }
 
                 // Integer Addition
-                if let (Some(left_as_int), Some(right_as_int)) = (left_value.as_any().downcast_ref::<i32>(), right_value.as_any().downcast_ref::<i32>()) {
-                    //FIXME: DEBUG DELETE
-                    eprintln!("Successfully downcast to i32/i32!");
-                    eprintln!("Returning '{}'", left_as_int + right_as_int);
-                    
+                if let (Some(left_as_int), Some(right_as_int)) = ((*left_value).as_any().downcast_ref::<i32>(), (*right_value).as_any().downcast_ref::<i32>()) {
                     return Ok(Box::new(left_as_int + right_as_int));
                 }
 
                 // FP Addition
-                if let (Some(left_as_float), Some(right_as_float)) = (left_value.as_any().downcast_ref::<f64>(), right_value.as_any().downcast_ref::<f64>()) {
-                    //FIXME: DEBUG DELETE
-                    eprintln!("Successfully downcast to f64/f64!");
-                    eprintln!("Returning '{}'", left_as_float + right_as_float);
-                    
+                if let (Some(left_as_float), Some(right_as_float)) = ((*left_value).as_any().downcast_ref::<f64>(), (*right_value).as_any().downcast_ref::<f64>()) {
                     return Ok(Box::new(left_as_float + right_as_float));
                 }
 
                 // Mixed-Number Addition (casts Integers to Floats)
-                if let (Some(left_as_int), Some(right_as_float)) = (left_value.as_any().downcast_ref::<i32>(), right_value.as_any().downcast_ref::<f64>()) {
-                    //FIXME: DEBUG DELETE
-                    eprintln!("Successfully downcast to i32/f64!");
-                    eprintln!("Returning '{}'", *left_as_int as f64 + right_as_float);
-                    
+                if let (Some(left_as_int), Some(right_as_float)) = ((*left_value).as_any().downcast_ref::<i32>(), (*right_value).as_any().downcast_ref::<f64>()) {
                     return Ok(Box::new(*left_as_int as f64 + right_as_float));
                 }
-                if let (Some(left_as_float), Some(right_as_int)) = (left_value.as_any().downcast_ref::<f64>(), right_value.as_any().downcast_ref::<i32>()) {
-                    //FIXME: DEBUG DELETE
-                    eprintln!("Successfully downcast to f64/i32!");
-                    eprintln!("Returning '{}'", left_as_float + *right_as_int as f64);
-                    
+                if let (Some(left_as_float), Some(right_as_int)) = ((*left_value).as_any().downcast_ref::<f64>(), (*right_value).as_any().downcast_ref::<i32>()) {
                     return Ok(Box::new(left_as_float + *right_as_int as f64));
                 }
 
@@ -358,10 +291,7 @@ impl fmt::Display for EvaluatorError {
 #[cfg(test)]
 mod tests {
 
-    use std::{
-        any::Any,
-        error::Error,
-    };
+    use std::error::Error;
 
     use crate::interpreter::{
         evaluator::{
@@ -373,6 +303,7 @@ mod tests {
             Literal,
             LogicalOperator,
             Operator,
+            Unary,
         },
     };
 
@@ -381,11 +312,18 @@ mod tests {
 
     #[test]
     fn arithmetic_evaluation() -> TestResult {
+        let left_val = -100;
+        let right_val = 2;
+        
         // Create an Evaluator object loaded with a binary arithmetic expression
         let expr = Expression::Binary(
-            Box::new(Expression::Literal(Literal::Float(1.5))),
+            Box::new(Expression::Unary(
+                Unary::Negation(
+                    Box::new(Expression::Literal(Literal::Integer(100)))
+                )
+            )),
             Operator::Arithmetic(ArithmeticOperator::Plus),
-            Box::new(Expression::Literal(Literal::Integer(2))),
+            Box::new(Expression::Literal(Literal::Integer(right_val))),
         );
         let evaluator = Evaluator::new(expr.clone());
 
@@ -393,19 +331,14 @@ mod tests {
 
         // Attempt to evaluate the expression
         let result = evaluator.evaluate()?;
-        eprintln!("Intermediate Result: {:?} ({:?})", result, result.type_id());
-        
-        let float_as_any: &dyn Any = &5.0f64;
-        let int_as_any: &dyn Any = &-5i32;
-
-        eprintln!("COMPARISON");
-        eprintln!("f64: {:?} {:?}", float_as_any, float_as_any.type_id());
-        eprintln!("i32: {:?} {:?}", int_as_any, int_as_any.type_id());
-
-
-        let casted_result = result.as_any().downcast_ref::<f64>().unwrap();
+        let casted_result = *(*result).as_any().downcast_ref::<i32>().unwrap();
 
         eprintln!("Expression '{}' evaluated to {}", expr, casted_result);
+
+        assert_eq!(
+            casted_result,
+            left_val + right_val
+        );
 
         Ok(())
     }
@@ -429,16 +362,6 @@ mod tests {
 
         // Attempt to evaluate the expression
         let result = evaluator.evaluate()?;
-        eprintln!("Intermediate Result: {:?} ({:?})", result, result.type_id());
-        
-        let float_as_any: &dyn Any = &5.0f64;
-        let int_as_any: &dyn Any = &-5i32;
-
-        eprintln!("COMPARISON");
-        eprintln!("f64: {:?} {:?}", float_as_any, float_as_any.type_id());
-        eprintln!("i32: {:?} {:?}", int_as_any, int_as_any.type_id());
-
-
         let casted_result = result.as_any().downcast_ref::<bool>().unwrap();
 
         eprintln!("Expression '{}' evaluated to {}", expr, casted_result);
