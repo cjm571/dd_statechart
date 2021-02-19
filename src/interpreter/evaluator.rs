@@ -20,7 +20,7 @@ Purpose:
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 use std::{
-    any::{Any, TypeId},
+    any::Any,
     cmp::Ordering,
     error::Error,
     fmt,
@@ -55,46 +55,306 @@ pub enum EvaluatorError {
 }
 
 //FIXME: PUT THIS SOMEWHERE BETTER
-//FIXME: All external calls to .as_any() are questionable
-pub trait EvaluatedValue: fmt::Debug {
-    fn as_any(&self) -> &dyn Any;
-    fn equals(&self, other: &dyn EvaluatedValue) -> bool;
-    fn order(&self, other: &dyn EvaluatedValue) -> Option<Ordering>;
+enum IntermediateValue {
+    String(String),
+    Integer(i32),
+    Float(f64),
+    Boolean(bool),
+    Null,
 }
-impl PartialEq for dyn EvaluatedValue {
+
+impl PartialEq for IntermediateValue {
     fn eq(&self, other: &Self) -> bool {
-        self.equals(other)
+        match self {
+            Self::String(self_value) => {
+                match other {
+                    Self::String(other_value) => {
+                        // Simple string-to-string comparison
+                        self_value == other_value
+                    },
+                    Self::Integer(other_value) => {
+                        // Attempt to parse String as i32 and compare values
+                        if let Ok(parsed_value) = self_value.parse::<i32>() {
+                            &parsed_value == other_value
+                        }
+                        else {
+                            false
+                        }
+                    },
+                    Self::Float(other_value) => {
+                        // Attempt to parse String as f64 and compare values
+                        if let Ok(parsed_value) = self_value.parse::<f64>() {
+                            &parsed_value == other_value
+                        }
+                        else {
+                            false
+                        }
+                    },
+                    Self::Boolean(other_value_is_true) => {
+                        // Attempt to parse String as i32 AND f64, as both
+                        // 1 and 1.0  == true, and 0 and 0.0 == false
+                        if let Ok(parsed_value) = self_value.parse::<i32>() {
+                            if *other_value_is_true {
+                                parsed_value == 1
+                            }
+                            else {
+                                parsed_value == 0
+                            }
+                        }
+                        else if let Ok(parsed_value) = self_value.parse::<f64>() {
+                            if *other_value_is_true {
+                                parsed_value == 1.0
+                            }
+                            else {
+                                parsed_value == 0.0
+                            }
+                        }
+                        else {
+                            false
+                        }
+                    },
+                    Self::Null => {
+                        // All strings != 'null'
+                        false
+                    },
+                }
+            },
+            Self::Integer(self_value) => {
+                match other {
+                    Self::String(other_value) => {
+                        // Leverage existing comparison
+                        Self::String(other_value.clone()) == *self
+                    },
+                    Self::Integer(other_value) => {
+                        // Simple comparison
+                        self_value == other_value
+                    },
+                    Self::Float(other_value) => {
+                        // Casted comparison
+                        *self_value as f64 == *other_value
+                    },
+                    Self::Boolean(other_value_is_true) => {
+                        // Check against '1' and '0'
+                        if *other_value_is_true {
+                            self_value == &1
+                        }
+                        else {
+                            self_value == &0
+                        }
+                    },
+                    Self::Null => {
+                        // All integers are != 'null'
+                        false
+                    },
+                }
+            },
+            Self::Float(self_value) => {
+                match other {
+                    Self::String(other_value) => {
+                        // Leverage existing comparison
+                        Self::String(other_value.clone()) == *self
+                    },
+                    Self::Integer(other_value) => {
+                        // Leverage existing comparison
+                        Self::Integer(*other_value) == *self
+                    },
+                    Self::Float(other_value) => {
+                        // Simple comparison
+                        self_value == other_value
+                    },
+                    Self::Boolean(other_value_is_true) => {
+                        // Check against '1.0' and '0.0'
+                        if *other_value_is_true {
+                            self_value == &1.0
+                        }
+                        else {
+                            self_value == &0.0
+                        }
+                    },
+                    Self::Null => {
+                        // All floats are != 'null'
+                        false
+                    },
+                }
+            },
+            Self::Boolean(self_value_is_true) => {
+                match other {
+                    Self::String(other_value) => {
+                        // Leverage existing comparison
+                        Self::String(other_value.clone()) == *self
+                    },
+                    Self::Integer(other_value) => {
+                        // Leverage existing comparison
+                        Self::Integer(*other_value) == *self
+                    },
+                    Self::Float(other_value) => {
+                        // Leverage existing comparison
+                        Self::Float(*other_value) == *self
+                    },
+                    Self::Boolean(other_value_is_true) => {
+                        // Simple comparison
+                        self_value_is_true == other_value_is_true
+                    },
+                    Self::Null => {
+                        // All bools are != 'null'
+                        false
+                    },
+                }
+            },
+            Self::Null => {
+                // Leverage existing comparison
+                Self::Null == *self
+            },
+        }
     }
 }
-impl PartialOrd for dyn EvaluatedValue {
+
+impl PartialOrd for IntermediateValue {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.order(other)
+        match self {
+            Self::String(self_value) => {
+                match other {
+                    Self::String(other_value) => {
+                        // Compare strings in lexicographical order
+                        for (self_char, other_char) in self_value.chars().zip(other_value.chars()) {
+                            match self_char.cmp(&other_char) {
+                                Ordering::Equal => continue,
+                                non_equivalence => return Some(non_equivalence),
+                            }
+                        }
+
+                        // Got to the end of both equal strings
+                        Some(Ordering::Equal)
+                    },
+                    Self::Integer(other_value) => {
+                        // Attempt to parse String as i32 and compare values
+                        if let Ok(parsed_value) = self_value.parse::<i32>() {
+                            parsed_value.partial_cmp(other_value)
+                        }
+                        else {
+                            // Non-parseable strings are considered less than any integer
+                            Some(Ordering::Less)
+                        }
+                    },
+                    Self::Float(other_value) => {
+                        // Attempt to parse String as f64 and compare values
+                        if let Ok(parsed_value) = self_value.parse::<f64>() {
+                            parsed_value.partial_cmp(other_value)
+                        }
+                        else {
+                            // Non-parseable strings are considered less than any integer
+                            Some(Ordering::Less)
+                        }
+                    },
+                    Self::Boolean(_other_value_is_true) => {
+                        // All strings are considered less than bools
+                        Some(Ordering::Less)
+                    },
+                    Self::Null => {
+                        //FIXME: Document this nonconformance
+                        // ECMAScript does really fucking stupid shit with comparisons to 'null'
+                        // I'm just gonna ban it
+                        None
+                    },
+                }
+            },
+            Self::Integer(self_value) => {
+                match other {
+                    Self::String(other_value) => {
+                        // Leverage existing comparison
+                        Self::String(other_value.clone()).partial_cmp(self)
+                    },
+                    Self::Integer(other_value) => {
+                        // Simple comparison
+                        self_value.partial_cmp(other_value)
+                    },
+                    Self::Float(other_value) => {
+                        // Casted comparison
+                        (*self_value as f64).partial_cmp(other_value)
+                    },
+                    Self::Boolean(other_value_is_true) => {
+                        // Treat 'true' as '1', and 'false' as '0'
+                        if *other_value_is_true {
+                            self_value.partial_cmp(&1)
+                        }
+                        else {
+                            self_value.partial_cmp(&0)
+                        }
+                    },
+                    Self::Null => {
+                        //FIXME: Document this nonconformance
+                        // ECMAScript does really fucking stupid shit with comparisons to 'null'
+                        // I'm just gonna ban it
+                        None
+                    },
+                }
+            },
+            Self::Float(self_value) => {
+                match other {
+                    Self::String(other_value) => {
+                        // Leverage existing comparison
+                        Self::String(other_value.clone()).partial_cmp(self)
+                    },
+                    Self::Integer(other_value) => {
+                        // Leverage existing comparison
+                        Self::Integer(*other_value).partial_cmp(self)
+                    },
+                    Self::Float(other_value) => {
+                        // Simple comparison
+                        self_value.partial_cmp(other_value)
+                    },
+                    Self::Boolean(other_value_is_true) => {
+                        // Treat 'true' as '1.0', and 'false' as '0.0'
+                        if *other_value_is_true {
+                            self_value.partial_cmp(&1.0)
+                        }
+                        else {
+                            self_value.partial_cmp(&0.0)
+                        }
+                    },
+                    Self::Null => {
+                        //FIXME: Document this nonconformance
+                        // ECMAScript does really fucking stupid shit with comparisons to 'null'
+                        // I'm just gonna ban it
+                        None
+                    },
+                }
+            },
+            Self::Boolean(_self_value_is_true) => {
+                match other {
+                    Self::String(other_value) => {
+                        // Leverage existing comparison
+                        Self::String(other_value.clone()).partial_cmp(self)
+                    },
+                    Self::Integer(other_value) => {
+                        // Leverage existing comparison
+                        Self::Integer(*other_value).partial_cmp(self)
+                    },
+                    Self::Float(other_value) => {
+                        // Leverage existing comparison
+                        Self::Float(*other_value).partial_cmp(self)
+                    },
+                    Self::Boolean(other_value_is_true) => {
+                        // Leverage existing comparison
+                        Self::Boolean(*other_value_is_true).partial_cmp(self)
+                    },
+                    Self::Null => {
+                        //FIXME: Document this nonconformance
+                        // ECMAScript does really fucking stupid shit with comparisons to 'null'
+                        // I'm just gonna ban it
+                        None
+                    },
+                }
+            },
+            Self::Null => {
+                //FIXME: Document this nonconformance
+                // ECMAScript does really fucking stupid shit with comparisons to 'null'
+                // I'm just gonna ban it
+                None
+            },
+        }
     }
 }
-
-impl<T: 'static + PartialEq + PartialOrd + fmt::Debug> EvaluatedValue for T {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn equals(&self, other: &dyn EvaluatedValue) -> bool {
-        other
-            .as_any()
-            .downcast_ref::<T>()
-            .map_or(
-                false,
-                |x| self == x
-            )
-    }
-
-    fn order(&self, other: &dyn EvaluatedValue) -> Option<Ordering> {
-        other
-            .as_any()
-            .downcast_ref::<T>()
-            .and_then(|x| self.partial_cmp(x))
-    }
-}
-
 
 ///////////////////////////////////////////////////////////////////////////////
 //  Object Implementations
@@ -110,136 +370,129 @@ impl Evaluator {
      *  Utility Methods   *
     \*  *  *  *  *  *  *  */
 
-    pub fn evaluate(&self) -> Result<Box<dyn EvaluatedValue>, EvaluatorError> {
+    pub fn evaluate(&self) -> Result<Box<dyn Any>, EvaluatorError> {
         //OPT: *DESIGN* Bad clone()... Figure out how to use a reference correctly
-        Self::eval_expr(self.expr.clone())
+        match Self::eval_expr(self.expr.clone())? {
+            IntermediateValue::String(value)    => Ok(Box::new(value)),
+            IntermediateValue::Integer(value)   => Ok(Box::new(value)),
+            IntermediateValue::Float(value)     => Ok(Box::new(value)),
+            IntermediateValue::Boolean(value)   => Ok(Box::new(value)),
+            IntermediateValue::Null             => Ok(Box::new(IntermediateValue::Null)),
+        }
     }
 
     
     /*  *  *  *  *  *  *  *\
      *   Helper Methods   *
     \*  *  *  *  *  *  *  */
-
-    fn eval_expr(expr: Expression) -> Result<Box<dyn EvaluatedValue>, EvaluatorError> {
+    
+    fn eval_expr(expr: Expression) -> Result<IntermediateValue, EvaluatorError> {
         match expr {
             Expression::Literal(literal)        => Ok(Self::eval_literal(literal)),
             Expression::Unary(unary)            => Ok(Self::eval_unary(unary)?),
-            Expression::Binary(left, op, right) => Ok(Self::eval_binary(op, left, right)?),
+            Expression::Binary(left, op, right) => Ok(Self::eval_binary(op, *left, *right)?),
             Expression::Grouping(inner_expr)    => Self::eval_expr(*inner_expr),
         }
     }
 
-    fn eval_literal(literal: Literal) -> Box<dyn EvaluatedValue> {
+    fn eval_literal(literal: Literal) -> IntermediateValue {
         match literal {
-            Literal::Integer(value) => Box::new(value),
-            Literal::Float(value)   => Box::new(value),
-            Literal::String(value)  => Box::new(value),
-            Literal::True           => Box::new(true),
-            Literal::False          => Box::new(false),
-            Literal::Null           => {
-                //FIXME: HANDLE NULL
-                Box::new(-99999)
-            },
+            Literal::String(value)  => IntermediateValue::String(value),
+            Literal::Integer(value) => IntermediateValue::Integer(value),
+            Literal::Float(value)   => IntermediateValue::Float(value),
+            Literal::True           => IntermediateValue::Boolean(true),
+            Literal::False          => IntermediateValue::Boolean(false),
+            Literal::Null           => IntermediateValue::Null,
         }
     }
 
-    fn eval_unary(unary: Unary) -> Result<Box<dyn EvaluatedValue>, EvaluatorError> {
+    fn eval_unary(unary: Unary) -> Result<IntermediateValue, EvaluatorError> {
         match unary {
             Unary::Negation(expr) => {
-                let value = Self::eval_expr(*expr.clone())?;
-                
-                // First check if the value is a String, as this is an error
-                if let Some(as_string) = (*value).as_any().downcast_ref::<String>() {
-                    return Err(EvaluatorError::StringNegation(as_string.clone()));
+                match Self::eval_expr(*expr)? {
+                    IntermediateValue::String(value) => {
+                        // String negation is an error
+                        Err(EvaluatorError::StringNegation(value))
+                    },
+                    IntermediateValue::Integer(value) => {
+                        // Negate value and return
+                        Ok(IntermediateValue::Integer(-value))
+                    },
+                    IntermediateValue::Float(value) => {
+                        // Negate value and return
+                        Ok(IntermediateValue::Float(-value))
+                    },
+                    IntermediateValue::Boolean(value_is_true) => {
+                        if value_is_true {
+                            // Negation of 'true' evaluates to '-1'
+                            Ok(IntermediateValue::Integer(-1))
+                        }
+                        else {
+                            // Negation of 'false' evaluates to '-0'
+                            Ok(IntermediateValue::Integer(-0))
+                        }
+                    },
+                    IntermediateValue::Null => {
+                        // Negation of 'null' evaluates to '-0'
+                        Ok(IntermediateValue::Integer(-0))
+                    },
                 }
-
-                // Booleans must be handled differently, because the
-                // Negation operator in ECMAscript changes their type to
-                // an integer
-                if let Some(as_bool) = (*value).as_any().downcast_ref::<bool>() {
-                    // '-true' evaluates to -1, because reasons
-                    if as_bool == &true {
-                        return Ok(Box::new(-1));
-                    }
-                    // '-false' evaluates to -0, so just return 0
-                    else {
-                        return Ok(Box::new(0));
-                    }
-                }
-
-                // The remaining variants can be handled by simple negation
-                if let Some(as_int) = (*value).as_any().downcast_ref::<i32>() {
-                    return Ok(Box::new(-as_int));
-                }
-                if let Some(as_float) = (*value).as_any().downcast_ref::<f64>() {
-                    return Ok(Box::new(-as_float));
-                }
-
-                // Value could not be downcast into any of the expected types, return error
-                Err(EvaluatorError::UnknownNegation(expr))
-
-                //FIXME: HANDLE NULL
             },
             Unary::Not(expr) => {
-                let value = Self::eval_expr(*expr)?;
-                
-                // First check if the value is bool - we can actually do something
-                // sensible with those
-                if let Some(as_bool) = (*value).as_any().downcast_ref::<bool>() {
-                    Ok(Box::new(!as_bool))
+                match Self::eval_expr(*expr)? {
+                    IntermediateValue::String(_value) => {
+                        // !String evaluates to 'false', because reasons
+                        Ok(IntermediateValue::Boolean(false))
+                    },
+                    IntermediateValue::Integer(value) => {
+                        // !Integer evaluates to 'true' for 0, 'false' for all other values
+                        if value == 0 {
+                            Ok(IntermediateValue::Boolean(true))
+                        }
+                        else {
+                            Ok(IntermediateValue::Boolean(false))
+                        }
+                    },
+                    IntermediateValue::Float(value) => {
+                        // !Float evaluates to 'true' for 0.0, 'false' for all other values
+                        if value == 0.0 {
+                            Ok(IntermediateValue::Boolean(true))
+                        }
+                        else {
+                            Ok(IntermediateValue::Boolean(false))
+                        }
+                    },
+                    IntermediateValue::Boolean(value_is_true) => {
+                        // Invert value and return
+                        Ok(IntermediateValue::Boolean(!value_is_true))
+                    },
+                    IntermediateValue::Null => {
+                        // !'null' evaluates to 'true'
+                        Ok(IntermediateValue::Boolean(true))
+                    },
                 }
-                // All non-bool values evaluate to 'false' when Notted
-                else {
-                    Ok(Box::new(false))
-                }
-                //FIXME: HANDLE NULL
             },
         }
     }
 
-    fn eval_binary(op: Operator, left: Box<Expression>, right: Box<Expression>) -> Result<Box<dyn EvaluatedValue>, EvaluatorError> {
-        //OPT: *DESIGN* Bad clone()... Figure out how to use a reference correctly
-        let left_value = Self::eval_expr(*left.clone())?;
-        let right_value = Self::eval_expr(*right.clone())?;
+    fn eval_binary(op: Operator, left: Expression, right: Expression) -> Result<IntermediateValue, EvaluatorError> {
+        let left_value = Self::eval_expr(left)?;
+        let right_value = Self::eval_expr(right)?;
 
         match op {
             /* Arithmetic Operations */
-            Operator::Arithmetic(math_op) => {
-                // String Concatenation
-                if let (Some(left_as_string), Some(right_as_string)) = (left_value.as_any().downcast_ref::<String>(), right_value.as_any().downcast_ref::<String>()) {
-                    return Ok(Box::new(format!("{}{}", left_as_string, right_as_string)));
-                }
-
-                // Integer Addition
-                if let (Some(left_as_int), Some(right_as_int)) = ((*left_value).as_any().downcast_ref::<i32>(), (*right_value).as_any().downcast_ref::<i32>()) {
-                    return Ok(Box::new(left_as_int + right_as_int));
-                }
-
-                // FP Addition
-                if let (Some(left_as_float), Some(right_as_float)) = ((*left_value).as_any().downcast_ref::<f64>(), (*right_value).as_any().downcast_ref::<f64>()) {
-                    return Ok(Box::new(left_as_float + right_as_float));
-                }
-
-                // Mixed-Number Addition (casts Integers to Floats)
-                if let (Some(left_as_int), Some(right_as_float)) = ((*left_value).as_any().downcast_ref::<i32>(), (*right_value).as_any().downcast_ref::<f64>()) {
-                    return Ok(Box::new(*left_as_int as f64 + right_as_float));
-                }
-                if let (Some(left_as_float), Some(right_as_int)) = ((*left_value).as_any().downcast_ref::<f64>(), (*right_value).as_any().downcast_ref::<i32>()) {
-                    return Ok(Box::new(left_as_float + *right_as_int as f64));
-                }
-
-                // Unsupported operand types
-                Err(EvaluatorError::UnsupportedOperandTypes(math_op, left, right))
+            Operator::Arithmetic(_math_op) => {
+                unimplemented!("Arithmetic operations not ready yet!")
             },
 
             /* Logical Operations */
             Operator::Logical(logic_op) => {
-                Ok(Box::new(Self::eval_logic_op(logic_op, left_value, right_value)))
+                Ok(IntermediateValue::Boolean(Self::eval_logic_op(logic_op, left_value, right_value)))
             },
         }
     }
 
-    fn eval_logic_op<T: PartialEq + PartialOrd>(op: LogicalOperator, left: T, right: T) -> bool {
+    fn eval_logic_op(op: LogicalOperator, left: IntermediateValue, right: IntermediateValue) -> bool {
         // Perform logical operation per the 'op' parameter, and return the result
         match op {
             LogicalOperator::EqualTo                => left == right,
@@ -298,56 +551,22 @@ mod tests {
             Evaluator,
         },
         parser::{
-            ArithmeticOperator,
             Expression,
             Literal,
             LogicalOperator,
             Operator,
-            Unary,
         },
     };
 
 
     type TestResult = Result<(), Box<dyn Error>>;
 
-    #[test]
-    fn arithmetic_evaluation() -> TestResult {
-        let left_val = -100;
-        let right_val = 2;
-        
-        // Create an Evaluator object loaded with a binary arithmetic expression
-        let expr = Expression::Binary(
-            Box::new(Expression::Unary(
-                Unary::Negation(
-                    Box::new(Expression::Literal(Literal::Integer(100)))
-                )
-            )),
-            Operator::Arithmetic(ArithmeticOperator::Plus),
-            Box::new(Expression::Literal(Literal::Integer(right_val))),
-        );
-        let evaluator = Evaluator::new(expr.clone());
-
-        eprintln!("Evaluating Expression '{}'...", expr.clone());
-
-        // Attempt to evaluate the expression
-        let result = evaluator.evaluate()?;
-        let casted_result = *(*result).as_any().downcast_ref::<i32>().unwrap();
-
-        eprintln!("Expression '{}' evaluated to {}", expr, casted_result);
-
-        assert_eq!(
-            casted_result,
-            left_val + right_val
-        );
-
-        Ok(())
-    }
     
     //FEAT: *FIX* 2.0 == 2 evaluates to false due to differing types
     //OPT: *TESTING* Develop a method to test large variety of value/type combos
     #[test]
     fn logical_evaluation() -> TestResult {
-        let float_val = 2.5;
+        let float_val = 2.0;
         let int_val = 2;
 
         // Create an Evaluator object loaded with a binary arithmetic expression
@@ -362,7 +581,7 @@ mod tests {
 
         // Attempt to evaluate the expression
         let result = evaluator.evaluate()?;
-        let casted_result = result.as_any().downcast_ref::<bool>().unwrap();
+        let casted_result = result.downcast_ref::<bool>().unwrap();
 
         eprintln!("Expression '{}' evaluated to {}", expr, casted_result);
 
