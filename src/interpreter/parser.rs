@@ -38,7 +38,14 @@ use std::{
     slice::Iter,
 };
 
-use crate::interpreter::Token;
+use crate::interpreter::{
+    Expression,
+    InterpreterError,
+    Literal,
+    Operator,
+    Token,
+    Unary,
+};
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -53,64 +60,12 @@ pub struct Parser<'i> {
 //OPT: *STYLE*  Parameterize this enum for better Display output
 #[derive(Debug, PartialEq)]
 pub enum ParserError {
-    InvalidOperatorConversion,
+    InvalidOperatorConversion(Token),
     UnterminatedGroup,
     InvalidPrimaryToken(Token),
 }
 
 pub type ParserResult = Result<Expression, ParserError>;
-
-//FIXME: Move all these to the top-level module
-#[derive(Clone, Debug, PartialEq)]
-pub enum Expression {
-    Literal(Literal),
-    Unary(Unary),
-    Binary(Box<Self>, Operator, Box<Self>),
-    Grouping(Box<Self>),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum Literal {
-    Integer(i32),
-    Float(f64),
-    String(String),
-    True,
-    False,
-    Null,
-}
-
-#[derive(Default)]
-pub struct Null {}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum Unary {
-    Negation(Box<Expression>),
-    Not(Box<Expression>),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum Operator {
-    Logical(LogicalOperator),
-    Arithmetic(ArithmeticOperator),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum LogicalOperator {
-    EqualTo,
-    NotEqualTo,
-    GreaterThan,
-    GreaterThanOrEqualTo,
-    LessThan,
-    LessThanOrEqualTo,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum ArithmeticOperator {
-    Plus,
-    Minus,
-    Star,
-    Slash,
-}
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -272,6 +227,7 @@ impl<'i> Parser<'i> {
 
 }
 
+
 ///////////////////////////////////////////////////////////////////////////////
 //  Trait Implementations
 ///////////////////////////////////////////////////////////////////////////////
@@ -286,8 +242,8 @@ impl Error for ParserError {}
 impl fmt::Display for ParserError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::InvalidOperatorConversion     => {
-                write!(f, "Invalid Token->Operator conversion")
+            Self::InvalidOperatorConversion(token)     => {
+                write!(f, "Invalid Token->Operator conversion for token '{:?}'", token)
             },
             Self::UnterminatedGroup             => {
                 write!(f, "Unterminated expression group")
@@ -299,120 +255,12 @@ impl fmt::Display for ParserError {
     }
 }
 
-
-/*  *  *  *  *  *  *  *\
- *     Expression     *
-\*  *  *  *  *  *  *  */
-
-impl fmt::Display for Expression {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Literal(literal)          => write!(f, "{}", literal),
-            Self::Unary(unary)              => write!(f, "({})", unary),
-            Self::Binary(left, op, right)   => write!(f, "({} {} {})", op, left, right),
-            Self::Grouping(expr)            => write!(f, "(group {})", expr),
-        }
-    }
-}
-
-
-/*  *  *  *  *  *  *  *\
- *      Literal       *
-\*  *  *  *  *  *  *  */
-
-impl fmt::Display for Literal {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Integer(val)      => write!(f, "{}", val),
-            Self::Float(val)        => write!(f, "{}", val),
-            Self::String(string)    => write!(f, "{}", string),
-            Self::True              => write!(f, "true"),
-            Self::False             => write!(f, "false"),
-            Self::Null              => write!(f, "null"),
-        }
-    }
-}
-
-
-/*  *  *  *  *  *  *  *\
- *       Unary        *
-\*  *  *  *  *  *  *  */
-
-impl fmt::Display for Unary {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Negation(expr)    => write!(f, "- {}", expr),
-            Self::Not(expr)         => write!(f, "! {}", expr),
-        }
-    }
-}
-
-
-/*  *  *  *  *  *  *  *\
- *      Operator      *
-\*  *  *  *  *  *  *  */
-
-impl fmt::Display for Operator {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Logical(op)       => write!(f, "{}", op),
-            Self::Arithmetic(op)    => write!(f, "{}", op),
-        }
-    }
-}
-
-//OPT: *DESIGN* Is this appropriate? Can't do a 100% reliable token->operator conversion without context...
-impl TryFrom<&Token> for Operator {
-    type Error = ParserError;
-
-    fn try_from(src: &Token) -> Result<Self, Self::Error> {
+impl From<InterpreterError> for ParserError {
+    fn from(src: InterpreterError) -> Self {
         match src {
-            Token::EqualEqual           => Ok(Self::Logical(LogicalOperator::EqualTo)),
-            Token::BangEqual            => Ok(Self::Logical(LogicalOperator::NotEqualTo)),
-            Token::GreaterThan          => Ok(Self::Logical(LogicalOperator::GreaterThan)),
-            Token::GreaterThanOrEqualTo => Ok(Self::Logical(LogicalOperator::GreaterThanOrEqualTo)),
-            Token::LessThan             => Ok(Self::Logical(LogicalOperator::LessThan)),
-            Token::LessThanOrEqualTo    => Ok(Self::Logical(LogicalOperator::LessThanOrEqualTo)),
-            Token::Plus                 => Ok(Self::Arithmetic(ArithmeticOperator::Plus)),
-            Token::Minus                => Ok(Self::Arithmetic(ArithmeticOperator::Minus)),
-            Token::Star                 => Ok(Self::Arithmetic(ArithmeticOperator::Star)),
-            Token::Slash                => Ok(Self::Arithmetic(ArithmeticOperator::Slash)),
-            _                           => Err(ParserError::InvalidOperatorConversion),
-        }
-    }
-}
-
-
-/*  *  *  *  *  *  *  *\
- *   LogicalOperator  *
-\*  *  *  *  *  *  *  */
-
-impl fmt::Display for LogicalOperator {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::EqualTo               => write!(f, "=="),
-            Self::NotEqualTo            => write!(f, "!="),
-            Self::GreaterThan           => write!(f, ">"),
-            Self::GreaterThanOrEqualTo  => write!(f, ">="),
-            Self::LessThan              => write!(f, "<"),
-            Self::LessThanOrEqualTo     => write!(f, "<="),
-        }
-    }
-}
-
-
-
-/*  *  *  *  *  *  *  *\
- * ArithmeticOperator *
-\*  *  *  *  *  *  *  */
-
-impl fmt::Display for ArithmeticOperator {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Plus  => write!(f, "+"),
-            Self::Minus => write!(f, "-"),
-            Self::Star  => write!(f, "*"),
-            Self::Slash => write!(f, "/"),
+            InterpreterError::InvalidOperatorConversion(token) => {
+                ParserError::InvalidOperatorConversion(token)
+            }
         }
     }
 }
@@ -432,16 +280,17 @@ mod tests {
 
     use crate::interpreter::{
         Token,
+        Expression,
+        InterpreterError,
+        Literal,
+        Unary,
+        Operator,
+        ArithmeticOperator,
         lexer::Lexer,
         parser::{
             Parser,
             ParserError,
-            Expression,
-            Literal,
-            Unary,
-            Operator,
-            ArithmeticOperator,
-        },
+        }
     };
 
 
@@ -452,7 +301,7 @@ mod tests {
     fn output_test() -> TestResult {
         let expr_str = "-123 * (45.67)";
 
-        // Tokenize the expresion string
+        // Tokenize the expression string
         let mut lexer = Lexer::new(expr_str);
         let tokens = lexer.scan()?;
         
@@ -483,7 +332,7 @@ mod tests {
 
         assert_eq!(
             Operator::try_from(&invalid_token),
-            Err(ParserError::InvalidOperatorConversion)
+            Err(InterpreterError::InvalidOperatorConversion(invalid_token))
         );
         
         Ok(())

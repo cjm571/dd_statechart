@@ -30,7 +30,7 @@ use std::{
     },
 };
 
-use crate::interpreter::parser::{
+use crate::interpreter::{
     ArithmeticOperator,
     Expression,
     Literal,
@@ -48,7 +48,6 @@ pub struct Evaluator {
     expr: Expression,
 }
 
-
 #[derive(Debug, PartialEq)]
 pub enum EvaluatorError {
     StringNegation(String),
@@ -62,7 +61,7 @@ pub enum EvaluatorError {
     CouldNotDowncast,
 }
 
-//FIXME: PUT THIS SOMEWHERE BETTER
+
 #[derive(Debug)]
 pub enum IntermediateValue {
     String(String),
@@ -71,6 +70,200 @@ pub enum IntermediateValue {
     Boolean(bool),
     Null,
 }
+
+
+///////////////////////////////////////////////////////////////////////////////
+//  Object Implementations
+///////////////////////////////////////////////////////////////////////////////
+
+impl Evaluator {
+    pub fn new(expr: Expression)  -> Self {
+        Self { expr }
+    }
+
+
+    /*  *  *  *  *  *  *  *\
+     *  Utility Methods   *
+    \*  *  *  *  *  *  *  */
+
+    pub fn evaluate(&self) -> Result<Box<dyn Any>, EvaluatorError> {
+        //OPT: *DESIGN* Bad clone()... Figure out how to use a reference correctly
+        match Self::eval_expr(self.expr.clone())? {
+            IntermediateValue::String(value)    => Ok(Box::new(value)),
+            IntermediateValue::Integer(value)   => Ok(Box::new(value)),
+            IntermediateValue::Float(value)     => Ok(Box::new(value)),
+            IntermediateValue::Boolean(value)   => Ok(Box::new(value)),
+            IntermediateValue::Null             => Ok(Box::new(IntermediateValue::Null)),
+        }
+    }
+
+    
+    /*  *  *  *  *  *  *  *\
+     *   Helper Methods   *
+    \*  *  *  *  *  *  *  */
+    
+    fn eval_expr(expr: Expression) -> Result<IntermediateValue, EvaluatorError> {
+        match expr {
+            Expression::Literal(literal)        => Ok(Self::eval_literal(literal)),
+            Expression::Unary(unary)            => Ok(Self::eval_unary(unary)?),
+            Expression::Binary(left, op, right) => Ok(Self::eval_binary(op, *left, *right)?),
+            Expression::Grouping(inner_expr)    => Self::eval_expr(*inner_expr),
+        }
+    }
+
+    fn eval_literal(literal: Literal) -> IntermediateValue {
+        match literal {
+            Literal::String(value)  => IntermediateValue::String(value),
+            Literal::Integer(value) => IntermediateValue::Integer(value),
+            Literal::Float(value)   => IntermediateValue::Float(value),
+            Literal::True           => IntermediateValue::Boolean(true),
+            Literal::False          => IntermediateValue::Boolean(false),
+            Literal::Null           => IntermediateValue::Null,
+        }
+    }
+
+    fn eval_unary(unary: Unary) -> Result<IntermediateValue, EvaluatorError> {
+        match unary {
+            Unary::Negation(expr) => {
+                match Self::eval_expr(*expr)? {
+                    IntermediateValue::String(value) => {
+                        // String negation is an error
+                        Err(EvaluatorError::StringNegation(value))
+                    },
+                    IntermediateValue::Integer(value) => {
+                        // Negate value and return
+                        Ok(IntermediateValue::Integer(-value))
+                    },
+                    IntermediateValue::Float(value) => {
+                        // Negate value and return
+                        Ok(IntermediateValue::Float(-value))
+                    },
+                    IntermediateValue::Boolean(value_is_true) => {
+                        if value_is_true {
+                            // Negation of 'true' evaluates to '-1'
+                            Ok(IntermediateValue::Integer(-1))
+                        }
+                        else {
+                            // Negation of 'false' evaluates to '-0'
+                            Ok(IntermediateValue::Integer(-0))
+                        }
+                    },
+                    IntermediateValue::Null => {
+                        // Negation of 'null' evaluates to '-0'
+                        Ok(IntermediateValue::Integer(-0))
+                    },
+                }
+            },
+            Unary::Not(expr) => {
+                match Self::eval_expr(*expr)? {
+                    IntermediateValue::String(_value) => {
+                        // !String evaluates to 'false', because reasons
+                        Ok(IntermediateValue::Boolean(false))
+                    },
+                    IntermediateValue::Integer(value) => {
+                        // !Integer evaluates to 'true' for 0, 'false' for all other values
+                        if value == 0 {
+                            Ok(IntermediateValue::Boolean(true))
+                        }
+                        else {
+                            Ok(IntermediateValue::Boolean(false))
+                        }
+                    },
+                    IntermediateValue::Float(value) => {
+                        // !Float evaluates to 'true' for 0.0, 'false' for all other values
+                        if value == 0.0 {
+                            Ok(IntermediateValue::Boolean(true))
+                        }
+                        else {
+                            Ok(IntermediateValue::Boolean(false))
+                        }
+                    },
+                    IntermediateValue::Boolean(value_is_true) => {
+                        // Invert value and return
+                        Ok(IntermediateValue::Boolean(!value_is_true))
+                    },
+                    IntermediateValue::Null => {
+                        // !'null' evaluates to 'true'
+                        Ok(IntermediateValue::Boolean(true))
+                    },
+                }
+            },
+        }
+    }
+
+    fn eval_binary(op: Operator, left: Expression, right: Expression) -> Result<IntermediateValue, EvaluatorError> {
+        let left_value = Self::eval_expr(left)?;
+        let right_value = Self::eval_expr(right)?;
+
+        match op {
+            /* Arithmetic Operations */
+            Operator::Arithmetic(math_op) => {
+                Self::eval_math_op(math_op, left_value, right_value)
+            },
+
+            /* Logical Operations */
+            Operator::Logical(logic_op) => {
+                Ok(IntermediateValue::Boolean(Self::eval_logic_op(logic_op, left_value, right_value)))
+            },
+        }
+    }
+
+    fn eval_math_op(op: ArithmeticOperator, left: IntermediateValue, right: IntermediateValue) -> Result<IntermediateValue, EvaluatorError> {
+        match op {
+            ArithmeticOperator::Plus    => Ok(left + right),
+            ArithmeticOperator::Minus   => left - right,
+            _ => unimplemented!("Only +, - so far!")
+        }
+    }
+
+    fn eval_logic_op(op: LogicalOperator, left: IntermediateValue, right: IntermediateValue) -> bool {
+        // Perform logical operation per the 'op' parameter, and return the result
+        match op {
+            LogicalOperator::EqualTo                => left == right,
+            LogicalOperator::NotEqualTo             => left != right,
+            LogicalOperator::GreaterThan            => left > right,
+            LogicalOperator::GreaterThanOrEqualTo   => left >= right,
+            LogicalOperator::LessThan               => left < right,
+            LogicalOperator::LessThanOrEqualTo      => left <= right,
+        }
+    }
+}
+
+
+///////////////////////////////////////////////////////////////////////////////
+//  Trait Implementations
+///////////////////////////////////////////////////////////////////////////////
+
+
+/*  *  *  *  *  *  *  *\
+ *   EvaluatorError   *
+\*  *  *  *  *  *  *  */
+
+impl Error for EvaluatorError {}
+
+impl fmt::Display for EvaluatorError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::StringNegation(string) => {
+                write!(f, "Attempted to negate String '{}', which is invalid", string)
+            },
+            Self::UnknownNegation(expr) => {
+                write!(f, "Attempted to negate Expression '{}', which is invalid", expr)
+            },
+            Self::IllegalOperation(op, left, right) => {
+                write!(f, "Unsupported operation '{}' on operands L: '{:?}' and R: '{:?}'", op, left, right)
+            },
+            Self::CouldNotDowncast => {
+                write!(f, "NON-ERROR: Could not downcast parameters to their respective type parameters")
+            },
+        }
+    }
+}
+
+
+/*  *  *  *  *  *  *  *\
+ *  IntermediateValue *
+\*  *  *  *  *  *  *  */
 
 impl PartialEq for IntermediateValue {
     fn eq(&self, other: &Self) -> bool {
@@ -217,7 +410,6 @@ impl PartialEq for IntermediateValue {
         }
     }
 }
-
 impl PartialOrd for IntermediateValue {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match self {
@@ -260,10 +452,18 @@ impl PartialOrd for IntermediateValue {
                         Some(Ordering::Less)
                     },
                     Self::Null => {
-                        //FIXME: Document this nonconformance
-                        // ECMAScript does really fucking stupid shit with comparisons to 'null'
-                        // I'm just gonna ban it
-                        None
+                        // Attempt to parse string as number, as they can be compared to 'null'
+                        // as if it were 0
+                        if let Ok(parsed_value) = self_value.parse::<i32>() {
+                            parsed_value.partial_cmp(&0)
+                        }
+                        else if let Ok(parsed_value) = self_value.parse::<f64>() {
+                            parsed_value.partial_cmp(&0.0)
+                        }
+                        else {
+                            // Non-numeric strings always return false
+                            None
+                        }
                     },
                 }
             },
@@ -291,10 +491,8 @@ impl PartialOrd for IntermediateValue {
                         }
                     },
                     Self::Null => {
-                        //FIXME: Document this nonconformance
-                        // ECMAScript does really fucking stupid shit with comparisons to 'null'
-                        // I'm just gonna ban it
-                        None
+                        // 'null' can be treated as if it were 0
+                        self_value.partial_cmp(&0)
                     },
                 }
             },
@@ -322,14 +520,12 @@ impl PartialOrd for IntermediateValue {
                         }
                     },
                     Self::Null => {
-                        //FIXME: Document this nonconformance
-                        // ECMAScript does really fucking stupid shit with comparisons to 'null'
-                        // I'm just gonna ban it
-                        None
+                        // 'null' can be treated as if it were 0.0
+                        self_value.partial_cmp(&0.0)
                     },
                 }
             },
-            Self::Boolean(_self_value_is_true) => {
+            Self::Boolean(self_value) => {
                 match other {
                     Self::String(other_value) => {
                         // Leverage existing comparison
@@ -343,29 +539,43 @@ impl PartialOrd for IntermediateValue {
                         // Leverage existing comparison
                         Self::Float(*other_value).partial_cmp(self)
                     },
-                    Self::Boolean(other_value_is_true) => {
+                    Self::Boolean(other_value) => {
                         // Leverage existing comparison
-                        Self::Boolean(*other_value_is_true).partial_cmp(self)
+                        Self::Boolean(*other_value).partial_cmp(self)
                     },
                     Self::Null => {
-                        //FIXME: Document this nonconformance
-                        // ECMAScript does really fucking stupid shit with comparisons to 'null'
-                        // I'm just gonna ban it
-                        None
+                        // 'null' can be treated as if it were 0
+                        (*self_value as i32).partial_cmp(&0)
                     },
                 }
             },
             Self::Null => {
-                //FIXME: Document this nonconformance
-                // ECMAScript does really fucking stupid shit with comparisons to 'null'
-                // I'm just gonna ban it
-                None
+                match other {
+                    Self::String(other_value) => {
+                        // Leverage existing comparison
+                        Self::String(other_value.clone()).partial_cmp(self)
+                    },
+                    Self::Integer(other_value) => {
+                        // Leverage existing comparison
+                        Self::Integer(*other_value).partial_cmp(self)
+                    },
+                    Self::Float(other_value) => {
+                        // Leverage existing comparison
+                        Self::Float(*other_value).partial_cmp(self)
+                    },
+                    Self::Boolean(other_value) => {
+                        // Leverage existing comparison
+                        Self::Boolean(*other_value).partial_cmp(self)
+                    },
+                    Self::Null => {
+                        // 'null' always returns false when compared to itself
+                        None
+                    },
+                }
             },
         }
     }
 }
-
-//FIXME: Strings that can be parsed into numbers should be added instead of concatenated
 impl Add<Self> for IntermediateValue {
     type Output = Self;
 
@@ -494,7 +704,6 @@ impl Add<Self> for IntermediateValue {
         }
     }
 }
-
 impl Sub<Self> for IntermediateValue {
     type Output = Result<Self, EvaluatorError>;
 
@@ -763,194 +972,6 @@ impl Sub<Self> for IntermediateValue {
     }
 }
 
-///////////////////////////////////////////////////////////////////////////////
-//  Object Implementations
-///////////////////////////////////////////////////////////////////////////////
-
-impl Evaluator {
-    pub fn new(expr: Expression)  -> Self {
-        Self { expr }
-    }
-
-
-    /*  *  *  *  *  *  *  *\
-     *  Utility Methods   *
-    \*  *  *  *  *  *  *  */
-
-    pub fn evaluate(&self) -> Result<Box<dyn Any>, EvaluatorError> {
-        //OPT: *DESIGN* Bad clone()... Figure out how to use a reference correctly
-        match Self::eval_expr(self.expr.clone())? {
-            IntermediateValue::String(value)    => Ok(Box::new(value)),
-            IntermediateValue::Integer(value)   => Ok(Box::new(value)),
-            IntermediateValue::Float(value)     => Ok(Box::new(value)),
-            IntermediateValue::Boolean(value)   => Ok(Box::new(value)),
-            IntermediateValue::Null             => Ok(Box::new(IntermediateValue::Null)),
-        }
-    }
-
-    
-    /*  *  *  *  *  *  *  *\
-     *   Helper Methods   *
-    \*  *  *  *  *  *  *  */
-    
-    fn eval_expr(expr: Expression) -> Result<IntermediateValue, EvaluatorError> {
-        match expr {
-            Expression::Literal(literal)        => Ok(Self::eval_literal(literal)),
-            Expression::Unary(unary)            => Ok(Self::eval_unary(unary)?),
-            Expression::Binary(left, op, right) => Ok(Self::eval_binary(op, *left, *right)?),
-            Expression::Grouping(inner_expr)    => Self::eval_expr(*inner_expr),
-        }
-    }
-
-    fn eval_literal(literal: Literal) -> IntermediateValue {
-        match literal {
-            Literal::String(value)  => IntermediateValue::String(value),
-            Literal::Integer(value) => IntermediateValue::Integer(value),
-            Literal::Float(value)   => IntermediateValue::Float(value),
-            Literal::True           => IntermediateValue::Boolean(true),
-            Literal::False          => IntermediateValue::Boolean(false),
-            Literal::Null           => IntermediateValue::Null,
-        }
-    }
-
-    fn eval_unary(unary: Unary) -> Result<IntermediateValue, EvaluatorError> {
-        match unary {
-            Unary::Negation(expr) => {
-                match Self::eval_expr(*expr)? {
-                    IntermediateValue::String(value) => {
-                        // String negation is an error
-                        Err(EvaluatorError::StringNegation(value))
-                    },
-                    IntermediateValue::Integer(value) => {
-                        // Negate value and return
-                        Ok(IntermediateValue::Integer(-value))
-                    },
-                    IntermediateValue::Float(value) => {
-                        // Negate value and return
-                        Ok(IntermediateValue::Float(-value))
-                    },
-                    IntermediateValue::Boolean(value_is_true) => {
-                        if value_is_true {
-                            // Negation of 'true' evaluates to '-1'
-                            Ok(IntermediateValue::Integer(-1))
-                        }
-                        else {
-                            // Negation of 'false' evaluates to '-0'
-                            Ok(IntermediateValue::Integer(-0))
-                        }
-                    },
-                    IntermediateValue::Null => {
-                        // Negation of 'null' evaluates to '-0'
-                        Ok(IntermediateValue::Integer(-0))
-                    },
-                }
-            },
-            Unary::Not(expr) => {
-                match Self::eval_expr(*expr)? {
-                    IntermediateValue::String(_value) => {
-                        // !String evaluates to 'false', because reasons
-                        Ok(IntermediateValue::Boolean(false))
-                    },
-                    IntermediateValue::Integer(value) => {
-                        // !Integer evaluates to 'true' for 0, 'false' for all other values
-                        if value == 0 {
-                            Ok(IntermediateValue::Boolean(true))
-                        }
-                        else {
-                            Ok(IntermediateValue::Boolean(false))
-                        }
-                    },
-                    IntermediateValue::Float(value) => {
-                        // !Float evaluates to 'true' for 0.0, 'false' for all other values
-                        if value == 0.0 {
-                            Ok(IntermediateValue::Boolean(true))
-                        }
-                        else {
-                            Ok(IntermediateValue::Boolean(false))
-                        }
-                    },
-                    IntermediateValue::Boolean(value_is_true) => {
-                        // Invert value and return
-                        Ok(IntermediateValue::Boolean(!value_is_true))
-                    },
-                    IntermediateValue::Null => {
-                        // !'null' evaluates to 'true'
-                        Ok(IntermediateValue::Boolean(true))
-                    },
-                }
-            },
-        }
-    }
-
-    fn eval_binary(op: Operator, left: Expression, right: Expression) -> Result<IntermediateValue, EvaluatorError> {
-        let left_value = Self::eval_expr(left)?;
-        let right_value = Self::eval_expr(right)?;
-
-        match op {
-            /* Arithmetic Operations */
-            Operator::Arithmetic(math_op) => {
-                Self::eval_math_op(math_op, left_value, right_value)
-            },
-
-            /* Logical Operations */
-            Operator::Logical(logic_op) => {
-                Ok(IntermediateValue::Boolean(Self::eval_logic_op(logic_op, left_value, right_value)))
-            },
-        }
-    }
-
-    fn eval_math_op(op: ArithmeticOperator, left: IntermediateValue, right: IntermediateValue) -> Result<IntermediateValue, EvaluatorError> {
-        match op {
-            ArithmeticOperator::Plus    => Ok(left + right),
-            ArithmeticOperator::Minus   => left - right,
-            _ => unimplemented!("Only plus so far!")
-        }
-    }
-
-    fn eval_logic_op(op: LogicalOperator, left: IntermediateValue, right: IntermediateValue) -> bool {
-        // Perform logical operation per the 'op' parameter, and return the result
-        match op {
-            LogicalOperator::EqualTo                => left == right,
-            LogicalOperator::NotEqualTo             => left != right,
-            LogicalOperator::GreaterThan            => left > right,
-            LogicalOperator::GreaterThanOrEqualTo   => left >= right,
-            LogicalOperator::LessThan               => left < right,
-            LogicalOperator::LessThanOrEqualTo      => left <= right,
-        }
-    }
-}
-
-
-///////////////////////////////////////////////////////////////////////////////
-//  Trait Implementations
-///////////////////////////////////////////////////////////////////////////////
-
-
-/*  *  *  *  *  *  *  *\
- *   EvaluatorError   *
-\*  *  *  *  *  *  *  */
-
-impl Error for EvaluatorError {}
-
-impl fmt::Display for EvaluatorError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::StringNegation(string) => {
-                write!(f, "Attempted to negate String '{}', which is invalid", string)
-            },
-            Self::UnknownNegation(expr) => {
-                write!(f, "Attempted to negate Expression '{}', which is invalid", expr)
-            },
-            Self::IllegalOperation(op, left, right) => {
-                write!(f, "Unsupported operation '{}' on operands L: '{:?}' and R: '{:?}'", op, left, right)
-            },
-            Self::CouldNotDowncast => {
-                write!(f, "NON-ERROR: Could not downcast parameters to their respective type parameters")
-            },
-        }
-    }
-}
-
 
 ///////////////////////////////////////////////////////////////////////////////
 //  Unit Tests
@@ -962,15 +983,13 @@ mod tests {
     use std::error::Error;
 
     use crate::interpreter::{
+        ArithmeticOperator,
+        Expression,
+        Literal,
+        LogicalOperator,
+        Operator,
         evaluator::{
             Evaluator,
-        },
-        parser::{
-            ArithmeticOperator,
-            Expression,
-            Literal,
-            LogicalOperator,
-            Operator,
         },
     };
 
@@ -998,7 +1017,7 @@ mod tests {
         let result = evaluator.evaluate()?;
         let casted_result = result.downcast_ref::<bool>().unwrap();
 
-        eprintln!("Expression '{}' == {}", expr, casted_result);
+        eprintln!("Expression '{}' == {:?}", expr, casted_result);
 
         assert_eq!(
             casted_result,
@@ -1027,11 +1046,68 @@ mod tests {
         let result = evaluator.evaluate()?;
         let casted_result = result.downcast_ref::<f64>().unwrap();
 
-        eprintln!("Expression '{}' == {}", expr, casted_result);
+        eprintln!("Expression '{}' == {:?}", expr, casted_result);
 
         assert_eq!(
             casted_result,
             &(float_val - int_val as f64)
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn string_concatenation() -> TestResult {
+        let float_val = 2.5;
+        let int_val = 2;
+
+        // Create an Evaluator object loaded with a binary arithmetic expression
+        let expr = Expression::Binary(
+            Box::new(Expression::Literal(Literal::String(float_val.to_string()))),
+            Operator::Arithmetic(ArithmeticOperator::Plus),
+            Box::new(Expression::Literal(Literal::String(int_val.to_string()))),
+        );
+        let evaluator = Evaluator::new(expr.clone());
+
+        eprintln!("Evaluating Expression '{}'...", expr.clone());
+
+        // Attempt to evaluate the expression
+        let result = evaluator.evaluate()?;
+        let casted_result = result.downcast_ref::<String>().unwrap();
+
+        eprintln!("Expression '{}' == {:?}", expr, casted_result);
+
+        assert_eq!(
+            casted_result,
+            &(float_val.to_string() + &int_val.to_string())
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn null_comparison() -> TestResult {
+        let int_val = 0;
+
+        // Create an Evaluator object loaded with a binary arithmetic expression
+        let expr = Expression::Binary(
+            Box::new(Expression::Literal(Literal::String(int_val.to_string()))),
+            Operator::Logical(LogicalOperator::EqualTo),
+            Box::new(Expression::Literal(Literal::Null)),
+        );
+        let evaluator = Evaluator::new(expr.clone());
+
+        eprintln!("Evaluating Expression '{}'...", expr.clone());
+
+        // Attempt to evaluate the expression
+        let result = evaluator.evaluate()?;
+        let casted_result = result.downcast_ref::<bool>().unwrap();
+
+        eprintln!("Expression '{}' == {:?}", expr, casted_result);
+
+        assert_eq!(
+            casted_result,
+            &false
         );
 
         Ok(())
