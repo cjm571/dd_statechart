@@ -24,6 +24,7 @@ use std::{
     cmp::Ordering,
     error::Error,
     fmt,
+    ops::Add,
 };
 
 use crate::interpreter::parser::{
@@ -356,6 +357,135 @@ impl PartialOrd for IntermediateValue {
     }
 }
 
+impl Add<Self> for IntermediateValue {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        match self {
+            Self::String(self_value) => {
+                match rhs {
+                    Self::String(other_value) => {
+                        // Concatenate
+                        Self::String(self_value + &other_value)
+                    },
+                    Self::Integer(other_value) => {
+                        // Concatenate with stringified i32
+                        Self::String(self_value + &other_value.to_string())
+                    },
+                    Self::Float(other_value) => {
+                        // Concatenate with stringified f64
+                        Self::String(self_value + &other_value.to_string())
+                    },
+                    Self::Boolean(other_value) => {
+                        // Concatenate with stringified bool
+                        Self::String(self_value + &other_value.to_string())
+                    },
+                    Self::Null => {
+                        // Concatenate with "null"
+                        Self::String(self_value + "null")
+                    },
+                }
+            },
+            Self::Integer(self_value) => {
+                match rhs {
+                    Self::String(other_value) => {
+                        // Leverage existing functionality
+                        Self::String(other_value).add(self)
+                    },
+                    Self::Integer(other_value) => {
+                        // Simple addition
+                        Self::Integer(self_value + other_value)
+                    },
+                    Self::Float(other_value) => {
+                        // Casted addition
+                        Self::Float(self_value as f64 + other_value)
+                    },
+                    Self::Boolean(other_value) => {
+                        // Treat 'true' as 1, 'false' as 0
+                        Self::Integer(self_value + other_value as i32)
+                    },
+                    Self::Null => {
+                        // Essentially a NOP
+                        self
+                    },
+                }
+            },
+            Self::Float(self_value) => {
+                match rhs {
+                    Self::String(other_value) => {
+                        // Leverage existing functionality
+                        Self::String(other_value).add(self)
+                    },
+                    Self::Integer(other_value) => {
+                        // Leverage existing functionality
+                        Self::Integer(other_value).add(self)
+                    },
+                    Self::Float(other_value) => {
+                        // Leverage existing functionality
+                        Self::Float(other_value).add(self)
+                    },
+                    Self::Boolean(other_value) => {
+                        // Treat 'true' as 1.0, 'false' as 0.0
+                        Self::Float(self_value + other_value as i32 as f64)
+                    },
+                    Self::Null => {
+                        // Essentially a NOP
+                        self
+                    },
+                }
+            },
+            Self::Boolean(self_value) => {
+                match rhs {
+                    Self::String(other_value) => {
+                        // Leverage existing functionality
+                        Self::String(other_value).add(self)
+                    },
+                    Self::Integer(other_value) => {
+                        // Leverage existing functionality
+                        Self::Integer(other_value).add(self)
+                    },
+                    Self::Float(other_value) => {
+                        // Leverage existing functionality
+                        Self::Float(other_value).add(self)
+                    },
+                    Self::Boolean(other_value) => {
+                        // Leverage existing functionality
+                        Self::Boolean(other_value).add(self)
+                    },
+                    Self::Null => {
+                        // Forces a conversion to an i32
+                        Self::Integer(self_value as i32)
+                    },
+                }
+            },
+            Self::Null => {
+                match rhs {
+                    Self::String(other_value) => {
+                        // Leverage existing functionality
+                        Self::String(other_value).add(self)
+                    },
+                    Self::Integer(other_value) => {
+                        // Leverage existing functionality
+                        Self::Integer(other_value).add(self)
+                    },
+                    Self::Float(other_value) => {
+                        // Leverage existing functionality
+                        Self::Float(other_value).add(self)
+                    },
+                    Self::Boolean(other_value) => {
+                        // Leverage existing functionality
+                        Self::Boolean(other_value).add(self)
+                    },
+                    Self::Null => {
+                        // Evaluates to 0
+                        Self::Integer(0)
+                    },
+                }
+            },
+        }
+    }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 //  Object Implementations
 ///////////////////////////////////////////////////////////////////////////////
@@ -481,14 +611,21 @@ impl Evaluator {
 
         match op {
             /* Arithmetic Operations */
-            Operator::Arithmetic(_math_op) => {
-                unimplemented!("Arithmetic operations not ready yet!")
+            Operator::Arithmetic(math_op) => {
+                Ok(Self::eval_math_op(math_op, left_value, right_value))
             },
 
             /* Logical Operations */
             Operator::Logical(logic_op) => {
                 Ok(IntermediateValue::Boolean(Self::eval_logic_op(logic_op, left_value, right_value)))
             },
+        }
+    }
+
+    fn eval_math_op(op: ArithmeticOperator, left: IntermediateValue, right: IntermediateValue) -> IntermediateValue {
+        match op {
+            ArithmeticOperator::Plus => left + right,
+            _ => unimplemented!("Only plus so far!")
         }
     }
 
@@ -551,6 +688,7 @@ mod tests {
             Evaluator,
         },
         parser::{
+            ArithmeticOperator,
             Expression,
             Literal,
             LogicalOperator,
@@ -562,14 +700,13 @@ mod tests {
     type TestResult = Result<(), Box<dyn Error>>;
 
     
-    //FEAT: *FIX* 2.0 == 2 evaluates to false due to differing types
     //OPT: *TESTING* Develop a method to test large variety of value/type combos
     #[test]
     fn logical_evaluation() -> TestResult {
         let float_val = 2.0;
         let int_val = 2;
 
-        // Create an Evaluator object loaded with a binary arithmetic expression
+        // Create an Evaluator object loaded with a binary logical expression
         let expr = Expression::Binary(
             Box::new(Expression::Literal(Literal::Float(float_val))),
             Operator::Logical(LogicalOperator::EqualTo),
@@ -583,11 +720,40 @@ mod tests {
         let result = evaluator.evaluate()?;
         let casted_result = result.downcast_ref::<bool>().unwrap();
 
-        eprintln!("Expression '{}' evaluated to {}", expr, casted_result);
+        eprintln!("Expression '{}' == {}", expr, casted_result);
 
         assert_eq!(
             casted_result,
             &(float_val == int_val as f64)
+        );
+
+        Ok(())
+    }
+    
+    #[test]
+    fn arithmetic_evaluation() -> TestResult {
+        let float_val = 2.5;
+        let int_val = 2;
+
+        // Create an Evaluator object loaded with a binary arithmetic expression
+        let expr = Expression::Binary(
+            Box::new(Expression::Literal(Literal::Float(float_val))),
+            Operator::Arithmetic(ArithmeticOperator::Plus),
+            Box::new(Expression::Literal(Literal::Integer(int_val))),
+        );
+        let evaluator = Evaluator::new(expr.clone());
+
+        eprintln!("Evaluating Expression '{}'...", expr.clone());
+
+        // Attempt to evaluate the expression
+        let result = evaluator.evaluate()?;
+        let casted_result = result.downcast_ref::<f64>().unwrap();
+
+        eprintln!("Expression '{}' == {}", expr, casted_result);
+
+        assert_eq!(
+            casted_result,
+            &(float_val + int_val as f64)
         );
 
         Ok(())
