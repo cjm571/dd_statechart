@@ -24,7 +24,10 @@ use std::{
     cmp::Ordering,
     error::Error,
     fmt,
-    ops::Add,
+    ops::{
+        Add,
+        Sub,
+    },
 };
 
 use crate::interpreter::parser::{
@@ -50,13 +53,18 @@ pub struct Evaluator {
 pub enum EvaluatorError {
     StringNegation(String),
     UnknownNegation(Box<Expression>),
-    UnsupportedOperandTypes(ArithmeticOperator, Box<Expression>, Box<Expression>),
+    IllegalOperation(
+        ArithmeticOperator, // Operator
+        IntermediateValue,  // Left Operand
+        IntermediateValue,  // Right Operand
+    ),
 
     CouldNotDowncast,
 }
 
 //FIXME: PUT THIS SOMEWHERE BETTER
-enum IntermediateValue {
+#[derive(Debug)]
+pub enum IntermediateValue {
     String(String),
     Integer(i32),
     Float(f64),
@@ -357,6 +365,7 @@ impl PartialOrd for IntermediateValue {
     }
 }
 
+//FIXME: Strings that can be parsed into numbers should be added instead of concatenated
 impl Add<Self> for IntermediateValue {
     type Output = Self;
 
@@ -364,21 +373,21 @@ impl Add<Self> for IntermediateValue {
         match self {
             Self::String(self_value) => {
                 match rhs {
-                    Self::String(other_value) => {
+                    Self::String(rhs_value) => {
                         // Concatenate
-                        Self::String(self_value + &other_value)
+                        Self::String(self_value + &rhs_value)
                     },
-                    Self::Integer(other_value) => {
+                    Self::Integer(rhs_value) => {
                         // Concatenate with stringified i32
-                        Self::String(self_value + &other_value.to_string())
+                        Self::String(self_value + &rhs_value.to_string())
                     },
-                    Self::Float(other_value) => {
+                    Self::Float(rhs_value) => {
                         // Concatenate with stringified f64
-                        Self::String(self_value + &other_value.to_string())
+                        Self::String(self_value + &rhs_value.to_string())
                     },
-                    Self::Boolean(other_value) => {
+                    Self::Boolean(rhs_value) => {
                         // Concatenate with stringified bool
-                        Self::String(self_value + &other_value.to_string())
+                        Self::String(self_value + &rhs_value.to_string())
                     },
                     Self::Null => {
                         // Concatenate with "null"
@@ -388,21 +397,21 @@ impl Add<Self> for IntermediateValue {
             },
             Self::Integer(self_value) => {
                 match rhs {
-                    Self::String(other_value) => {
+                    Self::String(rhs_value) => {
                         // Leverage existing functionality
-                        Self::String(other_value).add(self)
+                        Self::String(rhs_value).add(self)
                     },
-                    Self::Integer(other_value) => {
+                    Self::Integer(rhs_value) => {
                         // Simple addition
-                        Self::Integer(self_value + other_value)
+                        Self::Integer(self_value + rhs_value)
                     },
-                    Self::Float(other_value) => {
+                    Self::Float(rhs_value) => {
                         // Casted addition
-                        Self::Float(self_value as f64 + other_value)
+                        Self::Float(self_value as f64 + rhs_value)
                     },
-                    Self::Boolean(other_value) => {
+                    Self::Boolean(rhs_value) => {
                         // Treat 'true' as 1, 'false' as 0
-                        Self::Integer(self_value + other_value as i32)
+                        Self::Integer(self_value + rhs_value as i32)
                     },
                     Self::Null => {
                         // Essentially a NOP
@@ -412,21 +421,21 @@ impl Add<Self> for IntermediateValue {
             },
             Self::Float(self_value) => {
                 match rhs {
-                    Self::String(other_value) => {
+                    Self::String(rhs_value) => {
                         // Leverage existing functionality
-                        Self::String(other_value).add(self)
+                        Self::String(rhs_value).add(self)
                     },
-                    Self::Integer(other_value) => {
+                    Self::Integer(rhs_value) => {
                         // Leverage existing functionality
-                        Self::Integer(other_value).add(self)
+                        Self::Integer(rhs_value).add(self)
                     },
-                    Self::Float(other_value) => {
+                    Self::Float(rhs_value) => {
                         // Leverage existing functionality
-                        Self::Float(other_value).add(self)
+                        Self::Float(rhs_value).add(self)
                     },
-                    Self::Boolean(other_value) => {
+                    Self::Boolean(rhs_value) => {
                         // Treat 'true' as 1.0, 'false' as 0.0
-                        Self::Float(self_value + other_value as i32 as f64)
+                        Self::Float(self_value + rhs_value as i32 as f64)
                     },
                     Self::Null => {
                         // Essentially a NOP
@@ -436,21 +445,21 @@ impl Add<Self> for IntermediateValue {
             },
             Self::Boolean(self_value) => {
                 match rhs {
-                    Self::String(other_value) => {
+                    Self::String(rhs_value) => {
                         // Leverage existing functionality
-                        Self::String(other_value).add(self)
+                        Self::String(rhs_value).add(self)
                     },
-                    Self::Integer(other_value) => {
+                    Self::Integer(rhs_value) => {
                         // Leverage existing functionality
-                        Self::Integer(other_value).add(self)
+                        Self::Integer(rhs_value).add(self)
                     },
-                    Self::Float(other_value) => {
+                    Self::Float(rhs_value) => {
                         // Leverage existing functionality
-                        Self::Float(other_value).add(self)
+                        Self::Float(rhs_value).add(self)
                     },
-                    Self::Boolean(other_value) => {
+                    Self::Boolean(rhs_value) => {
                         // Leverage existing functionality
-                        Self::Boolean(other_value).add(self)
+                        Self::Boolean(rhs_value).add(self)
                     },
                     Self::Null => {
                         // Forces a conversion to an i32
@@ -460,25 +469,293 @@ impl Add<Self> for IntermediateValue {
             },
             Self::Null => {
                 match rhs {
-                    Self::String(other_value) => {
+                    Self::String(rhs_value) => {
                         // Leverage existing functionality
-                        Self::String(other_value).add(self)
+                        Self::String(rhs_value).add(self)
                     },
-                    Self::Integer(other_value) => {
+                    Self::Integer(rhs_value) => {
                         // Leverage existing functionality
-                        Self::Integer(other_value).add(self)
+                        Self::Integer(rhs_value).add(self)
                     },
-                    Self::Float(other_value) => {
+                    Self::Float(rhs_value) => {
                         // Leverage existing functionality
-                        Self::Float(other_value).add(self)
+                        Self::Float(rhs_value).add(self)
                     },
-                    Self::Boolean(other_value) => {
+                    Self::Boolean(rhs_value) => {
                         // Leverage existing functionality
-                        Self::Boolean(other_value).add(self)
+                        Self::Boolean(rhs_value).add(self)
                     },
                     Self::Null => {
                         // Evaluates to 0
                         Self::Integer(0)
+                    },
+                }
+            },
+        }
+    }
+}
+
+impl Sub<Self> for IntermediateValue {
+    type Output = Result<Self, EvaluatorError>;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        match self {
+            Self::String(self_value) => {
+                // Can only operate on strings that can be parsed into numbers
+                if let Ok(parsed_self_value_i32) = self_value.parse::<i32>() {
+                    match rhs {
+                        Self::String(rhs_value) => {
+                            // Can only operate on strings that can be parsed into numbers
+                            if let Ok(parsed_rhs_value_i32) = rhs_value.parse::<i32>() {
+                                // Simple subtraction
+                                Ok(Self::Integer(parsed_self_value_i32 - parsed_rhs_value_i32))
+                            }
+                            else if let Ok(parsed_rhs_value_f64) = rhs_value.parse::<f64>() {
+                                // Casted subtraction
+                                Ok(Self::Float(parsed_self_value_i32 as f64 - parsed_rhs_value_f64))
+                            }
+                            else {
+                                // Right operand could not be parsed into int or float, therefore subtraction is illegal
+                                Err (
+                                    EvaluatorError::IllegalOperation (
+                                        ArithmeticOperator::Minus,
+                                        Self::String(self_value),
+                                        Self::String(rhs_value),
+                                    )
+                                )
+                            }
+                        },
+                        Self::Integer(rhs_value) => {
+                            // Simple subtraction
+                            Ok(Self::Integer(parsed_self_value_i32 - rhs_value))
+                        },
+                        Self::Float(rhs_value) => {
+                            // Casted subtraction
+                            Ok(Self::Float(parsed_self_value_i32 as f64 - rhs_value))
+                        },
+                        Self::Boolean(rhs_value) => {
+                            // Treat 'true' as 1, 'false' as 0
+                            Ok(Self::Integer(parsed_self_value_i32 - rhs_value as i32))
+                        },
+                        Self::Null => {
+                            // Forces conversion to number
+                            Ok(Self::Integer(parsed_self_value_i32))
+                        },
+                    }
+                }
+                else if let Ok(parsed_self_value_f64) = self_value.parse::<f64>() {
+                    match rhs {
+                        Self::String(rhs_value) => {
+                            // Can only operate on strings that can be parsed into numbers
+                            if let Ok(parsed_rhs_value_i32) = rhs_value.parse::<i32>() {
+                                // Casted subtraction
+                                Ok(Self::Float(parsed_self_value_f64 - parsed_rhs_value_i32 as f64))
+                            }
+                            else if let Ok(parsed_rhs_value_f64) = rhs_value.parse::<f64>() {
+                                // Simple subtraction
+                                Ok(Self::Float(parsed_self_value_f64 - parsed_rhs_value_f64))
+                            }
+                            else {
+                                // Right operand could not be parsed into int or float, therefore subtraction is illegal
+                                Err (
+                                    EvaluatorError::IllegalOperation (
+                                        ArithmeticOperator::Minus,
+                                        Self::String(self_value),
+                                        Self::String(rhs_value),
+                                    )
+                                )
+                            }
+                        },
+                        Self::Integer(rhs_value) => {
+                            // Casted subtraction
+                            Ok(Self::Float(parsed_self_value_f64 - rhs_value as f64))
+                        },
+                        Self::Float(rhs_value) => {
+                            // Simple subtraction
+                            Ok(Self::Float(parsed_self_value_f64 - rhs_value))
+                        },
+                        Self::Boolean(rhs_value) => {
+                            // Treat 'true' as 1.0, 'false' as 0.0
+                            Ok(Self::Float(parsed_self_value_f64 - rhs_value as i32 as f64))
+                        },
+                        Self::Null => {
+                            // Forces conversion to number
+                            Ok(Self::Float(parsed_self_value_f64))
+                        },
+                    }
+                }
+                else {
+                    // Left operand could not be parsed into int or float, therefore subtraction is illegal
+                    Err (
+                        EvaluatorError::IllegalOperation (
+                            ArithmeticOperator::Minus,
+                            Self::String(self_value),
+                            rhs,
+                        )
+                    )
+                }
+            },
+            Self::Integer(self_value) => {
+                match rhs {
+                    Self::String(rhs_value) => {
+                        // Can only operate on strings that can be parsed into numbers
+                        if let Ok(parsed_value) = rhs_value.parse::<i32>() {
+                            // Simple subtraction
+                            Ok(Self::Integer(self_value - parsed_value))
+                        }
+                        else if let Ok(parsed_value) = rhs_value.parse::<f64>() {
+                            // Casted subtraction
+                            Ok(Self::Float(self_value as f64 - parsed_value))
+                        }
+                        else {
+                            // Right operand could not be parsed into int or float, therefore subtraction is illegal
+                            Err (
+                                EvaluatorError::IllegalOperation (
+                                    ArithmeticOperator::Minus,
+                                    self,
+                                    Self::String(rhs_value),
+                                )
+                            )
+                        }
+                    },
+                    Self::Integer(rhs_value) => {
+                        // Simple subtraction
+                        Ok(Self::Integer(self_value - rhs_value))
+                    },
+                    Self::Float(rhs_value) => {
+                        // Casted subtraction
+                        Ok(Self::Float(self_value as f64 - rhs_value))
+                    },
+                    Self::Boolean(rhs_value) => {
+                        // Treat 'true' as 1, 'false' as 0
+                        Ok(Self::Integer(self_value - rhs_value as i32))
+                    },
+                    Self::Null => {
+                        // Essentially a NOP
+                        Ok(self)
+                    },
+                }
+            },
+            Self::Float(self_value) => {
+                match rhs {
+                    Self::String(rhs_value) => {
+                        // Can only operate on strings that can be parsed into numbers
+                        if let Ok(parsed_value) = rhs_value.parse::<i32>() {
+                            // Casted subtraction
+                            Ok(Self::Float(self_value - parsed_value as f64))
+                        }
+                        else if let Ok(parsed_value) = rhs_value.parse::<f64>() {
+                            // Simple subtraction
+                            Ok(Self::Float(self_value - parsed_value))
+                        }
+                        else {
+                            // Right operand could not be parsed into int or float, therefore subtraction is illegal
+                            Err (
+                                EvaluatorError::IllegalOperation (
+                                    ArithmeticOperator::Minus,
+                                    self,
+                                    Self::String(rhs_value),
+                                )
+                            )
+                        }
+                    },
+                    Self::Integer(rhs_value) => {
+                        // Casted subtraction
+                        Ok(Self::Float(self_value - rhs_value as f64))
+                    },
+                    Self::Float(rhs_value) => {
+                        // Simple subtraction
+                        Ok(Self::Float(self_value - rhs_value))
+                    },
+                    Self::Boolean(rhs_value) => {
+                        // Treat 'true' as 1.0, 'false' as 0.0
+                        Ok(Self::Float(self_value - rhs_value as i32 as f64))
+                    },
+                    Self::Null => {
+                        // Essentially a NOP
+                        Ok(self)
+                    },
+                }
+            },
+            Self::Boolean(self_value) => {
+                match rhs {
+                    Self::String(rhs_value) => {
+                        // Can only operate on strings that can be parsed into numbers
+                        if let Ok(parsed_value) = rhs_value.parse::<i32>() {
+                            // Treat 'true' as 1, 'false' as 0
+                            Ok(Self::Integer(self_value as i32 - parsed_value))
+                        }
+                        else if let Ok(parsed_value) = rhs_value.parse::<f64>() {
+                            // Treat 'true' as 1.0, 'false' as 0.0
+                            Ok(Self::Float(self_value as i32 as f64 - parsed_value))
+                        }
+                        else {
+                            // Right operand could not be parsed into int or float, therefore subtraction is illegal
+                            Err (
+                                EvaluatorError::IllegalOperation (
+                                    ArithmeticOperator::Minus,
+                                    self,
+                                    Self::String(rhs_value),
+                                )
+                            )
+                        }
+                    },
+                    Self::Integer(rhs_value) => {
+                        // Treat 'true' as 1, 'false' as 0
+                        Ok(Self::Integer(self_value as i32 - rhs_value))
+                    },
+                    Self::Float(rhs_value) => {
+                        // Treat 'true' as 1.0, 'false' as 0.0
+                        Ok(Self::Float(self_value as i32 as f64 - rhs_value))
+                    },
+                    Self::Boolean(rhs_value) => {
+                        // Treat 'true' as 1, 'false' as 0
+                        Ok(Self::Integer(self_value as i32 - rhs_value as i32))
+                    },
+                    Self::Null => {
+                        // Forces conversion to an i32
+                        Ok(Self::Integer(self_value as i32))
+                    },
+                }
+            },
+            Self::Null => {
+                match rhs {
+                    Self::String(rhs_value) => {
+                        // Can only operate on strings that can be parsed into numbers
+                        if let Ok(parsed_value) = rhs_value.parse::<i32>() {
+                            // Essentially a negation
+                            Ok(Self::Integer(-parsed_value))
+                        }
+                        else if let Ok(parsed_value) = rhs_value.parse::<f64>() {
+                            // Essentially a negation
+                            Ok(Self::Float(-parsed_value))
+                        }
+                        else {
+                            // Right operand could not be parsed into int or float, therefore subtraction is illegal
+                            Err (
+                                EvaluatorError::IllegalOperation (
+                                    ArithmeticOperator::Minus,
+                                    self,
+                                    Self::String(rhs_value),
+                                )
+                            )
+                        }
+                    },
+                    Self::Integer(rhs_value) => {
+                        // Essentially a negation
+                        Ok(Self::Integer(-rhs_value))
+                    },
+                    Self::Float(rhs_value) => {
+                        // Essentially a negation
+                        Ok(Self::Float(-rhs_value))
+                    },
+                    Self::Boolean(rhs_value) => {
+                        // Convert to i32 and negate
+                        Ok(Self::Integer(-(rhs_value as i32)))
+                    },
+                    Self::Null => {
+                        // Evaluates to 0
+                        Ok(Self::Integer(0))
                     },
                 }
             },
@@ -612,7 +889,7 @@ impl Evaluator {
         match op {
             /* Arithmetic Operations */
             Operator::Arithmetic(math_op) => {
-                Ok(Self::eval_math_op(math_op, left_value, right_value))
+                Self::eval_math_op(math_op, left_value, right_value)
             },
 
             /* Logical Operations */
@@ -622,9 +899,10 @@ impl Evaluator {
         }
     }
 
-    fn eval_math_op(op: ArithmeticOperator, left: IntermediateValue, right: IntermediateValue) -> IntermediateValue {
+    fn eval_math_op(op: ArithmeticOperator, left: IntermediateValue, right: IntermediateValue) -> Result<IntermediateValue, EvaluatorError> {
         match op {
-            ArithmeticOperator::Plus => left + right,
+            ArithmeticOperator::Plus    => Ok(left + right),
+            ArithmeticOperator::Minus   => left - right,
             _ => unimplemented!("Only plus so far!")
         }
     }
@@ -663,8 +941,8 @@ impl fmt::Display for EvaluatorError {
             Self::UnknownNegation(expr) => {
                 write!(f, "Attempted to negate Expression '{}', which is invalid", expr)
             },
-            Self::UnsupportedOperandTypes(op, left, right) => {
-                write!(f, "Unsupported operation '{}' on types L: '{}' and R: '{}'", op, left, right)
+            Self::IllegalOperation(op, left, right) => {
+                write!(f, "Unsupported operation '{}' on operands L: '{:?}' and R: '{:?}'", op, left, right)
             },
             Self::CouldNotDowncast => {
                 write!(f, "NON-ERROR: Could not downcast parameters to their respective type parameters")
@@ -737,8 +1015,8 @@ mod tests {
 
         // Create an Evaluator object loaded with a binary arithmetic expression
         let expr = Expression::Binary(
-            Box::new(Expression::Literal(Literal::Float(float_val))),
-            Operator::Arithmetic(ArithmeticOperator::Plus),
+            Box::new(Expression::Literal(Literal::String(float_val.to_string()))),
+            Operator::Arithmetic(ArithmeticOperator::Minus),
             Box::new(Expression::Literal(Literal::Integer(int_val))),
         );
         let evaluator = Evaluator::new(expr.clone());
@@ -753,7 +1031,7 @@ mod tests {
 
         assert_eq!(
             casted_result,
-            &(float_val + int_val as f64)
+            &(float_val - int_val as f64)
         );
 
         Ok(())
