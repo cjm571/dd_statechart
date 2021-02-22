@@ -15,7 +15,13 @@ Copyright (C) 2021 CJ McAllister
     Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
 
 Purpose:
-    //TODO: Purpose statement
+    This module defines a barebones interpreter for single-line ECMAScript
+    expressions.
+
+    //TODO: More, probably
+
+    NONCONFORMANCES:
+    1. Expressions that evaluate to 'NaN' are currently treated as errors
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 

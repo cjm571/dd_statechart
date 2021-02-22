@@ -26,6 +26,8 @@ use std::{
     fmt,
     ops::{
         Add,
+        Div,
+        Mul,
         Sub,
     },
 };
@@ -212,7 +214,8 @@ impl Evaluator {
         match op {
             ArithmeticOperator::Plus    => Ok(left + right),
             ArithmeticOperator::Minus   => left - right,
-            _ => unimplemented!("Only +, - so far!")
+            ArithmeticOperator::Star    => left * right,
+            ArithmeticOperator::Slash   => left / right,
         }
     }
 
@@ -264,6 +267,7 @@ impl fmt::Display for EvaluatorError {
 /*  *  *  *  *  *  *  *\
  *  IntermediateValue *
 \*  *  *  *  *  *  *  */
+//FIXME: ECMAScript only has "Number" and "BigInt". BigInt not yet implemented, but everything else should be converted to Number
 
 impl PartialEq for IntermediateValue {
     fn eq(&self, other: &Self) -> bool {
@@ -971,6 +975,519 @@ impl Sub<Self> for IntermediateValue {
         }
     }
 }
+impl Mul<Self> for IntermediateValue {
+    type Output = Result<Self, EvaluatorError>;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        match self {
+            Self::String(self_value) => {
+                // Can only operate on strings that can be parsed into numbers
+                if let Ok(parsed_self_value_i32) = self_value.parse::<i32>() {
+                    match rhs {
+                        Self::String(rhs_value) => {
+                            // Can only operate on strings that can be parsed into numbers
+                            if let Ok(parsed_rhs_value_i32) = rhs_value.parse::<i32>() {
+                                // Simple multiplication
+                                Ok(Self::Integer(parsed_self_value_i32 * parsed_rhs_value_i32))
+                            }
+                            else if let Ok(parsed_rhs_value_f64) = rhs_value.parse::<f64>() {
+                                // Casted multiplication
+                                Ok(Self::Float(parsed_self_value_i32 as f64 * parsed_rhs_value_f64))
+                            }
+                            else {
+                                // Right operand could not be parsed into int or float, therefore multiplication is illegal
+                                Err (
+                                    EvaluatorError::IllegalOperation (
+                                        ArithmeticOperator::Star,
+                                        Self::String(self_value),
+                                        Self::String(rhs_value),
+                                    )
+                                )
+                            }
+                        },
+                        Self::Integer(rhs_value) => {
+                            // Simple multiplication
+                            Ok(Self::Integer(parsed_self_value_i32 * rhs_value))
+                        },
+                        Self::Float(rhs_value) => {
+                            // Casted multiplication
+                            Ok(Self::Float(parsed_self_value_i32 as f64 * rhs_value))
+                        },
+                        Self::Boolean(rhs_value) => {
+                            // Treat 'true' as 1, 'false' as 0
+                            Ok(Self::Integer(parsed_self_value_i32 * rhs_value as i32))
+                        },
+                        Self::Null => {
+                            // Evaluates to 0
+                            Ok(Self::Integer(0))
+                        },
+                    }
+                }
+                else if let Ok(parsed_self_value_f64) = self_value.parse::<f64>() {
+                    match rhs {
+                        Self::String(rhs_value) => {
+                            // Can only operate on strings that can be parsed into numbers
+                            if let Ok(parsed_rhs_value_i32) = rhs_value.parse::<i32>() {
+                                // Casted multiplication
+                                Ok(Self::Float(parsed_self_value_f64 * parsed_rhs_value_i32 as f64))
+                            }
+                            else if let Ok(parsed_rhs_value_f64) = rhs_value.parse::<f64>() {
+                                // Simple multiplication
+                                Ok(Self::Float(parsed_self_value_f64 * parsed_rhs_value_f64))
+                            }
+                            else {
+                                // Right operand could not be parsed into int or float, therefore multiplication is illegal
+                                Err (
+                                    EvaluatorError::IllegalOperation (
+                                        ArithmeticOperator::Star,
+                                        Self::String(self_value),
+                                        Self::String(rhs_value),
+                                    )
+                                )
+                            }
+                        },
+                        Self::Integer(rhs_value) => {
+                            // Casted multiplication
+                            Ok(Self::Float(parsed_self_value_f64 * rhs_value as f64))
+                        },
+                        Self::Float(rhs_value) => {
+                            // Simple multiplication
+                            Ok(Self::Float(parsed_self_value_f64 * rhs_value))
+                        },
+                        Self::Boolean(rhs_value) => {
+                            // Treat 'true' as 1.0, 'false' as 0.0
+                            Ok(Self::Float(parsed_self_value_f64 * rhs_value as i32 as f64))
+                        },
+                        Self::Null => {
+                            // Evaluates to 0
+                            Ok(Self::Float(0.0))
+                        },
+                    }
+                }
+                else {
+                    // Left operand could not be parsed into int or float, therefore multiplication is illegal
+                    Err (
+                        EvaluatorError::IllegalOperation (
+                            ArithmeticOperator::Star,
+                            Self::String(self_value),
+                            rhs,
+                        )
+                    )
+                }
+            },
+            Self::Integer(self_value) => {
+                match rhs {
+                    Self::String(rhs_value) => {
+                        // Can only operate on strings that can be parsed into numbers
+                        if let Ok(parsed_value) = rhs_value.parse::<i32>() {
+                            // Simple multiplication
+                            Ok(Self::Integer(self_value * parsed_value))
+                        }
+                        else if let Ok(parsed_value) = rhs_value.parse::<f64>() {
+                            // Casted multiplication
+                            Ok(Self::Float(self_value as f64 * parsed_value))
+                        }
+                        else {
+                            // Right operand could not be parsed into int or float, therefore multiplication is illegal
+                            Err (
+                                EvaluatorError::IllegalOperation (
+                                    ArithmeticOperator::Star,
+                                    self,
+                                    Self::String(rhs_value),
+                                )
+                            )
+                        }
+                    },
+                    Self::Integer(rhs_value) => {
+                        // Simple multiplication
+                        Ok(Self::Integer(self_value * rhs_value))
+                    },
+                    Self::Float(rhs_value) => {
+                        // Casted multiplication
+                        Ok(Self::Float(self_value as f64 * rhs_value))
+                    },
+                    Self::Boolean(rhs_value) => {
+                        // Treat 'true' as 1, 'false' as 0
+                        Ok(Self::Integer(self_value * rhs_value as i32))
+                    },
+                    Self::Null => {
+                        // Evaluates to 0
+                        Ok(Self::Integer(0))
+                    },
+                }
+            },
+            Self::Float(self_value) => {
+                match rhs {
+                    Self::String(rhs_value) => {
+                        // Can only operate on strings that can be parsed into numbers
+                        if let Ok(parsed_value) = rhs_value.parse::<i32>() {
+                            // Casted multiplication
+                            Ok(Self::Float(self_value * parsed_value as f64))
+                        }
+                        else if let Ok(parsed_value) = rhs_value.parse::<f64>() {
+                            // Simple multiplication
+                            Ok(Self::Float(self_value * parsed_value))
+                        }
+                        else {
+                            // Right operand could not be parsed into int or float, therefore multiplication is illegal
+                            Err (
+                                EvaluatorError::IllegalOperation (
+                                    ArithmeticOperator::Star,
+                                    self,
+                                    Self::String(rhs_value),
+                                )
+                            )
+                        }
+                    },
+                    Self::Integer(rhs_value) => {
+                        // Casted multiplication
+                        Ok(Self::Float(self_value * rhs_value as f64))
+                    },
+                    Self::Float(rhs_value) => {
+                        // Simple multiplication
+                        Ok(Self::Float(self_value * rhs_value))
+                    },
+                    Self::Boolean(rhs_value) => {
+                        // Treat 'true' as 1.0, 'false' as 0.0
+                        Ok(Self::Float(self_value * rhs_value as i32 as f64))
+                    },
+                    Self::Null => {
+                        // Evaluates to 0
+                        Ok(Self::Float(0.0))
+                    },
+                }
+            },
+            Self::Boolean(self_value) => {
+                match rhs {
+                    Self::String(rhs_value) => {
+                        // Can only operate on strings that can be parsed into numbers
+                        if let Ok(parsed_value) = rhs_value.parse::<i32>() {
+                            // Treat 'true' as 1, 'false' as 0
+                            Ok(Self::Integer(self_value as i32 * parsed_value))
+                        }
+                        else if let Ok(parsed_value) = rhs_value.parse::<f64>() {
+                            // Treat 'true' as 1.0, 'false' as 0.0
+                            Ok(Self::Float(self_value as i32 as f64 * parsed_value))
+                        }
+                        else {
+                            // Right operand could not be parsed into int or float, therefore multiplication is illegal
+                            Err (
+                                EvaluatorError::IllegalOperation (
+                                    ArithmeticOperator::Star,
+                                    self,
+                                    Self::String(rhs_value),
+                                )
+                            )
+                        }
+                    },
+                    Self::Integer(rhs_value) => {
+                        // Treat 'true' as 1, 'false' as 0
+                        Ok(Self::Integer(self_value as i32 * rhs_value))
+                    },
+                    Self::Float(rhs_value) => {
+                        // Treat 'true' as 1.0, 'false' as 0.0
+                        Ok(Self::Float(self_value as i32 as f64 * rhs_value))
+                    },
+                    Self::Boolean(rhs_value) => {
+                        // Treat 'true' as 1, 'false' as 0
+                        Ok(Self::Integer(self_value as i32 * rhs_value as i32))
+                    },
+                    Self::Null => {
+                        // Evaluates to 0
+                        Ok(Self::Integer(0))
+                    },
+                }
+            },
+            Self::Null => {
+                match rhs {
+                    // Multiplying by 'null' evaluates to '0' against all but non-numeric strings,
+                    // which is 'NaN'
+                    Self::String(rhs_value) => {
+                        if rhs_value.parse::<i32>().is_ok() {
+                            Ok(Self::Integer(0))
+                        }
+                        else if rhs_value.parse::<f64>().is_ok() {
+                            Ok(Self::Float(0.0))
+                        }
+                        else {
+                            Err (
+                                EvaluatorError::IllegalOperation (
+                                    ArithmeticOperator::Star,
+                                    self,
+                                    Self::String(rhs_value),
+                                )
+                            )
+                        }
+                    },
+                    Self::Integer(_)    => Ok(Self::Integer(0)),
+                    Self::Float(_)      => Ok(Self::Float(0.0)),
+                    Self::Boolean(_)    => Ok(Self::Integer(0)),
+                    Self::Null          => Ok(Self::Integer(0)),
+                }
+            },
+        }
+    }
+}
+impl Div<Self> for IntermediateValue {
+    type Output = Result<Self, EvaluatorError>;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        // Check for divide-by-zero before evaluating further
+        match &rhs {
+            Self::String(rhs_value) => {
+                if rhs_value.parse::<f64>().map_or(false, |v| v == 0.0) {
+                    return Ok(Self::Float(f64::INFINITY));
+                }
+            },
+            Self::Integer(0) => {
+                return Ok(Self::Float(f64::INFINITY));
+            },
+            Self::Float(rhs_value) if rhs_value.abs() < f64::EPSILON => {
+                return Ok(Self::Float(f64::INFINITY));
+            },
+            _ => {
+                /* Not dividing by 0, carry on */
+            },
+        }
+
+        match self {
+            Self::String(self_value) => {
+                // ECMAScript forces integer division to produce a float result, so just 
+                // attempt to parse everything as f64
+                if let Ok(parsed_self_value) = self_value.parse::<f64>() {
+                    match rhs {
+                        Self::String(rhs_value) => {
+                            // ECMAScript forces integer division to produce a float result, so just 
+                            // attempt to parse everything as f64
+                            if let Ok(parsed_rhs_value) = rhs_value.parse::<f64>() {
+                                // Simple division
+                                Ok(Self::Float(parsed_self_value / parsed_rhs_value))
+                            }
+                            else {
+                                // Right operand could not be parsed into float, therefore division is illegal
+                                Err (
+                                    EvaluatorError::IllegalOperation (
+                                        ArithmeticOperator::Slash,
+                                        Self::String(self_value),
+                                        Self::String(rhs_value),
+                                    )
+                                )
+                            }
+                        },
+                        Self::Integer(rhs_value) => {
+                            // Casted division
+                            Ok(Self::Float(parsed_self_value / rhs_value as f64))
+                        },
+                        Self::Float(rhs_value) => {
+                            // Simple division
+                            Ok(Self::Float(parsed_self_value / rhs_value))
+                        },
+                        Self::Boolean(rhs_value) => {
+                            // Treat 'true' as 1, 'false' as 0
+                            Ok(Self::Float(parsed_self_value / rhs_value as i32 as f64))
+                        },
+                        Self::Null => {
+                            // Evaluates to Infinity
+                            Ok(Self::Float(f64::INFINITY))
+                        },
+                    }
+                }
+                else {
+                    // Left operand could not be parsed into int or float, therefore division is illegal
+                    Err (
+                        EvaluatorError::IllegalOperation (
+                            ArithmeticOperator::Slash,
+                            Self::String(self_value),
+                            rhs,
+                        )
+                    )
+                }
+            },
+            Self::Integer(self_value) => {
+                match rhs {
+                    Self::String(rhs_value) => {
+                        // ECMAScript forces integer division to produce a float result, so just 
+                        // attempt to parse everything as f64
+                        if let Ok(parsed_rhs_value) = rhs_value.parse::<f64>() {
+                            // Casted division
+                            Ok(Self::Float(self_value as f64 / parsed_rhs_value))
+                        }
+                        else {
+                            // Right operand could not be parsed into int or float, therefore division is illegal
+                            Err (
+                                EvaluatorError::IllegalOperation (
+                                    ArithmeticOperator::Slash,
+                                    self,
+                                    Self::String(rhs_value),
+                                )
+                            )
+                        }
+                    },
+                    Self::Integer(rhs_value) => {
+                        // Casted division
+                        Ok(Self::Float(self_value as f64 / rhs_value as f64))
+                    },
+                    Self::Float(rhs_value) => {
+                        // Casted division
+                        Ok(Self::Float(self_value as f64 / rhs_value))
+                    },
+                    Self::Boolean(rhs_value) => {
+                        // Treat 'true' as 1.0, 'false' as 0.0
+                        Ok(Self::Float(self_value as f64 / rhs_value as i32 as f64))
+                    },
+                    Self::Null => {
+                        // Evaluates to Infinity
+                        Ok(Self::Float(f64::INFINITY))
+                    },
+                }
+            },
+            Self::Float(self_value) => {
+                match rhs {
+                    Self::String(rhs_value) => {
+                        // ECMAScript forces integer division to produce a float result, so just 
+                        // attempt to parse everything as f64
+                        if let Ok(parsed_rhs_value) = rhs_value.parse::<f64>() {
+                            // Simple division
+                            Ok(Self::Float(self_value / parsed_rhs_value))
+                        }
+                        else {
+                            // Right operand could not be parsed into int or float, therefore division is illegal
+                            Err (
+                                EvaluatorError::IllegalOperation (
+                                    ArithmeticOperator::Slash,
+                                    self,
+                                    Self::String(rhs_value),
+                                )
+                            )
+                        }
+                    },
+                    Self::Integer(rhs_value) => {
+                        // Casted division
+                        Ok(Self::Float(self_value / rhs_value as f64))
+                    },
+                    Self::Float(rhs_value) => {
+                        // Simple division
+                        Ok(Self::Float(self_value / rhs_value))
+                    },
+                    Self::Boolean(rhs_value) => {
+                        // Treat 'true' as 1.0, 'false' as 0.0
+                        Ok(Self::Float(self_value / rhs_value as i32 as f64))
+                    },
+                    Self::Null => {
+                        // Evaluates to Infinity
+                        Ok(Self::Float(f64::INFINITY))
+                    },
+                }
+            },
+            Self::Boolean(self_value) => {
+                match rhs {
+                    Self::String(rhs_value) => {
+                        // ECMAScript forces integer division to produce a float result, so just 
+                        // attempt to parse everything as f64
+                        if let Ok(parsed_rhs_value) = rhs_value.parse::<f64>() {
+                            // Casted division
+                            Ok(Self::Float(self_value as i32 as f64 / parsed_rhs_value))
+                        }
+                        else {
+                            // Right operand could not be parsed into int or float, therefore division is illegal
+                            Err (
+                                EvaluatorError::IllegalOperation (
+                                    ArithmeticOperator::Slash,
+                                    self,
+                                    Self::String(rhs_value),
+                                )
+                            )
+                        }
+                    },
+                    Self::Integer(rhs_value) => {
+                        // Treat 'true' as 1, 'false' as 0
+                        Ok(Self::Float(self_value as i32 as f64 / rhs_value as f64))
+                    },
+                    Self::Float(rhs_value) => {
+                        // Treat 'true' as 1.0, 'false' as 0.0
+                        Ok(Self::Float(self_value as i32 as f64 / rhs_value))
+                    },
+                    Self::Boolean(rhs_value) => {
+                        // Treat 'true' as 1, 'false' as 0
+                        Ok(Self::Float(self_value as i32 as f64 / rhs_value as i32 as f64))
+                    },
+                    Self::Null => {
+                        // 'true' / null == Infinity
+                        if self_value {
+                            Ok(Self::Float(f64::INFINITY))
+                        }
+                        // 'false' / null == NaN
+                        else {
+                            Err(
+                                EvaluatorError::IllegalOperation(
+                                    ArithmeticOperator::Slash,
+                                    self,
+                                    rhs,
+                                )
+                            )
+                        }
+                    },
+                }
+            },
+            Self::Null => {
+                match rhs {
+                    Self::String(rhs_value) => {
+                        // ECMAScript forces integer division to produce a float result, so just 
+                        // attempt to parse everything as f64
+                        if rhs_value.parse::<f64>().is_ok() {
+                            // Evaluates to 0
+                            Ok(Self::Float(0.0))
+                        }
+                        else {
+                            // Right operand could not be parsed into int or float, therefore division is illegal
+                            Err (
+                                EvaluatorError::IllegalOperation (
+                                    ArithmeticOperator::Slash,
+                                    self,
+                                    Self::String(rhs_value),
+                                )
+                            )
+                        }
+                    },
+                    Self::Integer(_) => {
+                        // Evaluates to 0
+                        Ok(Self::Integer(0))
+                    },
+                    Self::Float(_) => {
+                        // Evaluates to 0
+                        Ok(Self::Float(0.0))
+                    },
+                    Self::Boolean(rhs_value) => {
+                        // null / 'true' == 0
+                        if rhs_value {
+                            Ok(Self::Float(0.0))
+                        }
+                        // null /'false' == NaN
+                        else {
+                            Err(
+                                EvaluatorError::IllegalOperation(
+                                    ArithmeticOperator::Slash,
+                                    self,
+                                    rhs,
+                                )
+                            )
+                        }
+                    },
+                    Self::Null => {
+                        // null / null == NaN
+                        Err(
+                            EvaluatorError::IllegalOperation(
+                                ArithmeticOperator::Slash,
+                                self,
+                                rhs,
+                            )
+                        )
+                    },
+                }
+            },
+        }
+    }
+}
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1029,13 +1546,13 @@ mod tests {
     
     #[test]
     fn arithmetic_evaluation() -> TestResult {
-        let float_val = 2.5;
-        let int_val = 2;
+        let float_val = 4.0;
+        let int_val = 0;
 
         // Create an Evaluator object loaded with a binary arithmetic expression
         let expr = Expression::Binary(
             Box::new(Expression::Literal(Literal::String(float_val.to_string()))),
-            Operator::Arithmetic(ArithmeticOperator::Minus),
+            Operator::Arithmetic(ArithmeticOperator::Slash),
             Box::new(Expression::Literal(Literal::Integer(int_val))),
         );
         let evaluator = Evaluator::new(expr.clone());
@@ -1050,7 +1567,7 @@ mod tests {
 
         assert_eq!(
             casted_result,
-            &(float_val - int_val as f64)
+            &(f64::INFINITY)
         );
 
         Ok(())

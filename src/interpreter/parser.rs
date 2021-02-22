@@ -242,13 +242,13 @@ impl Error for ParserError {}
 impl fmt::Display for ParserError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::InvalidOperatorConversion(token)     => {
+            Self::InvalidOperatorConversion(token) => {
                 write!(f, "Invalid Token->Operator conversion for token '{:?}'", token)
             },
-            Self::UnterminatedGroup             => {
+            Self::UnterminatedGroup => {
                 write!(f, "Unterminated expression group")
             },
-            Self::InvalidPrimaryToken(token)    => {
+            Self::InvalidPrimaryToken(token) => {
                 write!(f, "Invalid token '{:?}' encountered at the Primary precedence level", token)
             },
         }
