@@ -38,7 +38,14 @@ use std::{
     slice::Iter,
 };
 
-use crate::interpreter::Token;
+use crate::interpreter::{
+    Expression,
+    InterpreterError,
+    Literal,
+    Operator,
+    Token,
+    Unary,
+};
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -53,50 +60,12 @@ pub struct Parser<'i> {
 //OPT: *STYLE*  Parameterize this enum for better Display output
 #[derive(Debug, PartialEq)]
 pub enum ParserError {
-    InvalidOperatorConversion,
+    InvalidOperatorConversion(Token),
     UnterminatedGroup,
     InvalidPrimaryToken(Token),
 }
 
 pub type ParserResult = Result<Expression, ParserError>;
-
-#[derive(Debug, PartialEq)]
-pub enum Expression {
-    Literal(Literal),
-    Unary(Unary),
-    Binary(Box<Self>, Operator, Box<Self>),
-    Grouping(Box<Self>),
-}
-
-#[derive(Debug, PartialEq)]
-pub enum Literal {
-    Integer(i32),
-    Float(f32),
-    String(String),
-    True,
-    False,
-    Null,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum Unary {
-    Negation(Box<Expression>),
-    Not(Box<Expression>),
-}
-
-#[derive(Debug, PartialEq)]
-pub enum Operator {
-    EqualTo,
-    NotEqualTo,
-    GreaterThan,
-    GreaterThanOrEqualTo,
-    LessThan,
-    LessThanOrEqualTo,
-    Plus,
-    Minus,
-    Star,
-    Slash,
-}
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -258,6 +227,7 @@ impl<'i> Parser<'i> {
 
 }
 
+
 ///////////////////////////////////////////////////////////////////////////////
 //  Trait Implementations
 ///////////////////////////////////////////////////////////////////////////////
@@ -272,106 +242,25 @@ impl Error for ParserError {}
 impl fmt::Display for ParserError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::InvalidOperatorConversion     => {
-                write!(f, "Invalid Token->Operator conversion")
+            Self::InvalidOperatorConversion(token) => {
+                write!(f, "Invalid Token->Operator conversion for token '{:?}'", token)
             },
-            Self::UnterminatedGroup             => {
+            Self::UnterminatedGroup => {
                 write!(f, "Unterminated expression group")
             },
-            Self::InvalidPrimaryToken(token)    => {
+            Self::InvalidPrimaryToken(token) => {
                 write!(f, "Invalid token '{:?}' encountered at the Primary precedence level", token)
             },
         }
     }
 }
 
-
-/*  *  *  *  *  *  *  *\
- *     Expression     *
-\*  *  *  *  *  *  *  */
-
-impl fmt::Display for Expression {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Literal(literal)          => write!(f, "{}", literal),
-            Self::Unary(unary)              => write!(f, "({})", unary),
-            Self::Binary(left, op, right)   => write!(f, "({} {} {})", op, left, right),
-            Self::Grouping(expr)            => write!(f, "(group {})", expr),
-        }
-    }
-}
-
-
-/*  *  *  *  *  *  *  *\
- *      Literal       *
-\*  *  *  *  *  *  *  */
-
-impl fmt::Display for Literal {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Integer(val)      => write!(f, "{}", val),
-            Self::Float(val)        => write!(f, "{}", val),
-            Self::String(string)    => write!(f, "{}", string),
-            Self::True              => write!(f, "true"),
-            Self::False             => write!(f, "false"),
-            Self::Null              => write!(f, "null"),
-        }
-    }
-}
-
-
-/*  *  *  *  *  *  *  *\
- *       Unary        *
-\*  *  *  *  *  *  *  */
-
-impl fmt::Display for Unary {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Negation(expr)    => write!(f, "- {}", expr),
-            Self::Not(expr)         => write!(f, "! {}", expr),
-        }
-    }
-}
-
-
-/*  *  *  *  *  *  *  *\
- *      Operator      *
-\*  *  *  *  *  *  *  */
-
-impl fmt::Display for Operator {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::EqualTo               => write!(f, "=="),
-            Self::NotEqualTo            => write!(f, "!="),
-            Self::GreaterThan           => write!(f, ">"),
-            Self::GreaterThanOrEqualTo  => write!(f, ">="),
-            Self::LessThan              => write!(f, "<"),
-            Self::LessThanOrEqualTo     => write!(f, "<="),
-            Self::Plus                  => write!(f, "+"),
-            Self::Minus                 => write!(f, "-"),
-            Self::Star                  => write!(f, "*"),
-            Self::Slash                 => write!(f, "/"),
-        }
-    }
-}
-
-//OPT: *DESIGN* Is this appropriate? Can't do a 100% reliable token->operator conversion without context...
-impl TryFrom<&Token> for Operator {
-    type Error = ParserError;
-
-    fn try_from(src: &Token) -> Result<Self, Self::Error> {
+impl From<InterpreterError> for ParserError {
+    fn from(src: InterpreterError) -> Self {
         match src {
-            Token::EqualEqual           => Ok(Self::EqualTo),
-            Token::BangEqual            => Ok(Self::NotEqualTo),
-            Token::GreaterThan          => Ok(Self::GreaterThan),
-            Token::GreaterThanOrEqualTo => Ok(Operator::GreaterThanOrEqualTo),
-            Token::LessThan             => Ok(Self::LessThan),
-            Token::LessThanOrEqualTo    => Ok(Self::LessThanOrEqualTo),
-            Token::Plus                 => Ok(Self::Plus),
-            Token::Minus                => Ok(Self::Minus),
-            Token::Star                 => Ok(Self::Star),
-            Token::Slash                => Ok(Self::Slash),
-            _                           => Err(ParserError::InvalidOperatorConversion),
+            InterpreterError::InvalidOperatorConversion(token) => {
+                ParserError::InvalidOperatorConversion(token)
+            }
         }
     }
 }
@@ -391,14 +280,17 @@ mod tests {
 
     use crate::interpreter::{
         Token,
+        Expression,
+        InterpreterError,
+        Literal,
+        Unary,
+        Operator,
+        ArithmeticOperator,
+        lexer::Lexer,
         parser::{
             Parser,
             ParserError,
-            Expression,
-            Literal,
-            Unary,
-            Operator,
-        },
+        }
     };
 
 
@@ -407,23 +299,17 @@ mod tests {
 
     #[test]
     fn output_test() -> TestResult {
-        let expr = Expression::Binary(
-            Box::new(Expression::Unary(
-                Unary::Negation(
-                    Box::new(Expression::Literal(
-                        Literal::Integer(123)
-                    ))
-                )
-            )),
-            Operator::Star,
-            Box::new(Expression::Grouping(
-                Box::new(Expression::Literal(
-                    Literal::Float(45.67)
-                ))
-            ))
-        );
+        let expr_str = "-123 * (45.67)";
 
-        eprintln!("Expression '-123 * (45.67)' pretty-printed:\n{}", expr);
+        // Tokenize the expression string
+        let mut lexer = Lexer::new(expr_str);
+        let tokens = lexer.scan()?;
+        
+        // Parse the tokens
+        let mut parser = Parser::new(&tokens);
+        let expr = parser.parse()?;
+
+        eprintln!("Expression '{}' \"pretty\"-printed:\n{}", expr_str, expr);
 
         let pretty_expr = format!("{}", expr);
         assert_eq!(
@@ -441,12 +327,12 @@ mod tests {
 
         assert_eq!(
             Operator::try_from(&valid_token),
-            Ok(Operator::Plus)
+            Ok(Operator::Arithmetic(ArithmeticOperator::Plus))
         );
 
         assert_eq!(
             Operator::try_from(&invalid_token),
-            Err(ParserError::InvalidOperatorConversion)
+            Err(InterpreterError::InvalidOperatorConversion(invalid_token))
         );
         
         Ok(())
@@ -474,7 +360,7 @@ mod tests {
             Ok(
                 Expression::Binary(
                     Box::new(Expression::Literal(Literal::Integer(1))),
-                    Operator::Plus,
+                    Operator::Arithmetic(ArithmeticOperator::Plus),
                     Box::new(Expression::Grouping(
                         Box::new(Expression::Literal(Literal::Integer(2)))
                     ))

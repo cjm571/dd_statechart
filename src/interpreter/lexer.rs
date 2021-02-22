@@ -252,7 +252,7 @@ impl<'c> Lexer<'c> {
 
         // Handle according to numerical type
         if is_float {
-            Ok(Token::Float(numerical_string.parse::<f32>().unwrap()))
+            Ok(Token::Float(numerical_string.parse::<f64>().unwrap()))
         }
         else {
             Ok(Token::Integer(numerical_string.parse::<i32>().unwrap()))
