@@ -76,7 +76,6 @@ use std::{
 //  Module Declarations
 ///////////////////////////////////////////////////////////////////////////////
 
-pub mod condition;
 pub mod datamodel;
 pub mod event;
 pub mod interpreter;
@@ -86,8 +85,12 @@ pub mod state;
 pub mod transition;
 
 use crate::{
-    datamodel::SystemVariables,
+    datamodel::{
+        DataModelError,
+        SystemVariables,
+    },
     event::Event,
+    interpreter::EcmaScriptValue,
     registry::{
         Registry,
         RegistryError,
@@ -136,6 +139,10 @@ pub struct StateChartBuilder {
 pub enum StateChartBuilderError {
     InitialStateNotRegistered(StateId),
     NoStatesRegistered,
+
+    // Wrappers
+    DataModelError(DataModelError),
+    RegistryError(RegistryError),
 }
 
 
@@ -169,7 +176,7 @@ impl StateChart {
         self.sys_vars.set_event(event.clone());
         
         // Collect and process the set of enabled Transitions
-        let mut enabled_transition_ids = self.select_transitions(Some(event.clone()));
+        let mut enabled_transition_ids = self.select_transitions(Some(event.clone()))?;
 
         //OPT: *STYLE* I don't like this loop, it's not very easy to tell what's being processed in the microstep
         // Enter Microstep processing loop
@@ -177,7 +184,7 @@ impl StateChart {
             self.process_microstep(enabled_transition_ids)?;
             
             // Select eventless Transitions
-            enabled_transition_ids = self.select_transitions(None);
+            enabled_transition_ids = self.select_transitions(None)?;
             
             // Found eventless Transitions, return to top of loop to process a Microstep
             if !enabled_transition_ids.is_empty() {
@@ -195,7 +202,7 @@ impl StateChart {
                 self.sys_vars.set_event(internal_event.clone());
 
                 // Select transitions for the internal Event and return to top of the loop
-                enabled_transition_ids = self.select_transitions(Some(internal_event));
+                enabled_transition_ids = self.select_transitions(Some(internal_event))?;
                 continue;
             }
         }
@@ -208,19 +215,19 @@ impl StateChart {
      *  Helper Methods    *
     \*  *  *  *  *  *  *  */
 
-    fn select_transitions(&self, event: Option<Event>) -> Vec<TransitionId> {
+    fn select_transitions(&self, event: Option<Event>) -> Result<Vec<TransitionId>, StateChartError> {
         let mut enabled_transitions = Vec::new();
 
         // Traverse the map of states and send the event to each for evaluation
         for state_id in self.registry.get_active_state_ids() {
             let state = self.registry.get_state(state_id).unwrap();
 
-            if let Some(enabled_transition) = state.evaluate_event(event.clone(), &self.sys_vars) {
+            if let Some(enabled_transition) = state.evaluate_event(event.clone(), &self.sys_vars)? {
                 enabled_transitions.push(enabled_transition);
             }
         }
 
-        enabled_transitions
+        Ok(enabled_transitions)
     }
 
     /// Processes a single set of Enabled Transitions.
@@ -312,7 +319,7 @@ impl StateChartBuilder {
         self
     }
 
-    pub fn state(&mut self, state: State) -> Result<&mut Self, RegistryError> {        
+    pub fn state(&mut self, state: State) -> Result<&mut Self, StateChartBuilderError> {        
         // Register the State
         self.registry.register_state(state)?;
 
@@ -325,10 +332,10 @@ impl StateChartBuilder {
         self
     }
 
-    pub fn data_member(&mut self, id: String, value: u32) -> &mut Self {
-        self.sys_vars.set_data_member(id, value);
+    pub fn data_member(&mut self, id: String, value: EcmaScriptValue) -> Result<&mut Self, StateChartBuilderError> {
+        self.sys_vars.set_data_member(id, value)?;
 
-        self
+        Ok(self)
     }
 }
 
@@ -393,8 +400,25 @@ impl fmt::Display for StateChartBuilderError {
             },
             Self::NoStatesRegistered => {
                 write!(f, "No States registered")
-            }
+            },
+            Self::DataModelError(data_err) => {
+                write!(f, "'{:?}' encountered while building state chart", data_err)
+            },
+            Self::RegistryError(reg_err) => {
+                write!(f, "'{:?}' encountered while building state chart", reg_err)
+            },
         }
+    }
+}
+
+impl From<DataModelError> for StateChartBuilderError {
+    fn from(src: DataModelError) -> Self {
+        Self::DataModelError(src)
+    }
+}
+impl From<RegistryError> for StateChartBuilderError {
+    fn from(src: RegistryError) -> Self {
+        Self::RegistryError(src)
     }
 }
 
@@ -409,6 +433,7 @@ mod tests {
 
     use crate::{
         StateChartBuilder,
+        StateChartBuilderError,
         StateChartError,
         event::Event,
         registry::RegistryError,
@@ -479,7 +504,7 @@ mod tests {
         // Verify that adding the duplicate ID results in an error
         assert_eq!(
             statechart_builder.state(duplicate_b),
-            Err(RegistryError::StateAlreadyRegistered(duplicate_id)),
+            Err(StateChartBuilderError::RegistryError(RegistryError::StateAlreadyRegistered(duplicate_id))),
             "Failed to detect duplicate State ID error."
         );
 

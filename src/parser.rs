@@ -34,13 +34,14 @@ use crate::{
     StateChart,
     StateChartBuilder,
     StateChartBuilderError,
-    condition::{
-        Condition,
-        ConditionError,
-    },
+    datamodel::DataModelError,
     event::{
         Event,
         EventError,
+    },
+    interpreter::{
+        self,
+        InterpreterError,
     },
     registry::RegistryError,
     state::{
@@ -48,11 +49,13 @@ use crate::{
         StateBuilder,
         StateBuilderError,
         StateId,
-    }, transition::{
+    },
+    transition::{
         Transition,
         TransitionBuilder,
         TransitionBuilderError,
-    }};
+    }
+};
 
 use uuid::Uuid;
 
@@ -89,8 +92,9 @@ pub enum ParserError {
     StateHasNoId(String /* Stringified XML Tree Node */),
 
     // Wrappers
-    ConditionError(ConditionError),
+    DataModelError(DataModelError),
     EventError(EventError),
+    InterpreterError(InterpreterError),
     IoError(std::io::ErrorKind),
     RegistryError(RegistryError),
     RoxmlTreeError(roxmltree::Error),
@@ -218,44 +222,13 @@ impl Parser {
         for child in element.children() {
             // Skip text and comment nodes
             if !child.is_comment() && !child.is_text() {
-                let id;
-                if let Some(id_val) = child.attribute("id") {
-                    id = String::from(id_val);
+                if let (Some(id), Some(expr_str)) = (child.attribute("id"), child.attribute("expr")) {
+                    // Interpret value expression and insert into data map
+                    let expr_value = interpreter::interpret(expr_str, &statechart_builder.sys_vars)?;
+                    statechart_builder.sys_vars.set_data_member(id.to_string(), expr_value)?;
                 }
                 else {
                     return Err(ParserError::InvalidDataItem(format!("{:?}", element)));
-                }
-
-                let value;
-                if let Some(expr_val) = child.attribute("expr") {
-                    value = String::from(expr_val);
-                }
-                else {
-                    return Err(ParserError::InvalidDataItem(format!("{:?}", element)));
-                }
-
-                // Add data item to the System Variables of the StateChart
-                //TODO: Need smart handling of all possible 'expr' values
-                //      Maybe some fancy enum shenanigans?
-                if let Ok(converted_value) = value.parse::<u32>() {
-                    statechart_builder.sys_vars.set_data_member(
-                        id,
-                        converted_value);
-                }
-                else if value == "true" {
-                    statechart_builder.sys_vars.set_data_member(
-                        id,
-                        1);
-                }
-                else if value == "false" {
-                    statechart_builder.sys_vars.set_data_member(
-                        id,
-                        0);
-                }
-                else {
-                    statechart_builder.sys_vars.set_data_member(
-                        id,
-                        0xDEADBEEF);
                 }
             }
         }
@@ -348,10 +321,8 @@ impl Parser {
         }
 
         // Parse guard condition
-        if let Some(cond_str) = element.attribute("cond") {
-            let cond = Condition::new(cond_str)?;
-            
-            transition_builder = transition_builder.cond(cond)?;
+        if let Some(cond_str) = element.attribute("cond") {            
+            transition_builder = transition_builder.cond(cond_str)?;
         }
 
         // Set target State
@@ -399,11 +370,17 @@ impl fmt::Display for ParserError {
             Self::StateHasNoId(node_id) => {
                 write!(f, "Node ID {:?} is a <state> element with no 'id' attribute", node_id)
             },
-            Self::ConditionError(cond_error) => {
-                write!(f, "ConditionError '{:?}' encountered while parsing", cond_error)
+
+            //FIXME: Align other modules with this style
+            // Wrappers
+            Self::DataModelError(data_error) => {
+                write!(f, "DataModelError '{:?}' encountered while parsing", data_error)
             },
             Self::EventError(event_error) => {
                 write!(f, "EventError '{:?}' encountered while parsing", event_error)
+            },
+            Self::InterpreterError(interp_error) => {
+                write!(f, "InterpreterError '{:?}' encountered while parsing", interp_error)
             },
             Self::IoError(io_err_kind) => {
                 write!(f, "IoError of kind '{:?}' encountered when attempting to create Parser object", io_err_kind)
@@ -427,48 +404,46 @@ impl fmt::Display for ParserError {
     }
 }
 
-impl From<ConditionError> for ParserError {
-    fn from(src: ConditionError) -> Self {
-        Self::ConditionError(src)
+impl From<DataModelError> for ParserError {
+    fn from(src: DataModelError) -> Self {
+        Self::DataModelError(src)
     }
 }
-
 impl From<EventError> for ParserError {
     fn from(src: EventError) -> Self {
         Self::EventError(src)
     }
 }
-
+impl From<InterpreterError> for ParserError {
+    fn from(src: InterpreterError) -> Self {
+        Self::InterpreterError(src)
+    }
+}
 impl From<std::io::Error> for ParserError {
     fn from(src: std::io::Error) -> Self {
         Self::IoError(src.kind())
     }
 }
-
 impl From<RegistryError> for ParserError {
     fn from(src: RegistryError) -> Self {
         Self::RegistryError(src)
     }
 }
-
 impl From<roxmltree::Error> for ParserError {
     fn from(src: roxmltree::Error) -> Self {
         Self::RoxmlTreeError(src)
     }
 }
-
 impl From<StateBuilderError> for ParserError {
     fn from(src: StateBuilderError) -> Self {
         Self::StateBuilderError(src)
     }
 }
-
 impl From<StateChartBuilderError> for ParserError {
     fn from(src: StateChartBuilderError) -> Self {
         Self::StateChartBuilderError(src)
     }
 }
-
 impl From<TransitionBuilderError> for ParserError {
     fn from(src: TransitionBuilderError) -> Self {
         Self::TransitionBuilderError(src)
@@ -503,7 +478,6 @@ mod tests {
 
     use crate::{
         StateChartBuilderError,
-        condition::ConditionError,
         event::{
             Event,
             EventError,
@@ -597,6 +571,7 @@ mod tests {
         Ok(())
     }
 
+    //FIXME: Annotate test case .xml files to show where the error lies
     #[test]
     fn data_item_invalid() -> Result<(), Box<dyn Error>> {
         let state_string = String::from("Element { tag_name: {http://www.w3.org/2005/07/scxml}datamodel, attributes: [], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }");
@@ -618,18 +593,6 @@ mod tests {
         assert_eq!(
             parser.parse(),
             Err(ParserError::StateHasNoId(state_string))
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn condition_error() -> Result<(), Box<dyn Error>> {
-        let mut parser = Parser::new("res/test_cases/cond_invalid.scxml")?;
-
-        assert_eq!(
-            parser.parse(),
-            Err(ParserError::ConditionError(ConditionError::InvalidArgumentCount))
         );
 
         Ok(())
@@ -664,7 +627,15 @@ mod tests {
 
         assert_eq!(
             parser.parse(),
-            Err(ParserError::RegistryError(RegistryError::StateAlreadyRegistered(String::from("duplicate"))))
+            Err(
+                ParserError::StateChartBuilderError(
+                    StateChartBuilderError::RegistryError(
+                        RegistryError::StateAlreadyRegistered(
+                            String::from("duplicate")
+                        )
+                    )
+                )
+            )
         );
 
         Ok(())

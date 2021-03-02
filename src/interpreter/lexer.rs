@@ -262,7 +262,8 @@ impl<'c> Lexer<'c> {
     fn capture_identifier(&mut self, first_char: char) -> Token {
         let mut identifier_chars = vec![first_char];
 
-        while self.expr_iter.peek().is_some() && self.expr_iter.peek().unwrap().is_alphanumeric() {
+        while self.expr_iter.peek().is_some() && 
+            (self.expr_iter.peek().unwrap().is_alphanumeric() || self.expr_iter.peek().unwrap() == &'_') {
             identifier_chars.push(self.consume_character().unwrap());
         }
 

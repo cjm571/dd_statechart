@@ -26,6 +26,7 @@ use std::collections::HashMap;
 use crate::{
     StateChartId,
     event::Event,
+    interpreter::EcmaScriptValue,
 };
 
 use uuid::Uuid;
@@ -35,20 +36,20 @@ use uuid::Uuid;
 //  Data Structures
 ///////////////////////////////////////////////////////////////////////////////
 
+//FIXME: Is this Clone necessary?
 #[derive(Clone, Debug, PartialEq)]
 pub struct SystemVariables {
     _event:         Option<Event>,
     _sessionid:     Uuid,
     _name:          StateChartId,
     _ioprocessors:  Vec<String>,
-    _x:             HashMap<String, u32>,
+    _x:             HashMap<String, EcmaScriptValue>,
 }
 
-#[derive(Debug, Default, PartialEq)]
-struct DataMembers {
-    data_map: HashMap<String, u32>, //TODO: Value data type might have to be something fancy...
+#[derive(Debug, PartialEq)]
+pub enum DataModelError {
+    InvalidValueType(String /*Identifier*/),
 }
-
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -56,7 +57,6 @@ struct DataMembers {
 ///////////////////////////////////////////////////////////////////////////////
 
 impl SystemVariables {
-
 
     /*  *  *  *  *  *  *  *\
      *  Accessor Methods  *
@@ -71,7 +71,7 @@ impl SystemVariables {
         }
     }
 
-    pub fn _x(&self) -> &HashMap<String, u32> {
+    pub fn _x(&self) -> &HashMap<String, EcmaScriptValue> {
         &self._x
     }
 
@@ -87,10 +87,11 @@ impl SystemVariables {
     pub fn set_event(&mut self, event: Event) {
         self._event = Some(event);
     }
-
-    pub fn set_data_member(&mut self, id: String, value: u32) {
-        //OPT: *DESIGN* Gracefully handle this Option
-        self._x.insert(id, value);
+    
+    //FIXME: *STYLE* either delete this function and use _x directly, or create a get_data_member function for consistency
+    pub fn set_data_member(&mut self, id: String, value: EcmaScriptValue) -> Result<Option<EcmaScriptValue>, DataModelError> {
+        // Insert value into data map
+        Ok(self._x.insert(id, value))
     }
 }
 

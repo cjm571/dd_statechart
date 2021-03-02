@@ -181,7 +181,7 @@ impl<'i> Parser<'i> {
                 self.consume_token();
                 Ok(Expression::Unary(Unary::Negation(Box::new(self.unary()?))))
             },
-            _                    => self.primary(),
+            _ => self.primary(),
         }
     }
 
@@ -197,7 +197,7 @@ impl<'i> Parser<'i> {
                     "true"  => Ok(Expression::Literal(Literal::True)),
                     "false" => Ok(Expression::Literal(Literal::False)),
                     "null"  => Ok(Expression::Literal(Literal::Null)),
-                    _       => unimplemented!("Identifier parsing not yet implemented"),
+                    _       => Ok(Expression::Identifier(identifier.clone())),
                 }
             },
             Some(&Token::LeftParen)                     => {
@@ -260,6 +260,10 @@ impl From<InterpreterError> for ParserError {
         match src {
             InterpreterError::InvalidOperatorConversion(token) => {
                 ParserError::InvalidOperatorConversion(token)
+            }
+            _ => {
+                //FIXME: This sucks, should probably be re-designed
+                panic!("Uh, not great")
             }
         }
     }
