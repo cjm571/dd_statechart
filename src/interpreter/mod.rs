@@ -155,8 +155,7 @@ pub enum Token {
     // Literals
     Identifier(String),
     String(String),
-    Integer(i32),
-    Float(f64),
+    Number(f64),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -170,8 +169,7 @@ pub enum Expression {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Literal {
-    Integer(i32),
-    Float(f64),
+    Number(f64),
     String(String),
     True,
     False,
@@ -279,8 +277,7 @@ impl fmt::Display for Expression {
 impl fmt::Display for Literal {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::Integer(val)      => write!(f, "{:?}", val),
-            Self::Float(val)        => write!(f, "{:?}", val),
+            Self::Number(val)       => write!(f, "{:?}", val),
             Self::String(string)    => write!(f, "{:?}", string),
             Self::True              => write!(f, "true"),
             Self::False             => write!(f, "false"),

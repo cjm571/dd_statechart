@@ -189,8 +189,7 @@ impl<'i> Parser<'i> {
     //           | "(" expression ")" ;
     fn primary(&mut self) -> ParserResult {
         match self.consume_token() {
-            Some(&Token::Integer(value))                => Ok(Expression::Literal(Literal::Integer(value))),
-            Some(&Token::Float(value))                  => Ok(Expression::Literal(Literal::Float(value))),
+            Some(&Token::Number(value))                 => Ok(Expression::Literal(Literal::Number(value))),
             Some(&Token::String(ref string))            => Ok(Expression::Literal(Literal::String(string.clone()))),
             Some(&Token::Identifier(ref identifier))    => {
                 match identifier.as_str() {
@@ -318,7 +317,7 @@ mod tests {
         let pretty_expr = format!("{}", expr);
         assert_eq!(
             pretty_expr,
-            "(* (- 123) (group 45.67))"
+            "(* (- 123.0) (group 45.67))"
         );
 
         Ok(())
@@ -345,17 +344,17 @@ mod tests {
     #[test]
     fn unterm_group() -> TestResult {
         let valid_tokens = vec![
-            Token::Integer(1),
+            Token::Number(1.0),
             Token::Plus,
             Token::LeftParen,
-            Token::Integer(2),
+            Token::Number(2.0),
             Token::RightParen,
         ];
         let invalid_tokens = vec![
-            Token::Integer(1),
+            Token::Number(1.0),
             Token::Plus,
             Token::LeftParen,
-            Token::Integer(2),
+            Token::Number(2.0),
         ];
         
         let mut valid_parser = Parser::new(&valid_tokens);
@@ -363,10 +362,10 @@ mod tests {
             valid_parser.parse(),
             Ok(
                 Expression::Binary(
-                    Box::new(Expression::Literal(Literal::Integer(1))),
+                    Box::new(Expression::Literal(Literal::Number(1.0))),
                     Operator::Arithmetic(ArithmeticOperator::Plus),
                     Box::new(Expression::Grouping(
-                        Box::new(Expression::Literal(Literal::Integer(2)))
+                        Box::new(Expression::Literal(Literal::Number(2.0)))
                     ))
                 )
             )
@@ -385,7 +384,7 @@ mod tests {
     fn invalid_primary_token() -> TestResult {
         let valid_tokens = vec![
             Token::Minus,
-            Token::Integer(1),
+            Token::Number(1.0),
         ];
         let invalid_tokens = vec![
             Token::Minus,
@@ -397,7 +396,7 @@ mod tests {
             valid_parser.parse(),
             Ok(
                 Expression::Unary(Unary::Negation(
-                    Box::new(Expression::Literal(Literal::Integer(1)))
+                    Box::new(Expression::Literal(Literal::Number(1.0)))
                 ))
             )
         );

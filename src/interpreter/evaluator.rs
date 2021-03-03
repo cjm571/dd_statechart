@@ -195,8 +195,7 @@ impl<'sv> Evaluator<'sv> {
     fn eval_literal(literal: Literal) -> EcmaScriptValue {
         match literal {
             Literal::String(value)  => EcmaScriptValue::String(value),
-            Literal::Integer(value) => EcmaScriptValue::Number(value as f64),
-            Literal::Float(value)   => EcmaScriptValue::Number(value),
+            Literal::Number(value)  => EcmaScriptValue::Number(value),
             Literal::True           => EcmaScriptValue::Boolean(true),
             Literal::False          => EcmaScriptValue::Boolean(false),
             Literal::Null           => EcmaScriptValue::Null,
@@ -296,9 +295,9 @@ mod tests {
 
         // Create an Evaluator object loaded with a binary logical expression
         let expr = Expression::Binary(
-            Box::new(Expression::Literal(Literal::Float(float_val))),
+            Box::new(Expression::Literal(Literal::Number(float_val))),
             Operator::Logical(LogicalOperator::EqualTo),
-            Box::new(Expression::Literal(Literal::Integer(int_val))),
+            Box::new(Expression::Literal(Literal::Number(int_val as f64))),
         );
         let sys_vars = SystemVariables::default();
         let evaluator = Evaluator::new(expr.clone(), &sys_vars);
@@ -326,7 +325,7 @@ mod tests {
         let expr = Expression::Binary(
             Box::new(Expression::Literal(Literal::String(float_val.to_string()))),
             Operator::Arithmetic(ArithmeticOperator::Slash),
-            Box::new(Expression::Literal(Literal::Integer(int_val))),
+            Box::new(Expression::Literal(Literal::Number(int_val as f64))),
         );
         let sys_vars = SystemVariables::default();
         let evaluator = Evaluator::new(expr.clone(), &sys_vars);

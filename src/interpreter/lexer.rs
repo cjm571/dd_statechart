@@ -15,7 +15,11 @@ Copyright (C) 2021 CJ McAllister
     Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
 
 Purpose:
-    //TODO: Purpose statement
+    This module comprises the first phase of the ECMAScript Interpreter.
+
+    It consumes the characters of an expression string and generates Tokens
+    from them, to be passed on to the Parser for the next phase of
+    interpretation.
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
@@ -23,6 +27,7 @@ use std::{
     error::Error,
     fmt,
     iter::Peekable,
+    num::ParseFloatError,
     str::Chars,
 };
 
@@ -40,11 +45,21 @@ pub struct Lexer<'c> {
 
 #[derive(Debug, PartialEq)]
 pub enum LexerError {
-    UnexpectedCharacter(String, u32),
-    FailedToConsumePeekedValue, //OPT: *DESIGN* This error should be impossible, see if there's a way to eliminate it
-    UnterminatedStringLiteral(String, u32),
-}
+    UnexpectedCharacter(
+        String, /* Unexpected Character */
+        u32,    /* Character Position */
+    ),
+    UnterminatedStringLiteral(
+        String, /* Unterminated String */
+        u32,    /* Start of String */
+    ),
 
+    // Wrappers
+    ParseFloatError(
+        ParseFloatError,    /* Wrapped Error */
+        u32,                /* Start of Number */
+    ),
+}
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -58,168 +73,157 @@ impl<'c> Lexer<'c> {
             position:   0,
         }
     }
-    
+
 
     /*  *  *  *  *  *  *  *\
      *  Utility Methods   *
     \*  *  *  *  *  *  *  */
-    
+
     pub fn scan(&mut self) -> Result<Vec<Token>, LexerError> {
         let mut tokens = Vec::new();
 
         // Iterate through the end of the expression string
-        while self.expr_iter.peek().is_some() {
-            // Only push tokens - whitespace is skipped
-            if let Some(token) = self.scan_single()? {
-                tokens.push(token);
-            }
+        while let Some(token) = self.scan_single()? {
+            tokens.push(token);
         }
-        
+
         Ok(tokens)
     }
 
-    
+
     /*  *  *  *  *  *  *  *\
      *   Helper Methods   *
     \*  *  *  *  *  *  *  */
 
     fn scan_single(&mut self) -> Result<Option<Token>, LexerError> {
-        if let Some(character) = self.consume_character() {
-            
-            // Construct a token based on matching the first character, interrogating subsequent characters if necessary
-            let token = match character {
-                // Single-Character Tokens
-                '(' => Some(Token::LeftParen),
-                ')' => Some(Token::RightParen),
-                '{' => Some(Token::LeftBrace),
-                '}' => Some(Token::RightBrace),
-                '[' => Some(Token::LeftBracket),
-                ']' => Some(Token::RightBracket),
-                ',' => Some(Token::Comma),
-                '.' => Some(Token::Dot),
-                '-' => Some(Token::Minus),
-                '+' => Some(Token::Plus),
-                '/' => Some(Token::Slash),
-                '*' => Some(Token::Star),
+        // Construct a token based on matching the first character, interrogating subsequent characters if necessary
+        let token = match self.consume_character() {
+            // Single-Character Tokens
+            Some('(') => Some(Token::LeftParen),
+            Some(')') => Some(Token::RightParen),
+            Some('{') => Some(Token::LeftBrace),
+            Some('}') => Some(Token::RightBrace),
+            Some('[') => Some(Token::LeftBracket),
+            Some(']') => Some(Token::RightBracket),
+            Some(',') => Some(Token::Comma),
+            Some('.') => Some(Token::Dot),
+            Some('-') => Some(Token::Minus),
+            Some('+') => Some(Token::Plus),
+            Some('/') => Some(Token::Slash),
+            Some('*') => Some(Token::Star),
 
-                // Potentially Double-Character Tokens
-                '!' => {
-                    if self.match_next('=') {
-                        Some(Token::BangEqual)
-                    }
-                    else {
-                        Some(Token::Bang)
-                    }
-                },
-                '=' => {
-                    if self.match_next('=') {
-                        Some(Token::EqualEqual)
-                    }
-                    else {
-                        Some(Token::Equal)
-                    }
-                },
-                '>' => {
-                    if self.match_next('=') {
-                        Some(Token::GreaterThanOrEqualTo)
-                    }
-                    else {
-                        Some(Token::GreaterThan)
-                    }
-                },
-                '<' => {
-                    if self.match_next('=') {
-                        Some(Token::LessThanOrEqualTo)
-                    }
-                    else {
-                        Some(Token::LessThan)
-                    }
-                },
+            // Potentially Double-Character Tokens
+            Some('!') => {
+                if self.match_next('=') {
+                    Some(Token::BangEqual)
+                }
+                else {
+                    Some(Token::Bang)
+                }
+            },
+            Some('=') => {
+                if self.match_next('=') {
+                    Some(Token::EqualEqual)
+                }
+                else {
+                    Some(Token::Equal)
+                }
+            },
+            Some('>') => {
+                if self.match_next('=') {
+                    Some(Token::GreaterThanOrEqualTo)
+                }
+                else {
+                    Some(Token::GreaterThan)
+                }
+            },
+            Some('<') => {
+                if self.match_next('=') {
+                    Some(Token::LessThanOrEqualTo)
+                }
+                else {
+                    Some(Token::LessThan)
+                }
+            },
 
-                // String Literals
-                '\'' => {
-                    Some (
-                        self.capture_string_literal()?
+            // String Literals
+            Some('\'') => {
+                Some (
+                    self.capture_string_literal()?
+                )
+            },
+
+            // Numerical Literals
+            Some(x) if x.is_digit(10) => {
+                Some (
+                    self.capture_numerical_literal(x)?
+                )
+            },
+
+            // Identifiers
+            Some(x) if x.is_alphabetic() || x == '_' => {
+                Some (
+                    self.capture_identifier(x)
+                )
+            },
+
+            // Whitespace
+            Some(x) if x.is_ascii_whitespace() => {
+                // Allow whitespace character to be consumed and scan the next token
+                self.scan_single()?
+            },
+
+            // Unexpected Character
+            Some(unexpected_char) => {
+                return Err (
+                    LexerError::UnexpectedCharacter (
+                        unexpected_char.to_string(),
+                        self.position,
                     )
-                },
+                )
+            },
 
-                // Numerical Literals
-                x if x.is_digit(10) => {
-                    Some (
-                        self.capture_numerical_literal(x)?
-                    )
-                },
+            // End of expression string
+            None => None,
+        };
 
-                // Identifiers
-                x if x.is_alphabetic() || x == '_' => {
-                    Some (
-                        self.capture_identifier(x)
-                    )
-                },
-
-                // Whitespace
-                x if x.is_ascii_whitespace() => None,
-
-                // Unexpected Character
-                _ => {
-                    return Err (
-                        LexerError::UnexpectedCharacter (
-                            String::from(character),
-                            self.position
-                        )
-                    )
-                },
-            };
-
-            // Successfully scanned a token or whitespace, return accordingly
-            Ok(token)
-        }
-        else {
-            // NOTE: This should never happen since we peeked the value in the while statement
-            Err(LexerError::FailedToConsumePeekedValue)
-        }
+        // Successfully scanned a token or whitespace, return accordingly
+        Ok(token)
     }
 
     fn match_next(&mut self, expected: char) -> bool {
         // Peek next character and check for match against the expected
-        match self.expr_iter.peek() {
-            Some(next_char) => {
-                if next_char != &expected {
-                    // Match failed, do not consumed peeked value
-                    return false;
-                }
+        if self.expr_iter.peek().map_or_else(|| false, |v| v == &expected) {
+            // Match succeeded, consume peeked value and update position
+            self.consume_character();
 
-                // Match succeeded, consume the peeked value and update position
-                self.consume_character();
-
-                true
-            },
-            None => {
-                // We've reached the end of the expression string,
-                // which is effectively a failed match
-                false
-            }
+            true
+        }
+        else {
+            // Match failed or reached end of expression string
+            false
         }
     }
 
     fn capture_string_literal(&mut self) -> Result<Token, LexerError> {
         let mut string_chars = Vec::new();
         let start = self.position;
-        
-        //OPT: *STYLE* Replace a lot of these while-is-some loops with if let None = loop {} trickery
-        // Continually peek the next character until closing ' or end of expression is encountered
-        while self.expr_iter.peek().is_some() && self.expr_iter.peek().unwrap() != &'\'' {
+
+        // Continually consume the next character until closing ' or end of expression is encountered
+        // If EoE is encountered by this loop condition, we have an unterminated string literal
+        while
+        let Some(next_char) =
+        Some(
+            self.consume_character().ok_or_else(
+                || LexerError::UnterminatedStringLiteral(
+                    string_chars.clone().into_iter().collect(),
+                    start
+                )
+            )?
+        ).filter(|v| v != &'\'') {
             // Consume the character and add it to the char vector
-            string_chars.push(self.consume_character().unwrap());
+            string_chars.push(next_char);
         }
-
-        // Ensure we have not reached the end of expression without a closing '
-        if self.expr_iter.peek().is_none() {
-            return Err(LexerError::UnterminatedStringLiteral(string_chars.into_iter().collect(), start));
-        }
-
-        // Consume (and discard) the closing '
-        self.consume_character();
 
         Ok (
             Token::String (
@@ -229,42 +233,40 @@ impl<'c> Lexer<'c> {
     }
 
     fn capture_numerical_literal(&mut self, first_char: char) -> Result<Token, LexerError> {
+        let start = self.position;
         let mut numerical_chars = vec![first_char];
-        let mut is_float = false;
+        let mut decimal_encountered = false;
 
         // Continually peek the next character until a non-digit or non-dot is encountered
-        while self.expr_iter.peek().is_some() && 
-        (self.expr_iter.peek().unwrap().is_digit(10) || self.expr_iter.peek().unwrap() == &'.') {
-            if self.expr_iter.peek().unwrap() == &'.' {
-                if is_float {
+        while let Some(next_char) = self.expr_iter.peek().filter(|v| v.is_digit(10) || v == &&'.') {
+            if next_char == &'.' {
+                if decimal_encountered {
                     // Already encountered a '.', another is invalid
-                    return Err(LexerError::UnexpectedCharacter(String::from('.'), self.position+1));
+                    return Err(LexerError::UnexpectedCharacter(next_char.to_string(), self.position+1));
                 }
                 else {
-                    // Encountered first '.', denote literal as a float
-                    is_float = true;
+                    decimal_encountered = true;
                 }
             }
-            
-            numerical_chars.push(self.consume_character().unwrap());
-        }
-        let numerical_string: String = numerical_chars.into_iter().collect();
 
-        // Handle according to numerical type
-        if is_float {
-            Ok(Token::Float(numerical_string.parse::<f64>().unwrap()))
+            // Push the character onto the vector and consume
+            numerical_chars.push(*next_char);
+            self.consume_character();
         }
-        else {
-            Ok(Token::Integer(numerical_string.parse::<i32>().unwrap()))
-        }
+
+        // Collect string and parse into a Number
+        let numerical_string: String = numerical_chars.into_iter().collect();
+        numerical_string.parse::<f64>().map(Token::Number).map_err(|err| LexerError::ParseFloatError(err, start))
     }
 
     fn capture_identifier(&mut self, first_char: char) -> Token {
         let mut identifier_chars = vec![first_char];
 
-        while self.expr_iter.peek().is_some() && 
-            (self.expr_iter.peek().unwrap().is_alphanumeric() || self.expr_iter.peek().unwrap() == &'_') {
-            identifier_chars.push(self.consume_character().unwrap());
+        // Continually consume the next character until one that isn't alphanumeric or a '_' is encountered
+        while let Some(next_char) = self.expr_iter.peek().filter(|v| v.is_alphanumeric() || v == &&'_') {
+            // Push the character onto the vector and consume
+            identifier_chars.push(*next_char);
+            self.consume_character();
         }
 
         Token::Identifier(identifier_chars.into_iter().collect())
@@ -295,11 +297,13 @@ impl fmt::Display for LexerError {
             Self::UnexpectedCharacter(lexeme, position) => {
                 write!(f, "Unexpected character '{}' at position {} in expression", lexeme, position)
             },
-            Self::FailedToConsumePeekedValue => {
-                write!(f, "Somehow failed to consume the expression iterator after successfully peeking...")
-            },
             Self::UnterminatedStringLiteral(string, start_pos) => {
                 write!(f, "Unterminated string literal '{}' starting at position {}", string, start_pos)
+            },
+
+            // Wrappers
+            Self::ParseFloatError(parse_err, start) => {
+                write!(f, "ParseFloatError '{}' encountered in number beginning at position {}", parse_err, start)
             },
         }
     }
@@ -314,7 +318,7 @@ impl fmt::Display for LexerError {
 mod tests {
 
     use std::error::Error;
-    
+
     use crate::interpreter::lexer::{
         Lexer,
         LexerError,
@@ -338,12 +342,12 @@ mod tests {
     fn unexpected_char() -> TestResult {
         let mut lexer_a = Lexer::new("`");
         let mut lexer_b = Lexer::new("5.5.5");
-        
+
         assert_eq!(
             lexer_a.scan(),
             Err(LexerError::UnexpectedCharacter(String::from('`'), 1)),
         );
-        
+
         assert_eq!(
             lexer_b.scan(),
             Err(LexerError::UnexpectedCharacter(String::from('.'), 4)),
@@ -355,7 +359,7 @@ mod tests {
     #[test]
     fn unterm_string_literal() -> TestResult {
         let mut lexer = Lexer::new("'unterm_string_literal");
-        
+
         assert_eq!(
             lexer.scan(),
             Err(LexerError::UnterminatedStringLiteral(String::from("unterm_string_literal"), 1)),
