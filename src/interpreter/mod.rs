@@ -27,7 +27,6 @@ Purpose:
 
 use std::{
     cmp::Ordering,
-    convert::TryFrom,
     error::Error,
     fmt,
     ops::{
@@ -310,27 +309,6 @@ impl fmt::Display for Operator {
         match self {
             Self::Logical(op)       => write!(f, "{}", op),
             Self::Arithmetic(op)    => write!(f, "{}", op),
-        }
-    }
-}
-
-//OPT: *DESIGN* Is this appropriate? Can't do a 100% reliable token->operator conversion without context...
-impl TryFrom<&Token> for Operator {
-    type Error = InterpreterError;
-
-    fn try_from(src: &Token) -> Result<Self, Self::Error> {
-        match src {
-            Token::EqualEqual           => Ok(Self::Logical(LogicalOperator::EqualTo)),
-            Token::BangEqual            => Ok(Self::Logical(LogicalOperator::NotEqualTo)),
-            Token::GreaterThan          => Ok(Self::Logical(LogicalOperator::GreaterThan)),
-            Token::GreaterThanOrEqualTo => Ok(Self::Logical(LogicalOperator::GreaterThanOrEqualTo)),
-            Token::LessThan             => Ok(Self::Logical(LogicalOperator::LessThan)),
-            Token::LessThanOrEqualTo    => Ok(Self::Logical(LogicalOperator::LessThanOrEqualTo)),
-            Token::Plus                 => Ok(Self::Arithmetic(ArithmeticOperator::Plus)),
-            Token::Minus                => Ok(Self::Arithmetic(ArithmeticOperator::Minus)),
-            Token::Star                 => Ok(Self::Arithmetic(ArithmeticOperator::Star)),
-            Token::Slash                => Ok(Self::Arithmetic(ArithmeticOperator::Slash)),
-            _                           => Err(InterpreterError::InvalidOperatorConversion(src.clone())),
         }
     }
 }

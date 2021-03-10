@@ -211,16 +211,12 @@ impl<'c> Lexer<'c> {
 
         // Continually consume the next character until closing ' or end of expression is encountered
         // If EoE is encountered by this loop condition, we have an unterminated string literal
-        while
-        let Some(next_char) =
-        Some(
-            self.consume_character().ok_or_else(
-                || LexerError::UnterminatedStringLiteral(
-                    string_chars.clone().into_iter().collect(),
-                    start
-                )
-            )?
-        ).filter(|v| v != &'\'') {
+        while let Some(next_char) = Some(self.consume_character().ok_or_else(
+                                        || LexerError::UnterminatedStringLiteral(
+                                            string_chars.clone().into_iter().collect(),
+                                            start
+                                        )
+                                    )?).filter(|v| v != &'\'') {
             // Consume the character and add it to the char vector
             string_chars.push(next_char);
         }
