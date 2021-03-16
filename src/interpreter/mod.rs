@@ -67,53 +67,6 @@ use parser::{
 //  Data Structures
 ///////////////////////////////////////////////////////////////////////////////
 
-pub struct Interpreter<'s> {
-    expr_str: &'s str
-}
-
-
-///////////////////////////////////////////////////////////////////////////////
-//  Object Implementations
-///////////////////////////////////////////////////////////////////////////////
-
-impl<'s> Interpreter<'s> {
-    pub fn new(expr_str: &'s str) -> Self {
-        Self {expr_str}
-    }
-
-
-    /*  *  *  *  *  *  *  *\
-     *  Utility Methods   *
-    \*  *  *  *  *  *  *  */
-
-    pub fn interpret(&self, sys_vars: &SystemVariables) -> Result<EcmaScriptValue, InterpreterError> {
-        // Scan input string for tokens
-        let mut lexer = Lexer::new(self.expr_str);
-        let tokens = lexer.scan()?;
-
-        // Parse tokens for expression
-        let mut parser = Parser::new(&tokens);
-        let expr = parser.parse()?;
-
-        // Evaluate expression
-        let evaluator = Evaluator::new(&expr, sys_vars);
-        Ok(evaluator.evaluate()?)
-    }
-
-    pub fn interpret_as_bool(&self, sys_vars: &SystemVariables) -> Result<bool, InterpreterError> {
-        // Interpret expression
-        let result = self.interpret(sys_vars)?;
-
-        // Leverage ECMAScript rules attached to the EcmaScriptValue enum
-        Ok(result == EcmaScriptValue::Boolean(true))
-    }
-}
-
-
-///////////////////////////////////////////////////////////////////////////////
-//  Data Structures
-///////////////////////////////////////////////////////////////////////////////
-
 //FEAT: Implement BigInt type
 #[derive(Clone, Debug)]
 pub enum EcmaScriptValue {
@@ -130,6 +83,11 @@ pub enum EcmaScriptEvalError {
         EcmaScriptValue,    /* Left-hand operand */
         EcmaScriptValue,    /* Right-hand operand */
     ),
+}
+
+
+pub struct Interpreter<'s> {
+    expr_str: &'s str
 }
 
 #[derive(Debug, PartialEq)]
@@ -222,6 +180,44 @@ pub enum ArithmeticOperator {
     Minus,
     Star,
     Slash,
+}
+
+
+///////////////////////////////////////////////////////////////////////////////
+//  Object Implementations
+///////////////////////////////////////////////////////////////////////////////
+
+impl<'s> Interpreter<'s> {
+    pub fn new(expr_str: &'s str) -> Self {
+        Self {expr_str}
+    }
+
+
+    /*  *  *  *  *  *  *  *\
+     *  Utility Methods   *
+    \*  *  *  *  *  *  *  */
+
+    pub fn interpret(&self, sys_vars: &SystemVariables) -> Result<EcmaScriptValue, InterpreterError> {
+        // Scan input string for tokens
+        let mut lexer = Lexer::new(self.expr_str);
+        let tokens = lexer.scan()?;
+
+        // Parse tokens for expression
+        let mut parser = Parser::new(&tokens);
+        let expr = parser.parse()?;
+
+        // Evaluate expression
+        let evaluator = Evaluator::new(&expr, sys_vars);
+        Ok(evaluator.evaluate()?)
+    }
+
+    pub fn interpret_as_bool(&self, sys_vars: &SystemVariables) -> Result<bool, InterpreterError> {
+        // Interpret expression
+        let result = self.interpret(sys_vars)?;
+
+        // Leverage ECMAScript rules attached to the EcmaScriptValue enum
+        Ok(result == EcmaScriptValue::Boolean(true))
+    }
 }
 
 
@@ -622,8 +618,8 @@ impl Add<Self> for EcmaScriptValue {
                         Self::String(rhs_value).add(self)
                     },
                     Self::Number(rhs_value) => {
-                        // Leverage existing functionality
-                        Self::Number(rhs_value).add(self)
+                        // Simple addition
+                        Self::Number(self_value + rhs_value)
                     },
                     Self::Boolean(rhs_value) => {
                         // Treat 'true' as 1.0, 'false' as 0.0
@@ -646,8 +642,8 @@ impl Add<Self> for EcmaScriptValue {
                         Self::Number(rhs_value).add(self)
                     },
                     Self::Boolean(rhs_value) => {
-                        // Leverage existing functionality
-                        Self::Boolean(rhs_value).add(self)
+                        // Casted addition
+                        Self::Number(self_value as i32 as f64 + rhs_value as i32 as f64)
                     },
                     Self::Null => {
                         // Forces a conversion to an f64

@@ -95,6 +95,7 @@ impl SystemVariables {
     }
     
     //FIXME: *STYLE* either delete this function and use _x directly, or create a get_data_member function for consistency
+    //FIXME: Why does this return a Result?
     pub fn set_data_member(&mut self, id: String, value: EcmaScriptValue) -> Result<Option<EcmaScriptValue>, DataModelError> {
         // Insert value into data map
         Ok(self._x.insert(id, value))

@@ -78,6 +78,7 @@ use std::{
 
 pub mod datamodel;
 pub mod event;
+pub mod executable_content;
 pub mod interpreter;
 pub mod parser;
 pub mod registry;
@@ -90,6 +91,7 @@ use crate::{
         SystemVariables,
     },
     event::Event,
+    executable_content::ExecutableContentError,
     interpreter::EcmaScriptValue,
     registry::{
         Registry,
@@ -125,6 +127,9 @@ pub type StateChartId = String;
 #[derive(Debug, PartialEq)]
 pub enum StateChartError {
     ReceivedUnregisteredEvent(Event),
+
+    // Wrappers
+    ExecutableContentError(ExecutableContentError),
     StateError(StateError),
 }
 
@@ -245,6 +250,7 @@ impl StateChart {
         for transition_id in exit_sorted_transition_ids {
             // Only operate on Transitions with targets
             //TODO: Possible extraneous clone
+            //FIXME: awful style
             if !self.registry.get_transition(transition_id.clone()).unwrap().target_ids().is_empty() {
                 let source_state_id = self.registry.get_transition(transition_id).unwrap().source_id();
                 let source_state = self.registry.get_mut_state(source_state_id).unwrap();
@@ -254,6 +260,17 @@ impl StateChart {
         }
 
         //TODO: Perform executable content of Transition(s)
+        //FIXME: Fix this clone hideousness
+        for transition_id in enabled_transition_ids.clone() {
+            if let Some(cur_transition) = self.registry.get_transition(transition_id) {
+                for exec_content in cur_transition.executable_content() {
+                    exec_content.execute(&mut self.sys_vars)?;
+                }
+            }
+            else {
+                //FIXME: HANDLE ERROR OR SOMETHING
+            }
+        }
         
         //TODO: Sort transition source states into entry order, for now, just copying as-is
         let entry_sorted_transition_ids = enabled_transition_ids;
@@ -371,17 +388,27 @@ impl fmt::Display for StateChartError {
         match self {
             Self::ReceivedUnregisteredEvent(event) => {
                 write!(f, "Received Event '{}', which is unregistered", event)
-            }
+            },
+
+            // Wrappers
+            Self::ExecutableContentError(exec_err) => {
+                write!(f, "ExecutableContentError '{}' encountered while building state chart", exec_err)
+            },
             Self::StateError(state_err) => {
                 write!(f, "{}", state_err)
-            }
+            },
         }
     }
 }
 
 impl From<StateError> for StateChartError {
-    fn from (source: StateError) -> Self {
-        Self::StateError(source)
+    fn from (src: StateError) -> Self {
+        Self::StateError(src)
+    }
+}
+impl From<ExecutableContentError> for StateChartError {
+    fn from (src: ExecutableContentError) -> Self {
+        Self::ExecutableContentError(src)
     }
 }
 
@@ -401,11 +428,13 @@ impl fmt::Display for StateChartBuilderError {
             Self::NoStatesRegistered => {
                 write!(f, "No States registered")
             },
+
+            // Wrappers
             Self::DataModelError(data_err) => {
-                write!(f, "'{:?}' encountered while building state chart", data_err)
+                write!(f, "DataModelError '{}' encountered while building state chart", data_err)
             },
             Self::RegistryError(reg_err) => {
-                write!(f, "'{:?}' encountered while building state chart", reg_err)
+                write!(f, "RegistryError '{}' encountered while building state chart", reg_err)
             },
         }
     }

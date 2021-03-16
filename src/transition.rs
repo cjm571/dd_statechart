@@ -32,6 +32,7 @@ use std::{
 use crate::{
     datamodel::SystemVariables,
     event::Event,
+    executable_content::ExecutableContent,
     interpreter::{
         Interpreter,
         InterpreterError,
@@ -48,12 +49,13 @@ use crate::{
 /// (source) state to a target state
 #[derive(Clone, PartialEq)]
 pub struct Transition {
-    id:         TransitionId,
-    events:     Vec<Event>,
+    id:                 TransitionId,
+    events:             Vec<Event>,
     //FIXME: Investigate if it makes sense to store the lexed/parsed expression here
-    cond:       String,
-    source_id:  StateId,
-    target_ids: Vec<StateId>,
+    cond:               String,
+    source_id:          StateId,
+    target_ids:         Vec<StateId>,
+    executable_content: Vec<ExecutableContent>,
 }
 
 #[derive(Clone, Default, PartialEq)]
@@ -72,12 +74,13 @@ pub enum TransitionError {
 
 #[derive(Debug, PartialEq)]
 pub struct TransitionBuilder {
-    id:         TransitionId,
-    events:     Vec<Event>,
-    cond:       String,
-    cond_set:   bool,
-    source_id:  StateId,
-    target_ids: Vec<StateId>,
+    id:                 TransitionId,
+    events:             Vec<Event>,
+    cond:               String,
+    cond_set:           bool,
+    source_id:          StateId,
+    target_ids:         Vec<StateId>,
+    executable_content: Vec<ExecutableContent>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -114,7 +117,12 @@ impl Transition {
 
     pub fn target_ids(&self) -> Vec<StateId> {
         // Clone is necessary to avoid issues with borrow-checker
+        //FIXME: ARE YOU SURE ABOUT THAT
         self.target_ids.clone()
+    }
+
+    pub fn executable_content(&self) -> &Vec<ExecutableContent> {
+        &self.executable_content
     }
 
 
@@ -136,12 +144,13 @@ impl Transition {
 impl TransitionBuilder {
     pub fn new(source_state_id: StateId) -> Self {
         Self {
-            id:         TransitionId::default(),
-            events:     Vec::new(),
-            cond:       String::from("true"),
-            cond_set:   false,
-            source_id:  source_state_id,
-            target_ids: Vec::new(),
+            id:                 TransitionId::default(),
+            events:             Vec::new(),
+            cond:               String::from("true"),
+            cond_set:           false,
+            source_id:          source_state_id,
+            target_ids:         Vec::new(),
+            executable_content: Vec::new(),
         }
     }
 
@@ -171,10 +180,11 @@ impl TransitionBuilder {
 
         Transition {
             id,
-            events:     self.events,
-            cond:       self.cond,
-            source_id:  self.source_id.clone(),
-            target_ids: self.target_ids,
+            events:             self.events,
+            cond:               self.cond,
+            source_id:          self.source_id.clone(),
+            target_ids:         self.target_ids,
+            executable_content: self.executable_content,
         }
     }
 
@@ -213,6 +223,14 @@ impl TransitionBuilder {
         }
 
         self.target_ids.push(target_id);
+
+        Ok(self)
+    }
+
+    pub fn executable_content(mut self, content: ExecutableContent) -> Result<Self, TransitionBuilderError> {
+        //TODO: Sanity checks and stuff
+
+        self.executable_content.push(content);
 
         Ok(self)
     }

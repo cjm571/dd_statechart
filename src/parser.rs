@@ -34,11 +34,15 @@ use crate::{
     StateChart,
     StateChartBuilder,
     StateChartBuilderError,
-    datamodel::DataModelError,
+    datamodel::{
+        DataModelError,
+        SystemVariables,
+    },
     event::{
         Event,
         EventError,
     },
+    executable_content::ExecutableContent,
     interpreter::{
         Interpreter,
         InterpreterError,
@@ -208,8 +212,10 @@ impl Parser {
     fn parse_element(element: roxmltree::Node, statechart_builder: &mut StateChartBuilder) -> Result<(), ParserError> {
         // Match the element class to the appropriate handling function
         match ValidElementClass::from(element.tag_name().name()) {
-            ValidElementClass::DataModel    => Self::parse_datamodel(element, statechart_builder)?,
-            ValidElementClass::State        => {
+            ValidElementClass::DataModel => {
+                Self::parse_datamodel(element, &mut statechart_builder.sys_vars)?;
+            },
+            ValidElementClass::State => {
                 statechart_builder.state(Self::parse_state(element)?)?;
             },
         }
@@ -217,7 +223,7 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_datamodel(element: roxmltree::Node, statechart_builder: &mut StateChartBuilder) -> Result<(), ParserError> {
+    fn parse_datamodel(element: roxmltree::Node, sys_vars: &mut SystemVariables) -> Result<(), ParserError> {
         // Collect all <data> children
         for child in element.children() {
             // Skip text and comment nodes
@@ -225,8 +231,8 @@ impl Parser {
                 if let (Some(id), Some(expr_str)) = (child.attribute("id"), child.attribute("expr")) {
                     // Interpret value expression and insert into data map
                     let interpreter = Interpreter::new(expr_str);
-                    let expr_value = interpreter.interpret(&statechart_builder.sys_vars)?;
-                    statechart_builder.sys_vars.set_data_member(id.to_string(), expr_value)?;
+                    let expr_value = interpreter.interpret(sys_vars)?;
+                    sys_vars.set_data_member(id.to_string(), expr_value)?;
                 }
                 else {
                     return Err(ParserError::InvalidDataItem(format!("{:?}", element)));
@@ -266,7 +272,12 @@ impl Parser {
 
                 // Handle <transition>
                 if child.tag_name().name() == "transition" {
-                    state_builder = state_builder.transition(Self::parse_transition(child, String::from(state_id))?)?;
+                    state_builder = state_builder.transition(
+                        Self::parse_transition(
+                            child, 
+                            String::from(state_id),
+                        )?
+                    )?;
                 }
 
                 // Handle <initial>, if not already specified
@@ -330,7 +341,24 @@ impl Parser {
         if let Some(target_id) = element.attribute("target") {
             transition_builder = transition_builder.target_id(String::from(target_id))?;
         }
+
+        //TODO: Refactor all child-check loops to use .filter()
+        // Check for Executable Content children, skipping comments and text
+        for child in element.children().filter(|v| !v.is_comment() && !v.is_text()) {
+            // Handle <assign>
+            if child.tag_name().name() == "assign" {
+                if let (Some(location), Some(expr)) = (child.attribute("location"), child.attribute("expr")) {
+                    let assignment = ExecutableContent::Assign(location.to_string(), expr.to_string());
+                    transition_builder = transition_builder.executable_content(assignment)?;
+                }
+                else {
+                    //FIXME: Proper error return here!
+                }
+            }
+        }
         
+
+        //FEAT: Conform to the validity rules in Sec5.4
 
         Ok(transition_builder.build())
     }
@@ -709,6 +737,37 @@ mod tests {
             statechart.active_state_ids(),
             vec![String::from("on"), String::from("cooking")],
         );
+
+        // Send a door-open event
+        eprintln!("*** Sending 'door.open' Event...");
+        let door_open = Event::from("door.open")?;
+        statechart.process_external_event(&door_open)?;
+
+        eprintln!("*** Active State(s):\n{:#?}", statechart.active_state_ids());
+        assert_eq!(
+            statechart.active_state_ids(),
+            vec![String::from("on"), String::from("idle")],
+        );
+
+        // Send a door-close event
+        eprintln!("*** Sending 'door.close' Event...");
+        let door_close = Event::from("door.close")?;
+        statechart.process_external_event(&door_close)?;
+
+        eprintln!("*** Active State(s):\n{:#?}", statechart.active_state_ids());
+        assert_eq!(
+            statechart.active_state_ids(),
+            vec![String::from("on"), String::from("cooking")],
+        );
+
+        // Send time event 6x
+        let time = Event::from("time")?;
+        for _ in 0..5 {
+            eprintln!("*** Sending 'time' Event...");
+            statechart.process_external_event(&time)?;
+            eprintln!("*** Current Active State(s):\n{:#?}", statechart.active_state_ids());
+        }
+        eprintln!("*** Current Data Model:\n{:#?}", statechart.sys_vars);
 
         Ok(())
     }
