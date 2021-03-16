@@ -33,6 +33,7 @@ use crate::{
     interpreter::{
         ArithmeticOperator,
         EcmaScriptValue,
+        EcmaScriptEvalError,
         Expression,
         Literal,
         LogicalOperator,
@@ -46,23 +47,25 @@ use crate::{
 //  Data Structures
 ///////////////////////////////////////////////////////////////////////////////
 
-pub struct Evaluator<'sv> {
-    expr:       Expression,
+pub struct Evaluator<'e, 'sv> {
+    expr:       &'e Expression,
     sys_vars:   &'sv SystemVariables,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum EvaluatorError {
-    StringNegation(String),
-    UnknownNegation(Box<Expression>),
-    IllegalOperation(
-        ArithmeticOperator, // Operator
-        EcmaScriptValue,  // Left Operand
-        EcmaScriptValue,  // Right Operand
+    IdentifierNotFound(
+        String  /* Identifier name */
     ),
-    IdentifierNotFound(String /* Name */),
+    StringNegation(
+        String  /* String on which negation was attempted */
+    ),
 
-    CouldNotDowncast,
+    // Wrappers
+    EcmaScriptEvalError(
+        EcmaScriptEvalError,    /* Wrapped error */
+        Expression,             /* Subexpression containing the error */
+    )
 }
 
 
@@ -70,9 +73,8 @@ pub enum EvaluatorError {
 //  Object Implementations
 ///////////////////////////////////////////////////////////////////////////////
 
-//OPT: *PERFORMANCE* Expressions can get pretty big... would be best to use a reference here if possible
-impl<'sv> Evaluator<'sv> {
-    pub fn new(expr: Expression, sys_vars: &'sv SystemVariables)  -> Self {
+impl<'e, 'sv> Evaluator<'e, 'sv> {
+    pub fn new(expr: &'e Expression, sys_vars: &'sv SystemVariables)  -> Self {
         Self {
             expr,
             sys_vars,
@@ -85,39 +87,38 @@ impl<'sv> Evaluator<'sv> {
     \*  *  *  *  *  *  *  */
 
     pub fn evaluate(&self) -> Result<EcmaScriptValue, EvaluatorError> {
-        //OPT: *DESIGN* Bad clone()... Figure out how to use a reference correctly
-        self.eval_subexpr(self.expr.clone())
+        self.eval_subexpr(self.expr)
     }
     
     /*  *  *  *  *  *  *  *\
      *  Helper Functions  *
     \*  *  *  *  *  *  *  */
     
-    fn eval_subexpr(&self, expr: Expression) -> Result<EcmaScriptValue, EvaluatorError> {
+    fn eval_subexpr(&self, expr: &Expression) -> Result<EcmaScriptValue, EvaluatorError> {
         match expr {
             Expression::Literal(literal)        => Ok(Self::eval_literal(literal)),
             Expression::Identifier(name)        => self.eval_identifier(name),
             Expression::Unary(unary)            => self.eval_unary(unary),
-            Expression::Binary(left, op, right) => self.eval_binary(op, *left, *right),
-            Expression::Grouping(inner_expr)    => self.eval_subexpr(*inner_expr),
+            Expression::Binary(left, op, right) => self.eval_binary(op, left, right),
+            Expression::Grouping(inner_expr)    => self.eval_subexpr(inner_expr),
         }
     }
 
-    fn eval_identifier(&self, name: String) -> Result<EcmaScriptValue, EvaluatorError> {
+    fn eval_identifier(&self, name: &str) -> Result<EcmaScriptValue, EvaluatorError> {
         // Look up the identifier in the data map
-        if let Some(value) = self.sys_vars._x().get(&name) {
+        if let Some(value) = self.sys_vars._x().get(name) {
             Ok(value.clone())
         }
         else {
             // Identifier was not found in the data map, return error
-            Err(EvaluatorError::IdentifierNotFound(name))
+            Err(EvaluatorError::IdentifierNotFound(name.to_string()))
         }
     }
 
-    fn eval_unary(&self, unary: Unary) -> Result<EcmaScriptValue, EvaluatorError> {
+    fn eval_unary(&self, unary: &Unary) -> Result<EcmaScriptValue, EvaluatorError> {
         match unary {
             Unary::Negation(expr) => {
-                match self.eval_subexpr(*expr)? {
+                match self.eval_subexpr(expr)? {
                     EcmaScriptValue::String(value) => {
                         // String negation is an error
                         Err(EvaluatorError::StringNegation(value))
@@ -143,7 +144,7 @@ impl<'sv> Evaluator<'sv> {
                 }
             },
             Unary::Not(expr) => {
-                match self.eval_subexpr(*expr)? {
+                match self.eval_subexpr(expr)? {
                     EcmaScriptValue::String(_value) => {
                         // !String evaluates to 'false', because reasons
                         Ok(EcmaScriptValue::Boolean(false))
@@ -170,17 +171,23 @@ impl<'sv> Evaluator<'sv> {
         }
     }
 
-    fn eval_binary(&self, op: Operator, left: Expression, right: Expression) -> Result<EcmaScriptValue, EvaluatorError> {
+    fn eval_binary(&self, op: &Operator, left: &Expression, right: &Expression) -> Result<EcmaScriptValue, EvaluatorError> {
         let left_value = self.eval_subexpr(left)?;
         let right_value = self.eval_subexpr(right)?;
 
         match op {
-            /* Arithmetic Operations */
             Operator::Arithmetic(math_op) => {
-                Self::eval_math_op(math_op, left_value, right_value)
+                Self::eval_math_op(&math_op, left_value, right_value).map_err(|e| 
+                    EvaluatorError::EcmaScriptEvalError(
+                        e,
+                        Expression::Binary(
+                            Box::new(left.clone()),
+                            Operator::Arithmetic(math_op.clone()),
+                            Box::new(right.clone()),
+                        ),
+                    )
+                )
             },
-
-            /* Logical Operations */
             Operator::Logical(logic_op) => {
                 Ok(EcmaScriptValue::Boolean(Self::eval_logic_op(logic_op, left_value, right_value)))
             },
@@ -192,17 +199,18 @@ impl<'sv> Evaluator<'sv> {
      *   Helper Methods   *
     \*  *  *  *  *  *  *  */
 
-    fn eval_literal(literal: Literal) -> EcmaScriptValue {
+    fn eval_literal(literal: &Literal) -> EcmaScriptValue {
         match literal {
-            Literal::String(value)  => EcmaScriptValue::String(value),
-            Literal::Number(value)  => EcmaScriptValue::Number(value),
+            Literal::String(value)  => EcmaScriptValue::String(value.clone()),
+            Literal::Number(value)  => EcmaScriptValue::Number(*value),
             Literal::True           => EcmaScriptValue::Boolean(true),
             Literal::False          => EcmaScriptValue::Boolean(false),
             Literal::Null           => EcmaScriptValue::Null,
         }
     }
 
-    fn eval_math_op(op: ArithmeticOperator, left: EcmaScriptValue, right: EcmaScriptValue) -> Result<EcmaScriptValue, EvaluatorError> {
+    // Perform arithmetic operation per the 'op' parameter, and return the result or error
+    fn eval_math_op(op: &ArithmeticOperator, left: EcmaScriptValue, right: EcmaScriptValue) -> Result<EcmaScriptValue, EcmaScriptEvalError> {
         match op {
             ArithmeticOperator::Plus    => Ok(left + right),
             ArithmeticOperator::Minus   => left - right,
@@ -211,8 +219,8 @@ impl<'sv> Evaluator<'sv> {
         }
     }
 
-    fn eval_logic_op(op: LogicalOperator, left: EcmaScriptValue, right: EcmaScriptValue) -> bool {
-        // Perform logical operation per the 'op' parameter, and return the result
+    // Perform logical operation per the 'op' parameter, and return the result
+    fn eval_logic_op(op: &LogicalOperator, left: EcmaScriptValue, right: EcmaScriptValue) -> bool {
         match op {
             LogicalOperator::EqualTo                => left == right,
             LogicalOperator::NotEqualTo             => left != right,
@@ -239,21 +247,17 @@ impl Error for EvaluatorError {}
 impl fmt::Display for EvaluatorError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::StringNegation(string) => {
-                write!(f, "Attempted to negate String '{}', which is invalid", string)
-            },
-            Self::UnknownNegation(expr) => {
-                write!(f, "Attempted to negate Expression '{}', which is invalid", expr)
-            },
-            Self::IllegalOperation(op, left, right) => {
-                write!(f, "Unsupported operation '{}' on operands L: '{:?}' and R: '{:?}'", op, left, right)
-            },
             Self::IdentifierNotFound(name) => {
                 write!(f, "Identifier '{}' not found in Data Model'", name)
             },
-            Self::CouldNotDowncast => {
-                write!(f, "NON-ERROR: Could not downcast parameters to their respective type parameters")
+            Self::StringNegation(string) => {
+                write!(f, "Attempted to negate String '{}', which is invalid", string)
             },
+
+            // Wrappers
+            Self::EcmaScriptEvalError(ese_err, subexpr) => {
+                write!(f, "EcmaScriptEvalError '{}' encountered while evaluating sub-expression '{}'", ese_err, subexpr)
+            }
         }
     }
 }
@@ -287,7 +291,7 @@ mod tests {
     type TestResult = Result<(), Box<dyn Error>>;
 
     
-    //OPT: *TESTING* Develop a method to test large variety of value/type combos
+    //FEAT: *TESTING* Develop a method to test large variety of value/type combos
     #[test]
     fn logical_evaluation() -> TestResult {
         let float_val = 2.0;
@@ -300,9 +304,9 @@ mod tests {
             Box::new(Expression::Literal(Literal::Number(int_val as f64))),
         );
         let sys_vars = SystemVariables::default();
-        let evaluator = Evaluator::new(expr.clone(), &sys_vars);
+        let evaluator = Evaluator::new(&expr, &sys_vars);
 
-        eprintln!("Evaluating Expression '{}'...", expr.clone());
+        eprintln!("Evaluating Expression '{}'...", expr);
 
         // Attempt to evaluate the expression
         let result_as_iv = evaluator.evaluate()?;
@@ -328,9 +332,9 @@ mod tests {
             Box::new(Expression::Literal(Literal::Number(int_val as f64))),
         );
         let sys_vars = SystemVariables::default();
-        let evaluator = Evaluator::new(expr.clone(), &sys_vars);
+        let evaluator = Evaluator::new(&expr, &sys_vars);
 
-        eprintln!("Evaluating Expression '{}'...", expr.clone());
+        eprintln!("Evaluating Expression '{}'...", expr);
 
         // Attempt to evaluate the expression
         let result_as_iv = evaluator.evaluate()?;
@@ -356,9 +360,9 @@ mod tests {
             Box::new(Expression::Literal(Literal::String(int_val.to_string()))),
         );
         let sys_vars = SystemVariables::default();
-        let evaluator = Evaluator::new(expr.clone(), &sys_vars);
+        let evaluator = Evaluator::new(&expr, &sys_vars);
 
-        eprintln!("Evaluating Expression '{}'...", expr.clone());
+        eprintln!("Evaluating Expression '{}'...", expr);
 
         // Attempt to evaluate the expression
         let result_as_iv = evaluator.evaluate()?;
@@ -383,9 +387,9 @@ mod tests {
             Box::new(Expression::Literal(Literal::Null)),
         );
         let sys_vars = SystemVariables::default();
-        let evaluator = Evaluator::new(expr.clone(), &sys_vars);
+        let evaluator = Evaluator::new(&expr, &sys_vars);
 
-        eprintln!("Evaluating Expression '{}'...", expr.clone());
+        eprintln!("Evaluating Expression '{}'...", expr);
 
         // Attempt to evaluate the expression
         let result_as_iv = evaluator.evaluate()?;

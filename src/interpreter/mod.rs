@@ -61,16 +61,6 @@ use parser::{
     ParserError,
 };
 
-//FIXME: Is this Clone necessary?
-//FEAT: Implement BigInt type
-#[derive(Clone, Debug)]
-pub enum EcmaScriptValue {
-    String(String),
-    Number(f64),
-    Boolean(bool),
-    Null,
-}
-
 
 //FIXME: Don't like this style... Feel like a memberless struct would be cleaner
 ///////////////////////////////////////////////////////////////////////////////
@@ -87,7 +77,7 @@ pub fn interpret(input_str: &str, sys_vars: &SystemVariables) -> Result<EcmaScri
     let expr = parser.parse()?;
 
     // Evaluate expression
-    let evaluator = Evaluator::new(expr, sys_vars);
+    let evaluator = Evaluator::new(&expr, sys_vars);
     Ok(evaluator.evaluate()?)
 }
 
@@ -101,7 +91,7 @@ pub fn interpret_as_bool(input_str: &str, sys_vars: &SystemVariables) -> Result<
     let expr = parser.parse()?;
 
     // Evaluate expression
-    let evaluator = Evaluator::new(expr, sys_vars);
+    let evaluator = Evaluator::new(&expr, sys_vars);
     let result = evaluator.evaluate()?;
 
     // Leverage ECMAScript rules attached to the IV enum
@@ -113,10 +103,30 @@ pub fn interpret_as_bool(input_str: &str, sys_vars: &SystemVariables) -> Result<
 //  Data Structures
 ///////////////////////////////////////////////////////////////////////////////
 
+//FIXME: Is this Clone necessary?
+//FEAT: Implement BigInt type
+#[derive(Clone, Debug)]
+pub enum EcmaScriptValue {
+    String(String),
+    Number(f64),
+    Boolean(bool),
+    Null,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum EcmaScriptEvalError {
+    IllegalOperation(
+        ArithmeticOperator, /* Operation attempted */
+        EcmaScriptValue,    /* Left-hand operand */
+        EcmaScriptValue,    /* Right-hand operand */
+    ),
+}
+
 #[derive(Debug, PartialEq)]
 pub enum InterpreterError {
     InvalidOperatorConversion(Token),
 
+    // Wrappers
     EvaluatorError(EvaluatorError),
     LexerError(LexerError),
     ParserError(ParserError),
@@ -209,6 +219,23 @@ pub enum ArithmeticOperator {
 ///////////////////////////////////////////////////////////////////////////////
 //  Trait Implementations
 ///////////////////////////////////////////////////////////////////////////////
+
+/*  *  *  *  *  *  *  *  *\
+ *  EcmaScriptEvalError  *
+\*  *  *  *  *  *  *  *  */
+
+impl Error for EcmaScriptEvalError {}
+
+impl fmt::Display for EcmaScriptEvalError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::IllegalOperation(op, left, right) => {
+                write!(f, "Attempted operation '{:?} {:?} {:?}' is illegal", left, op, right)
+            },
+        }
+    }
+}
+
 
 /*  *  *  *  *  *  *  *\
  *  InterpreterError  *
@@ -645,7 +672,7 @@ impl Add<Self> for EcmaScriptValue {
     }
 }
 impl Sub<Self> for EcmaScriptValue {
-    type Output = Result<Self, EvaluatorError>;
+    type Output = Result<Self, EcmaScriptEvalError>;
 
     fn sub(self, rhs: Self) -> Self::Output {
         match self {
@@ -662,7 +689,7 @@ impl Sub<Self> for EcmaScriptValue {
                             else {
                                 // Right operand could not be parsed into number, therefore subtraction is illegal
                                 Err (
-                                    EvaluatorError::IllegalOperation (
+                                    EcmaScriptEvalError::IllegalOperation (
                                         ArithmeticOperator::Minus,
                                         Self::String(self_value),
                                         Self::String(rhs_value),
@@ -687,7 +714,7 @@ impl Sub<Self> for EcmaScriptValue {
                 else {
                     // Left operand could not be parsed into number, therefore subtraction is illegal
                     Err (
-                        EvaluatorError::IllegalOperation (
+                        EcmaScriptEvalError::IllegalOperation (
                             ArithmeticOperator::Minus,
                             Self::String(self_value),
                             rhs,
@@ -706,7 +733,7 @@ impl Sub<Self> for EcmaScriptValue {
                         else {
                             // Right operand could not be parsed into number, therefore subtraction is illegal
                             Err (
-                                EvaluatorError::IllegalOperation (
+                                EcmaScriptEvalError::IllegalOperation (
                                     ArithmeticOperator::Minus,
                                     self,
                                     Self::String(rhs_value),
@@ -739,7 +766,7 @@ impl Sub<Self> for EcmaScriptValue {
                         else {
                             // Right operand could not be parsed into number, therefore subtraction is illegal
                             Err (
-                                EvaluatorError::IllegalOperation (
+                                EcmaScriptEvalError::IllegalOperation (
                                     ArithmeticOperator::Minus,
                                     self,
                                     Self::String(rhs_value),
@@ -772,7 +799,7 @@ impl Sub<Self> for EcmaScriptValue {
                         else {
                             // Right operand could not be parsed into number, therefore subtraction is illegal
                             Err (
-                                EvaluatorError::IllegalOperation (
+                                EcmaScriptEvalError::IllegalOperation (
                                     ArithmeticOperator::Minus,
                                     self,
                                     Self::String(rhs_value),
@@ -798,7 +825,7 @@ impl Sub<Self> for EcmaScriptValue {
     }
 }
 impl Mul<Self> for EcmaScriptValue {
-    type Output = Result<Self, EvaluatorError>;
+    type Output = Result<Self, EcmaScriptEvalError>;
 
     fn mul(self, rhs: Self) -> Self::Output {
         match self {
@@ -815,7 +842,7 @@ impl Mul<Self> for EcmaScriptValue {
                             else {
                                 // Right operand could not be parsed into number, therefore multiplication is illegal
                                 Err (
-                                    EvaluatorError::IllegalOperation (
+                                    EcmaScriptEvalError::IllegalOperation (
                                         ArithmeticOperator::Star,
                                         Self::String(self_value),
                                         Self::String(rhs_value),
@@ -840,7 +867,7 @@ impl Mul<Self> for EcmaScriptValue {
                 else {
                     // Left operand could not be parsed into number, therefore multiplication is illegal
                     Err (
-                        EvaluatorError::IllegalOperation (
+                        EcmaScriptEvalError::IllegalOperation (
                             ArithmeticOperator::Star,
                             Self::String(self_value),
                             rhs,
@@ -859,7 +886,7 @@ impl Mul<Self> for EcmaScriptValue {
                         else {
                             // Right operand could not be parsed into number, therefore multiplication is illegal
                             Err (
-                                EvaluatorError::IllegalOperation (
+                                EcmaScriptEvalError::IllegalOperation (
                                     ArithmeticOperator::Star,
                                     self,
                                     Self::String(rhs_value),
@@ -892,7 +919,7 @@ impl Mul<Self> for EcmaScriptValue {
                         else {
                             // Right operand could not be parsed into number, therefore multiplication is illegal
                             Err (
-                                EvaluatorError::IllegalOperation (
+                                EcmaScriptEvalError::IllegalOperation (
                                     ArithmeticOperator::Star,
                                     self,
                                     Self::String(rhs_value),
@@ -924,7 +951,7 @@ impl Mul<Self> for EcmaScriptValue {
                         }
                         else {
                             Err (
-                                EvaluatorError::IllegalOperation (
+                                EcmaScriptEvalError::IllegalOperation (
                                     ArithmeticOperator::Star,
                                     self,
                                     Self::String(rhs_value),
@@ -941,7 +968,7 @@ impl Mul<Self> for EcmaScriptValue {
     }
 }
 impl Div<Self> for EcmaScriptValue {
-    type Output = Result<Self, EvaluatorError>;
+    type Output = Result<Self, EcmaScriptEvalError>;
 
     fn div(self, rhs: Self) -> Self::Output {
         // Check for divide-by-zero before evaluating further
@@ -975,7 +1002,7 @@ impl Div<Self> for EcmaScriptValue {
                             else {
                                 // Right operand could not be parsed into float, therefore division is illegal
                                 Err (
-                                    EvaluatorError::IllegalOperation (
+                                    EcmaScriptEvalError::IllegalOperation (
                                         ArithmeticOperator::Slash,
                                         Self::String(self_value),
                                         Self::String(rhs_value),
@@ -1000,7 +1027,7 @@ impl Div<Self> for EcmaScriptValue {
                 else {
                     // Left operand could not be parsed into number, therefore division is illegal
                     Err (
-                        EvaluatorError::IllegalOperation (
+                        EcmaScriptEvalError::IllegalOperation (
                             ArithmeticOperator::Slash,
                             Self::String(self_value),
                             rhs,
@@ -1020,7 +1047,7 @@ impl Div<Self> for EcmaScriptValue {
                         else {
                             // Right operand could not be parsed into number, therefore division is illegal
                             Err (
-                                EvaluatorError::IllegalOperation (
+                                EcmaScriptEvalError::IllegalOperation (
                                     ArithmeticOperator::Slash,
                                     self,
                                     Self::String(rhs_value),
@@ -1054,7 +1081,7 @@ impl Div<Self> for EcmaScriptValue {
                         else {
                             // Right operand could not be parsed into number, therefore division is illegal
                             Err (
-                                EvaluatorError::IllegalOperation (
+                                EcmaScriptEvalError::IllegalOperation (
                                     ArithmeticOperator::Slash,
                                     self,
                                     Self::String(rhs_value),
@@ -1078,7 +1105,7 @@ impl Div<Self> for EcmaScriptValue {
                         // 'false' / null == NaN
                         else {
                             Err(
-                                EvaluatorError::IllegalOperation(
+                                EcmaScriptEvalError::IllegalOperation(
                                     ArithmeticOperator::Slash,
                                     self,
                                     rhs,
@@ -1100,7 +1127,7 @@ impl Div<Self> for EcmaScriptValue {
                         else {
                             // Right operand could not be parsed into number, therefore division is illegal
                             Err (
-                                EvaluatorError::IllegalOperation (
+                                EcmaScriptEvalError::IllegalOperation (
                                     ArithmeticOperator::Slash,
                                     self,
                                     Self::String(rhs_value),
@@ -1120,7 +1147,7 @@ impl Div<Self> for EcmaScriptValue {
                         // null /'false' == NaN
                         else {
                             Err(
-                                EvaluatorError::IllegalOperation(
+                                EcmaScriptEvalError::IllegalOperation(
                                     ArithmeticOperator::Slash,
                                     self,
                                     rhs,
@@ -1131,7 +1158,7 @@ impl Div<Self> for EcmaScriptValue {
                     Self::Null => {
                         // null / null == NaN
                         Err(
-                            EvaluatorError::IllegalOperation(
+                            EcmaScriptEvalError::IllegalOperation(
                                 ArithmeticOperator::Slash,
                                 self,
                                 rhs,
