@@ -232,7 +232,7 @@ impl Parser {
                     // Interpret value expression and insert into data map
                     let interpreter = Interpreter::new(expr_str);
                     let expr_value = interpreter.interpret(sys_vars)?;
-                    sys_vars.set_data_member(id.to_string(), expr_value)?;
+                    sys_vars.set_data_member(id.to_string(), expr_value);
                 }
                 else {
                     return Err(ParserError::InvalidDataItem(format!("{:?}", element)));

@@ -80,6 +80,11 @@ impl SystemVariables {
     pub fn _x(&self) -> &HashMap<String, EcmaScriptValue> {
         &self._x
     }
+    
+    pub fn get_data_member(&self, id: &str) -> Option<&EcmaScriptValue> {
+        // Insert value into data map
+        self._x.get(id)
+    }
 
 
     /*  *  *  *  *  *  *  *\
@@ -94,11 +99,9 @@ impl SystemVariables {
         self._event = Some(event);
     }
     
-    //FIXME: *STYLE* either delete this function and use _x directly, or create a get_data_member function for consistency
-    //FIXME: Why does this return a Result?
-    pub fn set_data_member(&mut self, id: String, value: EcmaScriptValue) -> Result<Option<EcmaScriptValue>, DataModelError> {
+    pub fn set_data_member(&mut self, id: String, value: EcmaScriptValue) -> Option<EcmaScriptValue> {
         // Insert value into data map
-        Ok(self._x.insert(id, value))
+        self._x.insert(id, value)
     }
 }
 

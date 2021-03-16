@@ -107,7 +107,7 @@ impl<'e, 'sv> Evaluator<'e, 'sv> {
 
     fn eval_identifier(&self, name: &str) -> Result<EcmaScriptValue, EvaluatorError> {
         // Look up the identifier in the data map
-        if let Some(value) = self.sys_vars._x().get(name) {
+        if let Some(value) = self.sys_vars.get_data_member(name) {
             Ok(value.clone())
         }
         else {
@@ -425,7 +425,7 @@ mod tests {
         let expected = EcmaScriptValue::String(extant.clone());
         let expr2 = Expression::Identifier(extant.clone());
         let mut sys_vars2 = SystemVariables::default();
-        sys_vars2.set_data_member(extant.clone(), expected.clone())?;
+        sys_vars2.set_data_member(extant.clone(), expected.clone());
 
         // Attempt to evaluate it
         let evaluator2 = Evaluator::new(&expr2, &sys_vars2);

@@ -349,10 +349,10 @@ impl StateChartBuilder {
         self
     }
 
-    pub fn data_member(&mut self, id: String, value: EcmaScriptValue) -> Result<&mut Self, StateChartBuilderError> {
-        self.sys_vars.set_data_member(id, value)?;
+    pub fn data_member(&mut self, id: String, value: EcmaScriptValue) -> &mut Self {
+        self.sys_vars.set_data_member(id, value);
 
-        Ok(self)
+        self
     }
 }
 

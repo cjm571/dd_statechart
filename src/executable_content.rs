@@ -25,10 +25,7 @@ use std::{
 };
 
 use crate::{
-    datamodel::{
-        DataModelError,
-        SystemVariables,
-    },
+    datamodel::SystemVariables,
     interpreter::{
         Interpreter,
         InterpreterError,
@@ -60,7 +57,6 @@ pub enum ExecutableContent {
 #[derive(Debug, PartialEq)]
 pub enum ExecutableContentError {
     // Wrappers
-    DataModelError(DataModelError),
     InterpreterError(InterpreterError),
 }
 
@@ -78,7 +74,7 @@ impl ExecutableContent {
                 let value = interpreter.interpret(sys_vars)?;
 
                 // Set the value in the data model
-                sys_vars.set_data_member(location.clone(), value)?;
+                sys_vars.set_data_member(location.clone(), value);
 
                 //FIXME: Return an appropriate value instead of OK...
                 Ok(())
@@ -102,9 +98,6 @@ impl Error for ExecutableContentError {}
 impl fmt::Display for ExecutableContentError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::DataModelError(data_err) => {
-                write!(f, "DataModelError '{}' encountered within Executable Content", data_err)
-            },
             Self::InterpreterError(interp_err) => {
                 write!(f, "InterpreterError '{}' encountered within Executable Content", interp_err)
             },
@@ -112,11 +105,6 @@ impl fmt::Display for ExecutableContentError {
     }
 }
 
-impl From<DataModelError> for ExecutableContentError {
-    fn from(src: DataModelError) -> Self {
-        Self::DataModelError(src)
-    }
-}
 impl From<InterpreterError> for ExecutableContentError {
     fn from(src: InterpreterError) -> Self {
         Self::InterpreterError(src)
@@ -151,7 +139,7 @@ mod tests {
         // Create a basic assignment statement and valid data model for it to act on
         let assignment = ExecutableContent::Assign(location.clone(), expr.clone());
         let mut sys_vars = SystemVariables::default();
-        sys_vars.set_data_member(location.clone(), initial_val)?;
+        sys_vars.set_data_member(location.clone(), initial_val);
 
         // Display initial conditions
         eprintln!("=== Initial Data Model:\n{:?}", sys_vars._x());
@@ -164,7 +152,7 @@ mod tests {
 
         // Verify successful assignment
         assert_eq!(
-            sys_vars._x().get(&location),
+            sys_vars.get_data_member(&location),
             Some(&EcmaScriptValue::Boolean(true))
         );
 
@@ -180,7 +168,7 @@ mod tests {
         // Create a meta assignment statement and valid data model for it to act on
         let assignment = ExecutableContent::Assign(location.clone(), expr.clone());
         let mut sys_vars = SystemVariables::default();
-        sys_vars.set_data_member(location.clone(), initial_val.clone())?;
+        sys_vars.set_data_member(location.clone(), initial_val.clone());
 
         // Display initial conditions
         eprintln!("=== Initial Data Model:\n{:?}", sys_vars._x());
@@ -196,7 +184,7 @@ mod tests {
 
         // Verify successful assignment
         assert_eq!(
-            sys_vars._x().get(&location),
+            sys_vars.get_data_member(&location),
             Some(&(initial_val + EcmaScriptValue::Number(executions as f64)))
         );
 
