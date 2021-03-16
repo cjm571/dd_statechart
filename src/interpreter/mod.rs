@@ -18,7 +18,8 @@ Purpose:
     This module defines a barebones interpreter for single-line ECMAScript
     expressions.
 
-    //TODO: More, probably
+    Additionally, the rules of ECMAScript expressions are captured in the
+    EcmaScriptValue enumeration and its various Trait implementations.
 
     NONCONFORMANCES:
     1. Expressions that evaluate to 'NaN' are currently treated as errors
@@ -62,40 +63,50 @@ use parser::{
 };
 
 
-//FIXME: Don't like this style... Feel like a memberless struct would be cleaner
 ///////////////////////////////////////////////////////////////////////////////
-//  Static Functions
+//  Data Structures
 ///////////////////////////////////////////////////////////////////////////////
 
-pub fn interpret(input_str: &str, sys_vars: &SystemVariables) -> Result<EcmaScriptValue, InterpreterError> {
-    // Scan input string for tokens
-    let mut lexer = Lexer::new(input_str);
-    let tokens = lexer.scan()?;
-
-    // Parse tokens for expression
-    let mut parser = Parser::new(&tokens);
-    let expr = parser.parse()?;
-
-    // Evaluate expression
-    let evaluator = Evaluator::new(&expr, sys_vars);
-    Ok(evaluator.evaluate()?)
+pub struct Interpreter<'s> {
+    expr_str: &'s str
 }
 
-pub fn interpret_as_bool(input_str: &str, sys_vars: &SystemVariables) -> Result<bool, InterpreterError> {
-    // Scan input string for tokens
-    let mut lexer = Lexer::new(input_str);
-    let tokens = lexer.scan()?;
 
-    // Parse tokens for expression
-    let mut parser = Parser::new(&tokens);
-    let expr = parser.parse()?;
+///////////////////////////////////////////////////////////////////////////////
+//  Object Implementations
+///////////////////////////////////////////////////////////////////////////////
 
-    // Evaluate expression
-    let evaluator = Evaluator::new(&expr, sys_vars);
-    let result = evaluator.evaluate()?;
+impl<'s> Interpreter<'s> {
+    pub fn new(expr_str: &'s str) -> Self {
+        Self {expr_str}
+    }
 
-    // Leverage ECMAScript rules attached to the IV enum
-    Ok(result == EcmaScriptValue::Boolean(true))
+
+    /*  *  *  *  *  *  *  *\
+     *  Utility Methods   *
+    \*  *  *  *  *  *  *  */
+
+    pub fn interpret(&self, sys_vars: &SystemVariables) -> Result<EcmaScriptValue, InterpreterError> {
+        // Scan input string for tokens
+        let mut lexer = Lexer::new(self.expr_str);
+        let tokens = lexer.scan()?;
+
+        // Parse tokens for expression
+        let mut parser = Parser::new(&tokens);
+        let expr = parser.parse()?;
+
+        // Evaluate expression
+        let evaluator = Evaluator::new(&expr, sys_vars);
+        Ok(evaluator.evaluate()?)
+    }
+
+    pub fn interpret_as_bool(&self, sys_vars: &SystemVariables) -> Result<bool, InterpreterError> {
+        // Interpret expression
+        let result = self.interpret(sys_vars)?;
+
+        // Leverage ECMAScript rules attached to the EcmaScriptValue enum
+        Ok(result == EcmaScriptValue::Boolean(true))
+    }
 }
 
 
@@ -103,7 +114,6 @@ pub fn interpret_as_bool(input_str: &str, sys_vars: &SystemVariables) -> Result<
 //  Data Structures
 ///////////////////////////////////////////////////////////////////////////////
 
-//FIXME: Is this Clone necessary?
 //FEAT: Implement BigInt type
 #[derive(Clone, Debug)]
 pub enum EcmaScriptValue {
@@ -132,8 +142,7 @@ pub enum InterpreterError {
     ParserError(ParserError),
 }
 
-//OPT: *DESIGN* May be useful to stratify into arithmetic, logical, etc.
-//              Could avoid duplication of subsets of the enum in submodules
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Token {
     // Single-Character Tokens
@@ -359,7 +368,6 @@ impl fmt::Display for LogicalOperator {
 }
 
 
-
 /*  *  *  *  *  *  *  *\
  * ArithmeticOperator *
 \*  *  *  *  *  *  *  */
@@ -374,7 +382,6 @@ impl fmt::Display for ArithmeticOperator {
         }
     }
 }
-
 
 
 /*  *  *  *  *  *  *  *\
@@ -988,12 +995,12 @@ impl Div<Self> for EcmaScriptValue {
 
         match self {
             Self::String(self_value) => {
-                // ECMAScript forces division to produce a float result, so just 
+                // ECMAScript forces division to produce a float result, so just
                 // attempt to parse everything as f64
                 if let Ok(parsed_self_value) = self_value.parse::<f64>() {
                     match rhs {
                         Self::String(rhs_value) => {
-                            // ECMAScript forces division to produce a float result, so just 
+                            // ECMAScript forces division to produce a float result, so just
                             // attempt to parse everything as f64
                             if let Ok(parsed_rhs_value) = rhs_value.parse::<f64>() {
                                 // Simple division
@@ -1038,7 +1045,7 @@ impl Div<Self> for EcmaScriptValue {
             Self::Number(self_value) => {
                 match rhs {
                     Self::String(rhs_value) => {
-                        // ECMAScript forces division to produce a float result, so just 
+                        // ECMAScript forces division to produce a float result, so just
                         // attempt to parse everything as f64
                         if let Ok(parsed_rhs_value) = rhs_value.parse::<f64>() {
                             // Simple division
@@ -1072,7 +1079,7 @@ impl Div<Self> for EcmaScriptValue {
             Self::Boolean(self_value) => {
                 match rhs {
                     Self::String(rhs_value) => {
-                        // ECMAScript forces division to produce a float result, so just 
+                        // ECMAScript forces division to produce a float result, so just
                         // attempt to parse everything as f64
                         if let Ok(parsed_rhs_value) = rhs_value.parse::<f64>() {
                             // Casted division
@@ -1118,7 +1125,7 @@ impl Div<Self> for EcmaScriptValue {
             Self::Null => {
                 match rhs {
                     Self::String(rhs_value) => {
-                        // ECMAScript forces division to produce a float result, so just 
+                        // ECMAScript forces division to produce a float result, so just
                         // attempt to parse everything as f64
                         if rhs_value.parse::<f64>().is_ok() {
                             // Evaluates to 0
@@ -1205,7 +1212,7 @@ mod tests {
 
         // Pretty-Print the Expression
         eprintln!("*** Result ***\n{}", expr);
-        
+
         Ok(())
     }
 }

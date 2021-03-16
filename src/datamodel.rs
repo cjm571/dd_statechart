@@ -21,7 +21,11 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    error::Error,
+    fmt,
+};
 
 use crate::{
     StateChartId,
@@ -48,7 +52,9 @@ pub struct SystemVariables {
 
 #[derive(Debug, PartialEq)]
 pub enum DataModelError {
-    InvalidValueType(String /*Identifier*/),
+    InvalidValueType(
+        String /* Identifier name */
+    ),
 }
 
 
@@ -99,6 +105,28 @@ impl SystemVariables {
 ///////////////////////////////////////////////////////////////////////////////
 //  Trait Implementations
 ///////////////////////////////////////////////////////////////////////////////
+
+
+/*  *  *  *  *  *  *  *\
+ *   DataModelError   *
+\*  *  *  *  *  *  *  */
+
+impl Error for DataModelError {}
+
+impl fmt::Display for DataModelError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::InvalidValueType(identifier_name) => {
+                write!(f, "Type of identifier '{}' is and invalid type.", identifier_name)
+            },
+        }
+    }
+}
+
+
+/*  *  *  *  *  *  *  *\
+ *  SystemVariables   *
+\*  *  *  *  *  *  *  */
 
 impl Default for SystemVariables {
     fn default() -> Self {

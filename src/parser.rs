@@ -40,7 +40,7 @@ use crate::{
         EventError,
     },
     interpreter::{
-        self,
+        Interpreter,
         InterpreterError,
     },
     registry::RegistryError,
@@ -224,7 +224,8 @@ impl Parser {
             if !child.is_comment() && !child.is_text() {
                 if let (Some(id), Some(expr_str)) = (child.attribute("id"), child.attribute("expr")) {
                     // Interpret value expression and insert into data map
-                    let expr_value = interpreter::interpret(expr_str, &statechart_builder.sys_vars)?;
+                    let interpreter = Interpreter::new(expr_str);
+                    let expr_value = interpreter.interpret(&statechart_builder.sys_vars)?;
                     statechart_builder.sys_vars.set_data_member(id.to_string(), expr_value)?;
                 }
                 else {

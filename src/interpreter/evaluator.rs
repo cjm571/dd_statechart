@@ -16,7 +16,7 @@ Copyright (C) 2021 CJ McAllister
 
 Purpose:
     This module defines the rules behind evaluating ECMAScript expressions.
-    
+
     It leverages Rust's robust enums and trait system to represent ECMAScript
     values as Intermediate values, and the trait system allows for easy use
     of the values in the evaluation functions.
@@ -89,11 +89,12 @@ impl<'e, 'sv> Evaluator<'e, 'sv> {
     pub fn evaluate(&self) -> Result<EcmaScriptValue, EvaluatorError> {
         self.eval_subexpr(self.expr)
     }
-    
+
+
     /*  *  *  *  *  *  *  *\
      *  Helper Functions  *
     \*  *  *  *  *  *  *  */
-    
+
     fn eval_subexpr(&self, expr: &Expression) -> Result<EcmaScriptValue, EvaluatorError> {
         match expr {
             Expression::Literal(literal)        => Ok(Self::eval_literal(literal)),
@@ -177,7 +178,7 @@ impl<'e, 'sv> Evaluator<'e, 'sv> {
 
         match op {
             Operator::Arithmetic(math_op) => {
-                Self::eval_math_op(&math_op, left_value, right_value).map_err(|e| 
+                Self::eval_math_op(&math_op, left_value, right_value).map_err(|e|
                     EvaluatorError::EcmaScriptEvalError(
                         e,
                         Expression::Binary(
@@ -194,7 +195,7 @@ impl<'e, 'sv> Evaluator<'e, 'sv> {
         }
     }
 
-    
+
     /*  *  *  *  *  *  *  *\
      *   Helper Methods   *
     \*  *  *  *  *  *  *  */
@@ -281,8 +282,10 @@ mod tests {
             Literal,
             LogicalOperator,
             Operator,
+            Unary,
             evaluator::{
                 Evaluator,
+                EvaluatorError,
             },
         },
     };
@@ -290,7 +293,7 @@ mod tests {
 
     type TestResult = Result<(), Box<dyn Error>>;
 
-    
+
     //FEAT: *TESTING* Develop a method to test large variety of value/type combos
     #[test]
     fn logical_evaluation() -> TestResult {
@@ -319,7 +322,7 @@ mod tests {
 
         Ok(())
     }
-    
+
     #[test]
     fn arithmetic_evaluation() -> TestResult {
         let float_val = 4.0;
@@ -398,6 +401,58 @@ mod tests {
         assert_eq!(
             result_as_iv,
             EcmaScriptValue::Boolean(false)
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn identifier_not_found() -> TestResult {
+        // Create an expression with a nonexistent identifier
+        let non_existent = "dne".to_string();
+        let expr1 = Expression::Identifier(non_existent.clone());
+        let sys_vars1 = SystemVariables::default();
+
+        // Attempt to evaluate it
+        let evaluator1 = Evaluator::new(&expr1, &sys_vars1);
+        assert_eq!(
+            evaluator1.evaluate(),
+            Err(EvaluatorError::IdentifierNotFound(non_existent))
+        );
+
+        // Create an expression with an extant identifier
+        let extant = "hello".to_string();
+        let expected = EcmaScriptValue::String(extant.clone());
+        let expr2 = Expression::Identifier(extant.clone());
+        let mut sys_vars2 = SystemVariables::default();
+        sys_vars2.set_data_member(extant.clone(), expected.clone())?;
+
+        // Attempt to evaluate it
+        let evaluator2 = Evaluator::new(&expr2, &sys_vars2);
+        assert_eq!(
+            evaluator2.evaluate(),
+            Ok(expected)
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn string_negation() -> TestResult {
+        // Create an expression with a negated string
+        let test_str = "test".to_string();
+        let expr = Expression::Unary(
+            Unary::Negation(Box::new(Expression::Literal(Literal::String(test_str.clone()))))
+        );
+
+
+        // Attempt to evaluate it
+        assert_eq!(
+            Evaluator::new(
+                &expr,
+                &SystemVariables::default(),
+            ).evaluate(),
+            Err(EvaluatorError::StringNegation(test_str.clone()))
         );
 
         Ok(())
