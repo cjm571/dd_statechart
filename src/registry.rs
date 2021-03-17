@@ -70,6 +70,10 @@ impl Registry {
     /*  *  *  *  *  *  *  *\
      *  Accessor Methods  *
     \*  *  *  *  *  *  *  */
+
+    pub fn get_events(&self) -> &Vec<Event> {
+        &self.events
+    }
     
     pub fn get_state(&self, id: StateId) -> Option<&State> {
         for state in &self.states {

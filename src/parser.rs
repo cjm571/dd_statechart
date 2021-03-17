@@ -433,7 +433,6 @@ impl fmt::Display for ParserError {
                 write!(f, "Node ID {:?} is a <state> element with no 'id' attribute", node_id)
             },
 
-            //FIXME: Align other modules with this style
             // Wrappers
             Self::DataModelError(data_error) => {
                 write!(f, "DataModelError '{:?}' encountered while parsing", data_error)

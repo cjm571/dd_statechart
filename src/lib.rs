@@ -454,21 +454,37 @@ impl From<RegistryError> for StateChartBuilderError {
 
 #[cfg(test)]
 mod tests {
-    use std::error::Error;
+    use std::{
+        error::Error,
+        fmt,
+    };
 
     use crate::{
         StateChartBuilder,
         StateChartBuilderError,
         StateChartError,
         event::Event,
+        parser::Parser,
         registry::RegistryError,
         state::StateBuilder,
         transition::TransitionBuilder,
     };
 
+
+    type TestResult = Result<(), Box<dyn Error>>;
+    
+    #[derive(Debug, PartialEq)]
+    struct GenericError {}
+    impl Error for GenericError {}
+    impl fmt::Display for GenericError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "{:?}", self)
+        }
+    }
+
+
     #[test]
-    fn theia() -> Result<(), Box<dyn Error>>  {
-        //TODO: Extraneous clones
+    fn theia() -> TestResult  {
         // Define Event and State IDs for reference
         let go_to_non_imaging   = Event::from("go_to_non_imaging")?;
         let idle_id             = String::from("IDLE");
@@ -515,8 +531,7 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_state_id() -> Result<(), Box<dyn Error>> {
-        //TODO: Extraneous clones
+    fn duplicate_state_id() -> TestResult {
         // Define states with duplicate IDs
         let duplicate_id = String::from("duplicate");
         let duplicate_a = StateBuilder::new(duplicate_id.clone()).build()?;
@@ -537,7 +552,7 @@ mod tests {
     }
 
     #[test]
-    fn unregistered_event() -> Result<(), Box<dyn Error>>  {
+    fn unregistered_event() -> TestResult  {
         // Create an event but don't register it
         let unregistered_event = Event::from("unregistered")?;
 
@@ -558,8 +573,7 @@ mod tests {
     }
 
     #[test]
-    fn eventless_transition() -> Result<(), Box<dyn Error>> {
-        //TODO: Extraneous clones
+    fn eventless_transition() -> TestResult {
         let start_id = String::from("start");
         let end_id = String::from("end");
 
@@ -602,7 +616,37 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn end_to_end_scxml() -> TestResult {
+        // Parse a StateChart from the microwave SCXML sample
+        let mut parser = Parser::new("res/examples/01_microwave.scxml")?;
+        let mut statechart = parser.parse()?;
+
+        // Create events to be sent (already registered by parsing process)
+        let turn_on = Event::from("turn.on")?;
+        let door_open = Event::from("door.open")?;
+        let door_close = Event::from("door.close")?;
+        let time = Event::from("time")?;
+
+        // Process the events
+        statechart.process_external_event(&turn_on)?;
+        statechart.process_external_event(&door_open)?;
+        statechart.process_external_event(&door_close)?;
+        for _ in 0..5 {
+            statechart.process_external_event(&time)?;
+        }
+
+        eprintln!("*** Active State(s):\n{:#?}", statechart.active_state_ids());
+        assert_eq!(
+            statechart.active_state_ids(),
+            vec!["off".to_string()],
+        );
+
+        Ok(())
+    }
 }
+
 
 #[cfg(test)]
 mod builder_tests {
@@ -615,8 +659,12 @@ mod builder_tests {
         state::StateBuilder,
     };
 
+
+    type TestResult = Result<(), Box<dyn Error>>;
+
+
     #[test]
-    fn initial_state_not_registered() -> Result<(), Box<dyn Error>> {
+    fn initial_state_not_registered() -> TestResult {
         // Create states, one will be registered the other will not
         let unregistered = StateBuilder::new(String::from("unregistered")).build()?;
         let registered = StateBuilder::new(String::from("registered")).build()?;
@@ -637,7 +685,7 @@ mod builder_tests {
     }
 
     #[test]
-    fn no_states_registered() -> Result<(), Box<dyn Error>> {
+    fn no_states_registered() -> TestResult {
         
         assert_eq!(
             StateChartBuilder::default().build(),
