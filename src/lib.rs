@@ -392,10 +392,10 @@ impl fmt::Display for StateChartError {
 
             // Wrappers
             Self::ExecutableContentError(exec_err) => {
-                write!(f, "ExecutableContentError '{}' encountered while building state chart", exec_err)
+                write!(f, "ExecutableContentError '{:?}' encountered while building state chart", exec_err)
             },
             Self::StateError(state_err) => {
-                write!(f, "{}", state_err)
+                write!(f, "StateError '{:?}' encountered while building state chart", state_err)
             },
         }
     }
@@ -431,10 +431,10 @@ impl fmt::Display for StateChartBuilderError {
 
             // Wrappers
             Self::DataModelError(data_err) => {
-                write!(f, "DataModelError '{}' encountered while building state chart", data_err)
+                write!(f, "DataModelError '{:?}' encountered while building state chart", data_err)
             },
             Self::RegistryError(reg_err) => {
-                write!(f, "RegistryError '{}' encountered while building state chart", reg_err)
+                write!(f, "RegistryError '{:?}' encountered while building state chart", reg_err)
             },
         }
     }

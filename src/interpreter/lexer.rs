@@ -299,7 +299,7 @@ impl fmt::Display for LexerError {
 
             // Wrappers
             Self::ParseFloatError(parse_err, start) => {
-                write!(f, "ParseFloatError '{}' encountered in number beginning at position {}", parse_err, start)
+                write!(f, "ParseFloatError '{:?}' encountered in number beginning at position {}", parse_err, start)
             },
         }
     }

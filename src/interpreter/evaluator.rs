@@ -257,7 +257,7 @@ impl fmt::Display for EvaluatorError {
 
             // Wrappers
             Self::EcmaScriptEvalError(ese_err, subexpr) => {
-                write!(f, "EcmaScriptEvalError '{}' encountered while evaluating sub-expression '{}'", ese_err, subexpr)
+                write!(f, "EcmaScriptEvalError '{:?}' encountered while evaluating sub-expression '{}'", ese_err, subexpr)
             }
         }
     }

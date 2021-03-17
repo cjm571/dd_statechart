@@ -68,6 +68,7 @@ pub enum StateError {
     FailedCallback(usize),
     SubstatesSpecifiedWithoutInitial,
 
+    // Wrappers
     TransitionError(TransitionError),
 }
 
@@ -390,7 +391,6 @@ impl fmt::Debug for State {
 
 impl Error for StateError {}
 
-//FIXME: Ensure all errors implement Display only - Debug should be derived
 impl fmt::Display for StateError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -400,10 +400,11 @@ impl fmt::Display for StateError {
             Self::SubstatesSpecifiedWithoutInitial => {
                 write!(f, "State has substates but no Initial State")
             },
-            //FIXME: Look into this sub-error printout. Might be ugly
+            
+            // Wrappers
             Self::TransitionError(trans_err) => {
-                write!(f, "{}", trans_err)
-            }
+                write!(f, "TransitionError '{:?}' encountered while processing State", trans_err)
+            },
         }
     }
 }

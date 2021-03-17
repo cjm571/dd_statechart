@@ -68,6 +68,7 @@ pub struct TransitionId {
 
 #[derive(Debug, PartialEq)]
 pub enum TransitionError {
+    // Wrappers
     InterpreterError(InterpreterError),
 }
 
@@ -267,8 +268,9 @@ impl Error for TransitionError {}
 impl fmt::Display for TransitionError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            // Wrappers
             Self::InterpreterError(interp_err) => {
-                write!(f, "{}", interp_err)
+                write!(f, "InterpreterError '{:?}' encountered while processing a Transition", interp_err)
             },
         }
     }

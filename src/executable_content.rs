@@ -97,8 +97,9 @@ impl Error for ExecutableContentError {}
 impl fmt::Display for ExecutableContentError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            // Wrappers
             Self::InterpreterError(interp_err) => {
-                write!(f, "InterpreterError '{}' encountered within Executable Content", interp_err)
+                write!(f, "InterpreterError '{:?}' encountered within Executable Content", interp_err)
             },
         }
     }

@@ -254,14 +254,16 @@ impl fmt::Display for InterpreterError {
             Self::InvalidOperatorConversion(token) => {
                 write!(f, "Invalid Token->Operator conversion for token '{:?}'", token)
             },
+
+            // Wrappers
             Self::EvaluatorError(eval_err) => {
-                write!(f, "{}", eval_err)
+                write!(f, "EvaluatorError '{:?}' encountered while interpreting", eval_err)
             },
             Self::LexerError(lexer_err) => {
-                write!(f, "{}", lexer_err)
+                write!(f, "LexerError '{:?}' encountered while interpreting", lexer_err)
             },
             Self::ParserError(parse_err) => {
-                write!(f, "{}", parse_err)
+                write!(f, "ParserError '{:?}' encountered while interpreting", parse_err)
             },
         }
     }
