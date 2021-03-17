@@ -34,13 +34,18 @@ use crate::{
     StateChart,
     StateChartBuilder,
     StateChartBuilderError,
-    condition::{
-        Condition,
-        ConditionError,
+    datamodel::{
+        DataModelError,
+        SystemVariables,
     },
     event::{
         Event,
         EventError,
+    },
+    executable_content::ExecutableContent,
+    interpreter::{
+        Interpreter,
+        InterpreterError,
     },
     registry::RegistryError,
     state::{
@@ -48,11 +53,13 @@ use crate::{
         StateBuilder,
         StateBuilderError,
         StateId,
-    }, transition::{
+    },
+    transition::{
         Transition,
         TransitionBuilder,
         TransitionBuilderError,
-    }};
+    }
+};
 
 use uuid::Uuid;
 
@@ -79,18 +86,38 @@ pub struct Parser {
 
 #[derive(Debug, PartialEq)]
 pub enum ParserError {
-    // Primary
-    InitialNodeChildless(String /* Stringified XML Tree Node */),
-    InitialTransitionTargetless(String /* Stringified XML Tree Node */),
-    InvalidScxmlNamespace(String),
-    InvalidScxmlVersion(String),
-    InvalidDataModel(String),
-    InvalidDataItem(String /* Stringified XML Tree Node */),
-    StateHasNoId(String /* Stringified XML Tree Node */),
+    AssignWithoutLocation(
+        String  /* Stringified XML Tree Node */
+    ),
+    AssignWithoutExpr(
+        String  /* Stringified XML Tree Node */
+    ),
+    InitialNodeChildless(
+        String  /* Stringified XML Tree Node */
+    ),
+    InitialTransitionTargetless(
+        String  /* Stringified XML Tree Node */
+    ),
+    InvalidScxmlNamespace(
+        String  /* Invalid namespace */
+    ),
+    InvalidScxmlVersion(
+        String  /* Invalid version */
+    ),
+    InvalidDataModel(
+        String  /* Invalid data model name */
+    ),
+    InvalidDataItem(
+        String  /* Stringified XML Tree Node */
+    ),
+    StateHasNoId(
+        String  /* Stringified XML Tree Node */
+    ),
 
     // Wrappers
-    ConditionError(ConditionError),
+    DataModelError(DataModelError),
     EventError(EventError),
+    InterpreterError(InterpreterError),
     IoError(std::io::ErrorKind),
     RegistryError(RegistryError),
     RoxmlTreeError(roxmltree::Error),
@@ -204,8 +231,10 @@ impl Parser {
     fn parse_element(element: roxmltree::Node, statechart_builder: &mut StateChartBuilder) -> Result<(), ParserError> {
         // Match the element class to the appropriate handling function
         match ValidElementClass::from(element.tag_name().name()) {
-            ValidElementClass::DataModel    => Self::parse_datamodel(element, statechart_builder)?,
-            ValidElementClass::State        => {
+            ValidElementClass::DataModel => {
+                Self::parse_datamodel(element, &mut statechart_builder.sys_vars)?;
+            },
+            ValidElementClass::State => {
                 statechart_builder.state(Self::parse_state(element)?)?;
             },
         }
@@ -213,49 +242,19 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_datamodel(element: roxmltree::Node, statechart_builder: &mut StateChartBuilder) -> Result<(), ParserError> {
+    fn parse_datamodel(element: roxmltree::Node, sys_vars: &mut SystemVariables) -> Result<(), ParserError> {
         // Collect all <data> children
         for child in element.children() {
             // Skip text and comment nodes
             if !child.is_comment() && !child.is_text() {
-                let id;
-                if let Some(id_val) = child.attribute("id") {
-                    id = String::from(id_val);
+                if let (Some(id), Some(expr_str)) = (child.attribute("id"), child.attribute("expr")) {
+                    // Interpret value expression and insert into data map
+                    let interpreter = Interpreter::new(expr_str);
+                    let expr_value = interpreter.interpret(sys_vars)?;
+                    sys_vars.set_data_member(id.to_string(), expr_value);
                 }
                 else {
                     return Err(ParserError::InvalidDataItem(format!("{:?}", element)));
-                }
-
-                let value;
-                if let Some(expr_val) = child.attribute("expr") {
-                    value = String::from(expr_val);
-                }
-                else {
-                    return Err(ParserError::InvalidDataItem(format!("{:?}", element)));
-                }
-
-                // Add data item to the System Variables of the StateChart
-                //TODO: Need smart handling of all possible 'expr' values
-                //      Maybe some fancy enum shenanigans?
-                if let Ok(converted_value) = value.parse::<u32>() {
-                    statechart_builder.sys_vars.set_data_member(
-                        id,
-                        converted_value);
-                }
-                else if value == "true" {
-                    statechart_builder.sys_vars.set_data_member(
-                        id,
-                        1);
-                }
-                else if value == "false" {
-                    statechart_builder.sys_vars.set_data_member(
-                        id,
-                        0);
-                }
-                else {
-                    statechart_builder.sys_vars.set_data_member(
-                        id,
-                        0xDEADBEEF);
                 }
             }
         }
@@ -292,7 +291,12 @@ impl Parser {
 
                 // Handle <transition>
                 if child.tag_name().name() == "transition" {
-                    state_builder = state_builder.transition(Self::parse_transition(child, String::from(state_id))?)?;
+                    state_builder = state_builder.transition(
+                        Self::parse_transition(
+                            child, 
+                            String::from(state_id),
+                        )?
+                    )?;
                 }
 
                 // Handle <initial>, if not already specified
@@ -348,17 +352,40 @@ impl Parser {
         }
 
         // Parse guard condition
-        if let Some(cond_str) = element.attribute("cond") {
-            let cond = Condition::new(cond_str)?;
-            
-            transition_builder = transition_builder.cond(cond)?;
+        if let Some(cond_str) = element.attribute("cond") {            
+            transition_builder = transition_builder.cond(cond_str)?;
         }
 
         // Set target State
         if let Some(target_id) = element.attribute("target") {
             transition_builder = transition_builder.target_id(String::from(target_id))?;
         }
-        
+
+        //TODO: Refactor all child-check loops to use .filter()
+        // Check for Executable Content children, skipping comments and text
+        for child in element.children().filter(|v| !v.is_comment() && !v.is_text()) {
+            // Handle <assign>
+            if child.tag_name().name() == "assign" {
+                if let Some(location) = child.attribute("location") {
+                    // 'expr' may be either an attribute of 'assign', or a child
+                    if let Some(expr) = child.attribute("expr") {    
+                        let assignment = ExecutableContent::Assign(location.to_string(), expr.to_string());
+                        transition_builder = transition_builder.executable_content(assignment)?;
+                    }
+                    else if child.has_children() {
+                        unimplemented!("Multi-line expression are not yet supported");
+                    }
+                    // 'expr' was not specified, this is an error
+                    else {
+                        return Err(ParserError::AssignWithoutExpr(format!("{:?}", child)));
+                    }
+                }
+                // 'location' was not specified, this is an error
+                else {
+                    return Err(ParserError::AssignWithoutLocation(format!("{:?}", child)));
+                }
+            }
+        }
 
         Ok(transition_builder.build())
     }
@@ -378,6 +405,12 @@ impl Error for ParserError {}
 impl fmt::Display for ParserError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Self::AssignWithoutLocation(parent_assign) => {
+                write!(f, "Assignment '{}' is missing a 'location'", parent_assign)
+            },
+            Self::AssignWithoutExpr(parent_assign) => {
+                write!(f, "Assignment '{}' is missing an 'expr'", parent_assign)
+            },
             Self::InitialNodeChildless(parent_state) => {
                 write!(f, "State '{}' contains a childless <initial> element", parent_state)
             },
@@ -399,11 +432,16 @@ impl fmt::Display for ParserError {
             Self::StateHasNoId(node_id) => {
                 write!(f, "Node ID {:?} is a <state> element with no 'id' attribute", node_id)
             },
-            Self::ConditionError(cond_error) => {
-                write!(f, "ConditionError '{:?}' encountered while parsing", cond_error)
+
+            // Wrappers
+            Self::DataModelError(data_error) => {
+                write!(f, "DataModelError '{:?}' encountered while parsing", data_error)
             },
             Self::EventError(event_error) => {
                 write!(f, "EventError '{:?}' encountered while parsing", event_error)
+            },
+            Self::InterpreterError(interp_error) => {
+                write!(f, "InterpreterError '{:?}' encountered while parsing", interp_error)
             },
             Self::IoError(io_err_kind) => {
                 write!(f, "IoError of kind '{:?}' encountered when attempting to create Parser object", io_err_kind)
@@ -427,48 +465,46 @@ impl fmt::Display for ParserError {
     }
 }
 
-impl From<ConditionError> for ParserError {
-    fn from(src: ConditionError) -> Self {
-        Self::ConditionError(src)
+impl From<DataModelError> for ParserError {
+    fn from(src: DataModelError) -> Self {
+        Self::DataModelError(src)
     }
 }
-
 impl From<EventError> for ParserError {
     fn from(src: EventError) -> Self {
         Self::EventError(src)
     }
 }
-
+impl From<InterpreterError> for ParserError {
+    fn from(src: InterpreterError) -> Self {
+        Self::InterpreterError(src)
+    }
+}
 impl From<std::io::Error> for ParserError {
     fn from(src: std::io::Error) -> Self {
         Self::IoError(src.kind())
     }
 }
-
 impl From<RegistryError> for ParserError {
     fn from(src: RegistryError) -> Self {
         Self::RegistryError(src)
     }
 }
-
 impl From<roxmltree::Error> for ParserError {
     fn from(src: roxmltree::Error) -> Self {
         Self::RoxmlTreeError(src)
     }
 }
-
 impl From<StateBuilderError> for ParserError {
     fn from(src: StateBuilderError) -> Self {
         Self::StateBuilderError(src)
     }
 }
-
 impl From<StateChartBuilderError> for ParserError {
     fn from(src: StateChartBuilderError) -> Self {
         Self::StateChartBuilderError(src)
     }
 }
-
 impl From<TransitionBuilderError> for ParserError {
     fn from(src: TransitionBuilderError) -> Self {
         Self::TransitionBuilderError(src)
@@ -503,7 +539,6 @@ mod tests {
 
     use crate::{
         StateChartBuilderError,
-        condition::ConditionError,
         event::{
             Event,
             EventError,
@@ -518,8 +553,37 @@ mod tests {
     };
 
 
+    type TestResult = Result<(), Box<dyn Error>>;
+
+
     #[test]
-    fn initial_node_errors() -> Result<(), Box<dyn Error>> {
+    fn assign_without_location() -> TestResult {
+        let assign_string = "Element { tag_name: {http://www.w3.org/2005/07/scxml}assign, attributes: [Attribute { name: expr, value: \"true\" }], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }".to_string();
+        let mut parser = Parser::new("res/test_cases/assign_without_location.scxml")?;
+
+        assert_eq!(
+            parser.parse(),
+            Err(ParserError::AssignWithoutLocation(assign_string))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn assign_without_expr() -> TestResult {
+        let assign_string = "Element { tag_name: {http://www.w3.org/2005/07/scxml}assign, attributes: [Attribute { name: location, value: \"door_closed\" }], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }".to_string();
+        let mut parser = Parser::new("res/test_cases/assign_without_expr.scxml")?;
+
+        assert_eq!(
+            parser.parse(),
+            Err(ParserError::AssignWithoutExpr(assign_string))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn initial_node_errors() -> TestResult {
         let state_string = String::from("Element { tag_name: {http://www.w3.org/2005/07/scxml}state, attributes: [Attribute { name: id, value: \"on\" }], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }");
 
         let mut parser_childless = Parser::new("res/test_cases/initial_node_childless.scxml")?;
@@ -539,9 +603,9 @@ mod tests {
     }
 
     #[test]
-    fn namespace() -> Result<(), Box<dyn Error>> {
-        let mut parser_a = Parser::new("res/test_cases/namespace_empty.scxml")?;
-        let mut parser_b = Parser::new("res/test_cases/namespace_invalid.scxml")?;
+    fn namespace() -> TestResult {
+        let mut parser_a = Parser::new("res/test_cases/invalid_scxml_namespace_empty.scxml")?;
+        let mut parser_b = Parser::new("res/test_cases/invalid_scxml_namespace_invalid.scxml")?;
         // Verify that the empty namespace is caught
         assert_eq!(
             parser_a.parse(),
@@ -558,9 +622,9 @@ mod tests {
     }
 
     #[test]
-    fn version() -> Result<(), Box<dyn Error>> {
-        let mut parser_a = Parser::new("res/test_cases/version_empty.scxml")?;
-        let mut parser_b = Parser::new("res/test_cases/version_invalid.scxml")?;
+    fn version() -> TestResult {
+        let mut parser_a = Parser::new("res/test_cases/invalid_scxml_version_empty.scxml")?;
+        let mut parser_b = Parser::new("res/test_cases/invalid_scxml_version_invalid.scxml")?;
 
         // Verify that the empty version is caught
         assert_eq!(
@@ -578,7 +642,7 @@ mod tests {
     }
 
     #[test]
-    fn datamodel() -> Result<(), Box<dyn Error>> {
+    fn datamodel() -> TestResult {
         let mut parser_a = Parser::new("res/test_cases/datamodel_empty.scxml")?;
         let mut parser_b = Parser::new("res/test_cases/datamodel_invalid.scxml")?;
 
@@ -598,7 +662,7 @@ mod tests {
     }
 
     #[test]
-    fn data_item_invalid() -> Result<(), Box<dyn Error>> {
+    fn data_item_invalid() -> TestResult {
         let state_string = String::from("Element { tag_name: {http://www.w3.org/2005/07/scxml}datamodel, attributes: [], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }");
         let mut parser = Parser::new("res/test_cases/data_item_invalid.scxml")?;
 
@@ -611,7 +675,7 @@ mod tests {
     }
 
     #[test]
-    fn no_id_state() -> Result<(), Box<dyn Error>> {
+    fn no_id_state() -> TestResult {
         let state_string = String::from("Element { tag_name: {http://www.w3.org/2005/07/scxml}state, attributes: [], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }");
         let mut parser = Parser::new("res/test_cases/state_no_id.scxml")?;
 
@@ -624,19 +688,7 @@ mod tests {
     }
 
     #[test]
-    fn condition_error() -> Result<(), Box<dyn Error>> {
-        let mut parser = Parser::new("res/test_cases/cond_invalid.scxml")?;
-
-        assert_eq!(
-            parser.parse(),
-            Err(ParserError::ConditionError(ConditionError::InvalidArgumentCount))
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn event_error() -> Result<(), Box<dyn Error>> {
+    fn event_error() -> TestResult {
         let mut parser = Parser::new("res/test_cases/event_invalid_id.scxml")?;
 
         assert_eq!(
@@ -648,10 +700,10 @@ mod tests {
     }
 
     #[test]
-    fn io_error() -> Result<(), Box<dyn Error>> {
+    fn io_error() -> TestResult {
         // Attempt to create a parser for a file that does not exist
         assert_eq!(
-            Parser::new("res/test_cases/does_not_exist.scxml"),
+            Parser::new("does_not_exist.scxml"),
             Err(ParserError::IoError(std::io::ErrorKind::NotFound))
         );
 
@@ -659,20 +711,28 @@ mod tests {
     }
 
     #[test]
-    fn registry_error() -> Result<(), Box<dyn Error>> {
+    fn registry_error() -> TestResult {
         let mut parser = Parser::new("res/test_cases/registry_invalid_dup_state.scxml")?;
 
         assert_eq!(
             parser.parse(),
-            Err(ParserError::RegistryError(RegistryError::StateAlreadyRegistered(String::from("duplicate"))))
+            Err(
+                ParserError::StateChartBuilderError(
+                    StateChartBuilderError::RegistryError(
+                        RegistryError::StateAlreadyRegistered(
+                            String::from("duplicate")
+                        )
+                    )
+                )
+            )
         );
 
         Ok(())
     }
 
     #[test]
-    fn roxmltree_error() -> Result<(), Box<dyn Error>> {
-        let mut parser = Parser::new("res/test_cases/xml_invalid.scxml")?;
+    fn roxmltree_error() -> TestResult {
+        let mut parser = Parser::new("res/test_cases/completely_empty.scxml")?;
 
         assert_eq!(
             parser.parse(),
@@ -683,7 +743,7 @@ mod tests {
     }
 
     #[test]
-    fn state_builder_error() -> Result<(), Box<dyn Error>> {
+    fn state_builder_error() -> TestResult {
         let mut parser = Parser::new("res/test_cases/state_invalid_initial.scxml")?;
 
         assert_eq!(
@@ -695,7 +755,7 @@ mod tests {
     }
 
     #[test]
-    fn statechart_builder_error() -> Result<(), Box<dyn Error>> {
+    fn statechart_builder_error() -> TestResult {
         let mut parser = Parser::new("res/test_cases/statechart_invalid_no_states.scxml")?;
 
         assert_eq!(
@@ -707,7 +767,7 @@ mod tests {
     }
 
     #[test]
-    fn transition_builder_error() -> Result<(), Box<dyn Error>> {
+    fn transition_builder_error() -> TestResult {
         let mut parser = Parser::new("res/test_cases/transition_invalid_dup_event.scxml")?;
 
         assert_eq!(
@@ -719,7 +779,7 @@ mod tests {
     }
 
     #[test]
-    fn microwave() -> Result<(), Box<dyn Error>> {
+    fn microwave() -> TestResult {
         let mut parser = Parser::new("res/examples/01_microwave.scxml")?;
 
         // Parse microwave example scxml doc
@@ -737,6 +797,37 @@ mod tests {
             statechart.active_state_ids(),
             vec![String::from("on"), String::from("cooking")],
         );
+
+        // Send a door-open event
+        eprintln!("*** Sending 'door.open' Event...");
+        let door_open = Event::from("door.open")?;
+        statechart.process_external_event(&door_open)?;
+
+        eprintln!("*** Active State(s):\n{:#?}", statechart.active_state_ids());
+        assert_eq!(
+            statechart.active_state_ids(),
+            vec![String::from("on"), String::from("idle")],
+        );
+
+        // Send a door-close event
+        eprintln!("*** Sending 'door.close' Event...");
+        let door_close = Event::from("door.close")?;
+        statechart.process_external_event(&door_close)?;
+
+        eprintln!("*** Active State(s):\n{:#?}", statechart.active_state_ids());
+        assert_eq!(
+            statechart.active_state_ids(),
+            vec![String::from("on"), String::from("cooking")],
+        );
+
+        // Send time event 6x
+        let time = Event::from("time")?;
+        for _ in 0..5 {
+            eprintln!("*** Sending 'time' Event...");
+            statechart.process_external_event(&time)?;
+            eprintln!("*** Current Active State(s):\n{:#?}", statechart.active_state_ids());
+        }
+        eprintln!("*** Current Data Model:\n{:#?}", statechart.sys_vars);
 
         Ok(())
     }

@@ -76,9 +76,9 @@ use std::{
 //  Module Declarations
 ///////////////////////////////////////////////////////////////////////////////
 
-pub mod condition;
 pub mod datamodel;
 pub mod event;
+pub mod executable_content;
 pub mod interpreter;
 pub mod parser;
 pub mod registry;
@@ -86,8 +86,13 @@ pub mod state;
 pub mod transition;
 
 use crate::{
-    datamodel::SystemVariables,
+    datamodel::{
+        DataModelError,
+        SystemVariables,
+    },
     event::Event,
+    executable_content::ExecutableContentError,
+    interpreter::EcmaScriptValue,
     registry::{
         Registry,
         RegistryError,
@@ -122,6 +127,9 @@ pub type StateChartId = String;
 #[derive(Debug, PartialEq)]
 pub enum StateChartError {
     ReceivedUnregisteredEvent(Event),
+
+    // Wrappers
+    ExecutableContentError(ExecutableContentError),
     StateError(StateError),
 }
 
@@ -136,6 +144,10 @@ pub struct StateChartBuilder {
 pub enum StateChartBuilderError {
     InitialStateNotRegistered(StateId),
     NoStatesRegistered,
+
+    // Wrappers
+    DataModelError(DataModelError),
+    RegistryError(RegistryError),
 }
 
 
@@ -169,7 +181,7 @@ impl StateChart {
         self.sys_vars.set_event(event.clone());
         
         // Collect and process the set of enabled Transitions
-        let mut enabled_transition_ids = self.select_transitions(Some(event.clone()));
+        let mut enabled_transition_ids = self.select_transitions(Some(event.clone()))?;
 
         //OPT: *STYLE* I don't like this loop, it's not very easy to tell what's being processed in the microstep
         // Enter Microstep processing loop
@@ -177,7 +189,7 @@ impl StateChart {
             self.process_microstep(enabled_transition_ids)?;
             
             // Select eventless Transitions
-            enabled_transition_ids = self.select_transitions(None);
+            enabled_transition_ids = self.select_transitions(None)?;
             
             // Found eventless Transitions, return to top of loop to process a Microstep
             if !enabled_transition_ids.is_empty() {
@@ -195,7 +207,7 @@ impl StateChart {
                 self.sys_vars.set_event(internal_event.clone());
 
                 // Select transitions for the internal Event and return to top of the loop
-                enabled_transition_ids = self.select_transitions(Some(internal_event));
+                enabled_transition_ids = self.select_transitions(Some(internal_event))?;
                 continue;
             }
         }
@@ -208,19 +220,19 @@ impl StateChart {
      *  Helper Methods    *
     \*  *  *  *  *  *  *  */
 
-    fn select_transitions(&self, event: Option<Event>) -> Vec<TransitionId> {
+    fn select_transitions(&self, event: Option<Event>) -> Result<Vec<TransitionId>, StateChartError> {
         let mut enabled_transitions = Vec::new();
 
         // Traverse the map of states and send the event to each for evaluation
         for state_id in self.registry.get_active_state_ids() {
             let state = self.registry.get_state(state_id).unwrap();
 
-            if let Some(enabled_transition) = state.evaluate_event(event.clone(), &self.sys_vars) {
+            if let Some(enabled_transition) = state.evaluate_event(event.clone(), &self.sys_vars)? {
                 enabled_transitions.push(enabled_transition);
             }
         }
 
-        enabled_transitions
+        Ok(enabled_transitions)
     }
 
     /// Processes a single set of Enabled Transitions.
@@ -238,6 +250,7 @@ impl StateChart {
         for transition_id in exit_sorted_transition_ids {
             // Only operate on Transitions with targets
             //TODO: Possible extraneous clone
+            //TODO: awful style
             if !self.registry.get_transition(transition_id.clone()).unwrap().target_ids().is_empty() {
                 let source_state_id = self.registry.get_transition(transition_id).unwrap().source_id();
                 let source_state = self.registry.get_mut_state(source_state_id).unwrap();
@@ -246,17 +259,24 @@ impl StateChart {
             }
         }
 
-        //TODO: Perform executable content of Transition(s)
+        // Perform executable content of Transition(s)
+        //TODO: Fix this clone/unwrap() hideousness
+        for transition_id in enabled_transition_ids.clone() {
+            let cur_transition = self.registry.get_transition(transition_id).unwrap();
+            for exec_content in cur_transition.executable_content() {
+                exec_content.execute(&mut self.sys_vars)?;
+            }
+        }
         
         //TODO: Sort transition source states into entry order, for now, just copying as-is
         let entry_sorted_transition_ids = enabled_transition_ids;
 
         // Enter target State(s) in "Entry Order"
         for transition_id in entry_sorted_transition_ids {
-            let target_state_ids = self.registry.get_transition(transition_id).unwrap().target_ids();
+            let target_state_ids = self.registry.get_transition(transition_id).unwrap().target_ids().clone();
             //TODO: Sort these too?
             for state_id in target_state_ids {
-                let target_state = self.registry.get_mut_state(state_id).unwrap();
+                let target_state = self.registry.get_mut_state(state_id.clone()).unwrap();
                 target_state.enter()?;
             }
         }
@@ -312,7 +332,7 @@ impl StateChartBuilder {
         self
     }
 
-    pub fn state(&mut self, state: State) -> Result<&mut Self, RegistryError> {        
+    pub fn state(&mut self, state: State) -> Result<&mut Self, StateChartBuilderError> {        
         // Register the State
         self.registry.register_state(state)?;
 
@@ -325,7 +345,7 @@ impl StateChartBuilder {
         self
     }
 
-    pub fn data_member(&mut self, id: String, value: u32) -> &mut Self {
+    pub fn data_member(&mut self, id: String, value: EcmaScriptValue) -> &mut Self {
         self.sys_vars.set_data_member(id, value);
 
         self
@@ -364,17 +384,27 @@ impl fmt::Display for StateChartError {
         match self {
             Self::ReceivedUnregisteredEvent(event) => {
                 write!(f, "Received Event '{}', which is unregistered", event)
-            }
+            },
+
+            // Wrappers
+            Self::ExecutableContentError(exec_err) => {
+                write!(f, "ExecutableContentError '{:?}' encountered while building state chart", exec_err)
+            },
             Self::StateError(state_err) => {
-                write!(f, "{}", state_err)
-            }
+                write!(f, "StateError '{:?}' encountered while building state chart", state_err)
+            },
         }
     }
 }
 
 impl From<StateError> for StateChartError {
-    fn from (source: StateError) -> Self {
-        Self::StateError(source)
+    fn from (src: StateError) -> Self {
+        Self::StateError(src)
+    }
+}
+impl From<ExecutableContentError> for StateChartError {
+    fn from (src: ExecutableContentError) -> Self {
+        Self::ExecutableContentError(src)
     }
 }
 
@@ -393,8 +423,27 @@ impl fmt::Display for StateChartBuilderError {
             },
             Self::NoStatesRegistered => {
                 write!(f, "No States registered")
-            }
+            },
+
+            // Wrappers
+            Self::DataModelError(data_err) => {
+                write!(f, "DataModelError '{:?}' encountered while building state chart", data_err)
+            },
+            Self::RegistryError(reg_err) => {
+                write!(f, "RegistryError '{:?}' encountered while building state chart", reg_err)
+            },
         }
+    }
+}
+
+impl From<DataModelError> for StateChartBuilderError {
+    fn from(src: DataModelError) -> Self {
+        Self::DataModelError(src)
+    }
+}
+impl From<RegistryError> for StateChartBuilderError {
+    fn from(src: RegistryError) -> Self {
+        Self::RegistryError(src)
     }
 }
 
@@ -405,20 +454,37 @@ impl fmt::Display for StateChartBuilderError {
 
 #[cfg(test)]
 mod tests {
-    use std::error::Error;
+    use std::{
+        error::Error,
+        fmt,
+    };
 
     use crate::{
         StateChartBuilder,
+        StateChartBuilderError,
         StateChartError,
         event::Event,
+        parser::Parser,
         registry::RegistryError,
         state::StateBuilder,
         transition::TransitionBuilder,
     };
 
+
+    type TestResult = Result<(), Box<dyn Error>>;
+    
+    #[derive(Debug, PartialEq)]
+    struct GenericError {}
+    impl Error for GenericError {}
+    impl fmt::Display for GenericError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "{:?}", self)
+        }
+    }
+
+
     #[test]
-    fn theia() -> Result<(), Box<dyn Error>>  {
-        //TODO: Extraneous clones
+    fn theia() -> TestResult  {
         // Define Event and State IDs for reference
         let go_to_non_imaging   = Event::from("go_to_non_imaging")?;
         let idle_id             = String::from("IDLE");
@@ -465,8 +531,7 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_state_id() -> Result<(), Box<dyn Error>> {
-        //TODO: Extraneous clones
+    fn duplicate_state_id() -> TestResult {
         // Define states with duplicate IDs
         let duplicate_id = String::from("duplicate");
         let duplicate_a = StateBuilder::new(duplicate_id.clone()).build()?;
@@ -479,7 +544,7 @@ mod tests {
         // Verify that adding the duplicate ID results in an error
         assert_eq!(
             statechart_builder.state(duplicate_b),
-            Err(RegistryError::StateAlreadyRegistered(duplicate_id)),
+            Err(StateChartBuilderError::RegistryError(RegistryError::StateAlreadyRegistered(duplicate_id))),
             "Failed to detect duplicate State ID error."
         );
 
@@ -487,7 +552,7 @@ mod tests {
     }
 
     #[test]
-    fn unregistered_event() -> Result<(), Box<dyn Error>>  {
+    fn unregistered_event() -> TestResult  {
         // Create an event but don't register it
         let unregistered_event = Event::from("unregistered")?;
 
@@ -508,8 +573,7 @@ mod tests {
     }
 
     #[test]
-    fn eventless_transition() -> Result<(), Box<dyn Error>> {
-        //TODO: Extraneous clones
+    fn eventless_transition() -> TestResult {
         let start_id = String::from("start");
         let end_id = String::from("end");
 
@@ -552,7 +616,37 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn end_to_end_scxml() -> TestResult {
+        // Parse a StateChart from the microwave SCXML sample
+        let mut parser = Parser::new("res/examples/01_microwave.scxml")?;
+        let mut statechart = parser.parse()?;
+
+        // Create events to be sent (already registered by parsing process)
+        let turn_on = Event::from("turn.on")?;
+        let door_open = Event::from("door.open")?;
+        let door_close = Event::from("door.close")?;
+        let time = Event::from("time")?;
+
+        // Process the events
+        statechart.process_external_event(&turn_on)?;
+        statechart.process_external_event(&door_open)?;
+        statechart.process_external_event(&door_close)?;
+        for _ in 0..5 {
+            statechart.process_external_event(&time)?;
+        }
+
+        eprintln!("*** Active State(s):\n{:#?}", statechart.active_state_ids());
+        assert_eq!(
+            statechart.active_state_ids(),
+            vec!["off".to_string()],
+        );
+
+        Ok(())
+    }
 }
+
 
 #[cfg(test)]
 mod builder_tests {
@@ -565,8 +659,12 @@ mod builder_tests {
         state::StateBuilder,
     };
 
+
+    type TestResult = Result<(), Box<dyn Error>>;
+
+
     #[test]
-    fn initial_state_not_registered() -> Result<(), Box<dyn Error>> {
+    fn initial_state_not_registered() -> TestResult {
         // Create states, one will be registered the other will not
         let unregistered = StateBuilder::new(String::from("unregistered")).build()?;
         let registered = StateBuilder::new(String::from("registered")).build()?;
@@ -587,7 +685,7 @@ mod builder_tests {
     }
 
     #[test]
-    fn no_states_registered() -> Result<(), Box<dyn Error>> {
+    fn no_states_registered() -> TestResult {
         
         assert_eq!(
             StateChartBuilder::default().build(),

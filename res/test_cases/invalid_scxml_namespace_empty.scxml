@@ -2,4 +2,4 @@
     version="1.0"
     datamodel="null"
     initial="off">
-</scxml>
+</scxml> <!-- ERROR: namespace ('xmlns') is missing -->

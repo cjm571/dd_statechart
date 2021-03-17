@@ -2,7 +2,8 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        name="microwave"
        version="1.0"
-       initial="off"> <!-- NOTE: 'datamodel' attribute omitted, which is not an error -->
+       datamodel="ecmascript"
+       initial="off">
 
   <!--  trivial 5 second microwave oven example -->
   <datamodel>
@@ -23,13 +24,13 @@
     <!-- on/pause state -->
 
     <transition event="turn.off" target="off"/>
-    <transition cond="timer &gt;= cook_time" target="off"/>
+    <transition cond="timer >= cook_time" target="off"/>
 
     <state id="idle">
       <!-- default immediate transition if door is shut -->
       <transition cond="door_closed" target="cooking"/>
       <transition event="door.close" target="cooking">
-        <assign location="door_closed" expr="true"/>
+        <assign location="door_closed"/> <!-- ERROR: Missing 'expr' -->
         <!-- start cooking -->
       </transition>
     </state>

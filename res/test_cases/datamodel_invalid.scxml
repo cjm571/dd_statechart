@@ -2,4 +2,4 @@
        version="1.0"
        datamodel="someotherscript"
        initial="off">
-</scxml>
+</scxml> <!-- ERROR: 'datamodel' attribute invalid -->

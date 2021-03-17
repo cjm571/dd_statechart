@@ -34,6 +34,7 @@ use crate::{
     event::Event,
     transition::{
         Transition,
+        TransitionError,
         TransitionId,
     },
 };
@@ -62,10 +63,13 @@ pub type StateId = String;
 //OPT: *DESIGN* Would it be useful to specify an error type here? Even if it's just Box<dyn Error>?
 pub type Callback = fn() -> Result<(), ()>;
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum StateError {
     FailedCallback(usize),
     SubstatesSpecifiedWithoutInitial,
+
+    // Wrappers
+    TransitionError(TransitionError),
 }
 
 
@@ -177,7 +181,7 @@ impl State {
     }
     
 
-    pub fn evaluate_event(&self, event: Option<Event>, sys_vars: &SystemVariables) -> Option<TransitionId> {
+    pub fn evaluate_event(&self, event: Option<Event>, sys_vars: &SystemVariables) -> Result<Option<TransitionId>, StateError> {
         let mut enable_candidates = Vec::new();
         
         // Handle evaluation of a non-null Event
@@ -203,14 +207,14 @@ impl State {
 
         // Check candidates' Conditions
         for candidate in enable_candidates {
-            if candidate.evaluate_condition(sys_vars) {
+            if candidate.evaluate_condition(sys_vars)? {
                 // Short-circuit and return the Target of the first Transition to be Enabled
-                return Some(candidate.id())
+                return Ok(Some(candidate.id()))
             }
         }
 
         // Either no candidates identified, or none passed their guard condition
-        None
+        Ok(None)
     }
 
     
@@ -387,22 +391,6 @@ impl fmt::Debug for State {
 
 impl Error for StateError {}
 
-impl fmt::Debug for StateError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::FailedCallback(idx) => {
-                f.debug_struct("FailedCallback:")
-                    .field("Index", idx)
-                    .finish()
-            },
-            Self::SubstatesSpecifiedWithoutInitial => {
-                f.debug_struct("SubstatesSpecifiedWithoutInitial")
-                    .finish()
-            },
-        }
-    }
-}
-
 impl fmt::Display for StateError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -412,7 +400,18 @@ impl fmt::Display for StateError {
             Self::SubstatesSpecifiedWithoutInitial => {
                 write!(f, "State has substates but no Initial State")
             },
+            
+            // Wrappers
+            Self::TransitionError(trans_err) => {
+                write!(f, "TransitionError '{:?}' encountered while processing State", trans_err)
+            },
         }
+    }
+}
+
+impl From<TransitionError> for StateError {
+    fn from(src: TransitionError) -> Self {
+        Self::TransitionError(src)
     }
 }
 

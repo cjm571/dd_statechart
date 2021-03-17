@@ -5,7 +5,7 @@
        datamodel="ecmascript"
        initial="off">
 
-  <state id="off" initial="dne">
+  <state id="off" initial="dne"> <!-- ERROR: 'initial' attribute refers to state that does not exist-->
     <transition event="turn.on" target="on"/>
   </state>
   

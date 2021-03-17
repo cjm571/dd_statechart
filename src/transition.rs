@@ -30,9 +30,13 @@ use std::{
 };
 
 use crate::{
-    condition::Condition,
     datamodel::SystemVariables,
     event::Event,
+    executable_content::ExecutableContent,
+    interpreter::{
+        Interpreter,
+        InterpreterError,
+    },
     state::StateId,
 };
 
@@ -45,11 +49,13 @@ use crate::{
 /// (source) state to a target state
 #[derive(Clone, PartialEq)]
 pub struct Transition {
-    id:         TransitionId,
-    events:     Vec<Event>,
-    cond:       Condition,
-    source_id:  StateId,
-    target_ids: Vec<StateId>,
+    id:                 TransitionId,
+    events:             Vec<Event>,
+    //OPT: *PERFORMANCE* Store lexed/parsed expression here?
+    cond:               String,
+    source_id:          StateId,
+    target_ids:         Vec<StateId>,
+    executable_content: Vec<ExecutableContent>,
 }
 
 #[derive(Clone, Default, PartialEq)]
@@ -60,15 +66,22 @@ pub struct TransitionId {
     targets:    Vec<StateId>,
 }
 
+#[derive(Debug, PartialEq)]
+pub enum TransitionError {
+    // Wrappers
+    InterpreterError(InterpreterError),
+}
+
 
 #[derive(Debug, PartialEq)]
 pub struct TransitionBuilder {
-    id:         TransitionId,
-    events:     Vec<Event>,
-    cond:       Condition,
-    cond_set:   bool,
-    source_id:  StateId,
-    target_ids: Vec<StateId>,
+    id:                 TransitionId,
+    events:             Vec<Event>,
+    cond:               String,
+    cond_set:           bool,
+    source_id:          StateId,
+    target_ids:         Vec<StateId>,
+    executable_content: Vec<ExecutableContent>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -103,9 +116,12 @@ impl Transition {
         self.source_id.clone()
     }
 
-    pub fn target_ids(&self) -> Vec<StateId> {
-        // Clone is necessary to avoid issues with borrow-checker
-        self.target_ids.clone()
+    pub fn target_ids(&self) -> &Vec<StateId> {
+        &self.target_ids
+    }
+
+    pub fn executable_content(&self) -> &Vec<ExecutableContent> {
+        &self.executable_content
     }
 
 
@@ -114,8 +130,9 @@ impl Transition {
     \*  *  *  *  *  *  *  */
     
     /// Evaluates the guard condition for this Transition
-    pub fn evaluate_condition(&self, sys_vars: &SystemVariables) -> bool {
-        self.cond.evaluate(sys_vars)
+    pub fn evaluate_condition(&self, sys_vars: &SystemVariables) -> Result<bool, TransitionError> {
+        let interpreter = Interpreter::new(self.cond.as_str());
+        Ok(interpreter.interpret_as_bool(sys_vars)?)
         
         //TODO: If condition has returned an error, an 'error.execution' event must be placed on the internal event queue
         //      See §5.9.1
@@ -126,12 +143,13 @@ impl Transition {
 impl TransitionBuilder {
     pub fn new(source_state_id: StateId) -> Self {
         Self {
-            id:         TransitionId::default(),
-            events:     Vec::new(),
-            cond:       Condition::default(),
-            cond_set:   false,
-            source_id:  source_state_id,
-            target_ids: Vec::new(),
+            id:                 TransitionId::default(),
+            events:             Vec::new(),
+            cond:               String::from("true"),
+            cond_set:           false,
+            source_id:          source_state_id,
+            target_ids:         Vec::new(),
+            executable_content: Vec::new(),
         }
     }
 
@@ -161,10 +179,11 @@ impl TransitionBuilder {
 
         Transition {
             id,
-            events:     self.events,
-            cond:       self.cond,
-            source_id:  self.source_id.clone(),
-            target_ids: self.target_ids,
+            events:             self.events,
+            cond:               self.cond,
+            source_id:          self.source_id.clone(),
+            target_ids:         self.target_ids,
+            executable_content: self.executable_content,
         }
     }
 
@@ -179,13 +198,13 @@ impl TransitionBuilder {
         Ok(self)
     }
 
-    pub fn cond(mut self, cond: Condition) -> Result<Self, TransitionBuilderError> {
+    pub fn cond(mut self, cond: &str) -> Result<Self, TransitionBuilderError> {
         // Ensure condition has not already been set
         if self.cond_set {
             return Err(TransitionBuilderError::ConditionAlreadySet);
         }
         
-        self.cond = cond;
+        self.cond = String::from(cond);
         self.cond_set = true;
 
         Ok(self)
@@ -203,6 +222,14 @@ impl TransitionBuilder {
         }
 
         self.target_ids.push(target_id);
+
+        Ok(self)
+    }
+
+    pub fn executable_content(mut self, content: ExecutableContent) -> Result<Self, TransitionBuilderError> {
+        //TODO: Sanity checks and stuff
+
+        self.executable_content.push(content);
 
         Ok(self)
     }
@@ -226,6 +253,30 @@ impl fmt::Debug for Transition {
             .field("source_id",     &self.source_id)
             .field("target_ids",    &self.target_ids)
             .finish()
+    }
+}
+
+
+/*  *  *  *  *  *  *  *  *  *\
+ *      TransitionError     *
+\*  *  *  *  *  *  *  *  *  */
+
+impl Error for TransitionError {}
+
+impl fmt::Display for TransitionError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            // Wrappers
+            Self::InterpreterError(interp_err) => {
+                write!(f, "InterpreterError '{:?}' encountered while processing a Transition", interp_err)
+            },
+        }
+    }
+}
+
+impl From<InterpreterError> for TransitionError {
+    fn from(src: InterpreterError) -> Self {
+        Self::InterpreterError(src)
     }
 }
 
@@ -282,7 +333,6 @@ mod builder_tests {
     use std::error::Error;
 
     use crate::{
-        condition::Condition,
         event::Event,
         transition::{
             TransitionBuilder,
@@ -345,10 +395,10 @@ mod builder_tests {
     fn condition_already_set() -> Result<(), Box<dyn Error>> {
         // Verify that already-set condition is caught
         let builder = TransitionBuilder::new(String::from("source"))
-            .cond(Condition::default())?;
+            .cond("true")?;
 
         assert_eq!(
-            builder.cond(Condition::default()),
+            builder.cond("true"),
             Err(TransitionBuilderError::ConditionAlreadySet),
             "Failed to catch already-set condition"
         );

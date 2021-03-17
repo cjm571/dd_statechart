@@ -6,7 +6,7 @@
        initial="off">
 
   <state id="off">
-    <transition event="turn.on.on" target="on"/>
+    <transition event="turn.on.on" target="on"/> <!-- ERROR: Event ID contains duplicate nodes -->
   </state>
   
   <state id="on">
