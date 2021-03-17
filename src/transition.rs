@@ -51,7 +51,7 @@ use crate::{
 pub struct Transition {
     id:                 TransitionId,
     events:             Vec<Event>,
-    //FIXME: Investigate if it makes sense to store the lexed/parsed expression here
+    //OPT: *PERFORMANCE* Store lexed/parsed expression here?
     cond:               String,
     source_id:          StateId,
     target_ids:         Vec<StateId>,
@@ -116,10 +116,8 @@ impl Transition {
         self.source_id.clone()
     }
 
-    pub fn target_ids(&self) -> Vec<StateId> {
-        // Clone is necessary to avoid issues with borrow-checker
-        //FIXME: ARE YOU SURE ABOUT THAT
-        self.target_ids.clone()
+    pub fn target_ids(&self) -> &Vec<StateId> {
+        &self.target_ids
     }
 
     pub fn executable_content(&self) -> &Vec<ExecutableContent> {

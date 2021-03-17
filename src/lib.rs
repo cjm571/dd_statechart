@@ -250,7 +250,7 @@ impl StateChart {
         for transition_id in exit_sorted_transition_ids {
             // Only operate on Transitions with targets
             //TODO: Possible extraneous clone
-            //FIXME: awful style
+            //TODO: awful style
             if !self.registry.get_transition(transition_id.clone()).unwrap().target_ids().is_empty() {
                 let source_state_id = self.registry.get_transition(transition_id).unwrap().source_id();
                 let source_state = self.registry.get_mut_state(source_state_id).unwrap();
@@ -259,16 +259,12 @@ impl StateChart {
             }
         }
 
-        //TODO: Perform executable content of Transition(s)
-        //FIXME: Fix this clone hideousness
+        // Perform executable content of Transition(s)
+        //TODO: Fix this clone/unwrap() hideousness
         for transition_id in enabled_transition_ids.clone() {
-            if let Some(cur_transition) = self.registry.get_transition(transition_id) {
-                for exec_content in cur_transition.executable_content() {
-                    exec_content.execute(&mut self.sys_vars)?;
-                }
-            }
-            else {
-                //FIXME: HANDLE ERROR OR SOMETHING
+            let cur_transition = self.registry.get_transition(transition_id).unwrap();
+            for exec_content in cur_transition.executable_content() {
+                exec_content.execute(&mut self.sys_vars)?;
             }
         }
         
@@ -277,10 +273,10 @@ impl StateChart {
 
         // Enter target State(s) in "Entry Order"
         for transition_id in entry_sorted_transition_ids {
-            let target_state_ids = self.registry.get_transition(transition_id).unwrap().target_ids();
+            let target_state_ids = self.registry.get_transition(transition_id).unwrap().target_ids().clone();
             //TODO: Sort these too?
             for state_id in target_state_ids {
-                let target_state = self.registry.get_mut_state(state_id).unwrap();
+                let target_state = self.registry.get_mut_state(state_id.clone()).unwrap();
                 target_state.enter()?;
             }
         }
