@@ -3,5 +3,5 @@
        name="microwave"
        version="1.0"
        datamodel="ecmascript">
-  
+  <!-- ERROR: no states -->
 </scxml>

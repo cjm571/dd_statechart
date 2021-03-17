@@ -18,7 +18,7 @@
   </state>
 
   <state id="on">
-    <initial>
+    <initial> <!-- ERROR: Childless initial state -->
     </initial>
     <!-- on/pause state -->
 

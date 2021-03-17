@@ -40,7 +40,7 @@ use uuid::Uuid;
 //  Data Structures
 ///////////////////////////////////////////////////////////////////////////////
 
-//FIXME: Is this Clone necessary?
+//OPT: *PERFORMANCE* Clone is not necessary, but requires major re-architecting of StateChartBuilder
 #[derive(Clone, Debug, PartialEq)]
 pub struct SystemVariables {
     _event:         Option<Event>,

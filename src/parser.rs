@@ -86,14 +86,33 @@ pub struct Parser {
 
 #[derive(Debug, PartialEq)]
 pub enum ParserError {
-    // Primary
-    InitialNodeChildless(String /* Stringified XML Tree Node */),
-    InitialTransitionTargetless(String /* Stringified XML Tree Node */),
-    InvalidScxmlNamespace(String),
-    InvalidScxmlVersion(String),
-    InvalidDataModel(String),
-    InvalidDataItem(String /* Stringified XML Tree Node */),
-    StateHasNoId(String /* Stringified XML Tree Node */),
+    AssignWithoutLocation(
+        String  /* Stringified XML Tree Node */
+    ),
+    AssignWithoutExpr(
+        String  /* Stringified XML Tree Node */
+    ),
+    InitialNodeChildless(
+        String  /* Stringified XML Tree Node */
+    ),
+    InitialTransitionTargetless(
+        String  /* Stringified XML Tree Node */
+    ),
+    InvalidScxmlNamespace(
+        String  /* Invalid namespace */
+    ),
+    InvalidScxmlVersion(
+        String  /* Invalid version */
+    ),
+    InvalidDataModel(
+        String  /* Invalid data model name */
+    ),
+    InvalidDataItem(
+        String  /* Stringified XML Tree Node */
+    ),
+    StateHasNoId(
+        String  /* Stringified XML Tree Node */
+    ),
 
     // Wrappers
     DataModelError(DataModelError),
@@ -347,18 +366,26 @@ impl Parser {
         for child in element.children().filter(|v| !v.is_comment() && !v.is_text()) {
             // Handle <assign>
             if child.tag_name().name() == "assign" {
-                if let (Some(location), Some(expr)) = (child.attribute("location"), child.attribute("expr")) {
-                    let assignment = ExecutableContent::Assign(location.to_string(), expr.to_string());
-                    transition_builder = transition_builder.executable_content(assignment)?;
+                if let Some(location) = child.attribute("location") {
+                    // 'expr' may be either an attribute of 'assign', or a child
+                    if let Some(expr) = child.attribute("expr") {    
+                        let assignment = ExecutableContent::Assign(location.to_string(), expr.to_string());
+                        transition_builder = transition_builder.executable_content(assignment)?;
+                    }
+                    else if child.has_children() {
+                        unimplemented!("Multi-line expression are not yet supported");
+                    }
+                    // 'expr' was not specified, this is an error
+                    else {
+                        return Err(ParserError::AssignWithoutExpr(format!("{:?}", child)));
+                    }
                 }
+                // 'location' was not specified, this is an error
                 else {
-                    //FIXME: Proper error return here!
+                    return Err(ParserError::AssignWithoutLocation(format!("{:?}", child)));
                 }
             }
         }
-        
-
-        //FEAT: Conform to the validity rules in Sec5.4
 
         Ok(transition_builder.build())
     }
@@ -378,6 +405,12 @@ impl Error for ParserError {}
 impl fmt::Display for ParserError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Self::AssignWithoutLocation(parent_assign) => {
+                write!(f, "Assignment '{}' is missing a 'location'", parent_assign)
+            },
+            Self::AssignWithoutExpr(parent_assign) => {
+                write!(f, "Assignment '{}' is missing an 'expr'", parent_assign)
+            },
             Self::InitialNodeChildless(parent_state) => {
                 write!(f, "State '{}' contains a childless <initial> element", parent_state)
             },
@@ -521,8 +554,37 @@ mod tests {
     };
 
 
+    type TestResult = Result<(), Box<dyn Error>>;
+
+
     #[test]
-    fn initial_node_errors() -> Result<(), Box<dyn Error>> {
+    fn assign_without_location() -> TestResult {
+        let assign_string = "Element { tag_name: {http://www.w3.org/2005/07/scxml}assign, attributes: [Attribute { name: expr, value: \"true\" }], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }".to_string();
+        let mut parser = Parser::new("res/test_cases/assign_without_location.scxml")?;
+
+        assert_eq!(
+            parser.parse(),
+            Err(ParserError::AssignWithoutLocation(assign_string))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn assign_without_expr() -> TestResult {
+        let assign_string = "Element { tag_name: {http://www.w3.org/2005/07/scxml}assign, attributes: [Attribute { name: location, value: \"door_closed\" }], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }".to_string();
+        let mut parser = Parser::new("res/test_cases/assign_without_expr.scxml")?;
+
+        assert_eq!(
+            parser.parse(),
+            Err(ParserError::AssignWithoutExpr(assign_string))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn initial_node_errors() -> TestResult {
         let state_string = String::from("Element { tag_name: {http://www.w3.org/2005/07/scxml}state, attributes: [Attribute { name: id, value: \"on\" }], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }");
 
         let mut parser_childless = Parser::new("res/test_cases/initial_node_childless.scxml")?;
@@ -542,9 +604,9 @@ mod tests {
     }
 
     #[test]
-    fn namespace() -> Result<(), Box<dyn Error>> {
-        let mut parser_a = Parser::new("res/test_cases/namespace_empty.scxml")?;
-        let mut parser_b = Parser::new("res/test_cases/namespace_invalid.scxml")?;
+    fn namespace() -> TestResult {
+        let mut parser_a = Parser::new("res/test_cases/invalid_scxml_namespace_empty.scxml")?;
+        let mut parser_b = Parser::new("res/test_cases/invalid_scxml_namespace_invalid.scxml")?;
         // Verify that the empty namespace is caught
         assert_eq!(
             parser_a.parse(),
@@ -561,9 +623,9 @@ mod tests {
     }
 
     #[test]
-    fn version() -> Result<(), Box<dyn Error>> {
-        let mut parser_a = Parser::new("res/test_cases/version_empty.scxml")?;
-        let mut parser_b = Parser::new("res/test_cases/version_invalid.scxml")?;
+    fn version() -> TestResult {
+        let mut parser_a = Parser::new("res/test_cases/invalid_scxml_version_empty.scxml")?;
+        let mut parser_b = Parser::new("res/test_cases/invalid_scxml_version_invalid.scxml")?;
 
         // Verify that the empty version is caught
         assert_eq!(
@@ -581,7 +643,7 @@ mod tests {
     }
 
     #[test]
-    fn datamodel() -> Result<(), Box<dyn Error>> {
+    fn datamodel() -> TestResult {
         let mut parser_a = Parser::new("res/test_cases/datamodel_empty.scxml")?;
         let mut parser_b = Parser::new("res/test_cases/datamodel_invalid.scxml")?;
 
@@ -600,9 +662,8 @@ mod tests {
         Ok(())
     }
 
-    //FIXME: Annotate test case .xml files to show where the error lies
     #[test]
-    fn data_item_invalid() -> Result<(), Box<dyn Error>> {
+    fn data_item_invalid() -> TestResult {
         let state_string = String::from("Element { tag_name: {http://www.w3.org/2005/07/scxml}datamodel, attributes: [], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }");
         let mut parser = Parser::new("res/test_cases/data_item_invalid.scxml")?;
 
@@ -615,7 +676,7 @@ mod tests {
     }
 
     #[test]
-    fn no_id_state() -> Result<(), Box<dyn Error>> {
+    fn no_id_state() -> TestResult {
         let state_string = String::from("Element { tag_name: {http://www.w3.org/2005/07/scxml}state, attributes: [], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }");
         let mut parser = Parser::new("res/test_cases/state_no_id.scxml")?;
 
@@ -628,7 +689,7 @@ mod tests {
     }
 
     #[test]
-    fn event_error() -> Result<(), Box<dyn Error>> {
+    fn event_error() -> TestResult {
         let mut parser = Parser::new("res/test_cases/event_invalid_id.scxml")?;
 
         assert_eq!(
@@ -640,10 +701,10 @@ mod tests {
     }
 
     #[test]
-    fn io_error() -> Result<(), Box<dyn Error>> {
+    fn io_error() -> TestResult {
         // Attempt to create a parser for a file that does not exist
         assert_eq!(
-            Parser::new("res/test_cases/does_not_exist.scxml"),
+            Parser::new("does_not_exist.scxml"),
             Err(ParserError::IoError(std::io::ErrorKind::NotFound))
         );
 
@@ -651,7 +712,7 @@ mod tests {
     }
 
     #[test]
-    fn registry_error() -> Result<(), Box<dyn Error>> {
+    fn registry_error() -> TestResult {
         let mut parser = Parser::new("res/test_cases/registry_invalid_dup_state.scxml")?;
 
         assert_eq!(
@@ -671,8 +732,8 @@ mod tests {
     }
 
     #[test]
-    fn roxmltree_error() -> Result<(), Box<dyn Error>> {
-        let mut parser = Parser::new("res/test_cases/xml_invalid.scxml")?;
+    fn roxmltree_error() -> TestResult {
+        let mut parser = Parser::new("res/test_cases/completely_empty.scxml")?;
 
         assert_eq!(
             parser.parse(),
@@ -683,7 +744,7 @@ mod tests {
     }
 
     #[test]
-    fn state_builder_error() -> Result<(), Box<dyn Error>> {
+    fn state_builder_error() -> TestResult {
         let mut parser = Parser::new("res/test_cases/state_invalid_initial.scxml")?;
 
         assert_eq!(
@@ -695,7 +756,7 @@ mod tests {
     }
 
     #[test]
-    fn statechart_builder_error() -> Result<(), Box<dyn Error>> {
+    fn statechart_builder_error() -> TestResult {
         let mut parser = Parser::new("res/test_cases/statechart_invalid_no_states.scxml")?;
 
         assert_eq!(
@@ -707,7 +768,7 @@ mod tests {
     }
 
     #[test]
-    fn transition_builder_error() -> Result<(), Box<dyn Error>> {
+    fn transition_builder_error() -> TestResult {
         let mut parser = Parser::new("res/test_cases/transition_invalid_dup_event.scxml")?;
 
         assert_eq!(
@@ -719,7 +780,7 @@ mod tests {
     }
 
     #[test]
-    fn microwave() -> Result<(), Box<dyn Error>> {
+    fn microwave() -> TestResult {
         let mut parser = Parser::new("res/examples/01_microwave.scxml")?;
 
         // Parse microwave example scxml doc

@@ -5,7 +5,7 @@
        datamodel="ecmascript"
        initial="off">
 
-  <state>
+  <state> <!-- ERROR: state missing 'id' attribute -->
     <!-- off state -->
     <transition event="turn.on" target="on"/>
   </state>

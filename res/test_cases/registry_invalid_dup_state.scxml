@@ -8,7 +8,7 @@
     <transition event="turn.on" target="on"/>
   </state>
   
-  <state id="duplicate">
+  <state id="duplicate"> <!-- ERROR: Duplicate state-->
     <transition event="turn.on" target="on"/>
   </state>
   

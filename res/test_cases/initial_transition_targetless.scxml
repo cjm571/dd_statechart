@@ -19,7 +19,7 @@
 
   <state id="on">
     <initial>
-        <transition/>
+        <transition/> <!-- ERROR: Initial transition missing target -->
     </initial>
     <!-- on/pause state -->
 

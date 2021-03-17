@@ -24,13 +24,13 @@
     <!-- on/pause state -->
 
     <transition event="turn.off" target="off"/>
-    <transition cond="timer >= cook_time > too_many_args" target="off"/>
+    <transition cond="timer >= cook_time" target="off"/>
 
     <state id="idle">
       <!-- default immediate transition if door is shut -->
       <transition cond="door_closed" target="cooking"/>
       <transition event="door.close" target="cooking">
-        <assign location="door_closed" expr="true"/>
+        <assign expr="true"/> <!-- ERROR: Missing 'location' -->
         <!-- start cooking -->
       </transition>
     </state>

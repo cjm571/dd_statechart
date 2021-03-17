@@ -76,7 +76,6 @@ impl ExecutableContent {
                 // Set the value in the data model
                 sys_vars.set_data_member(location.clone(), value);
 
-                //FIXME: Return an appropriate value instead of OK...
                 Ok(())
             },
             _ => unimplemented!(),

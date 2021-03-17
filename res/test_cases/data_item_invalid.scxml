@@ -7,7 +7,7 @@
 
   <datamodel>
     <data id="cook_time" expr="5"/>
-    <data expr="true"/>
+    <data expr="true"/> <!-- ERROR: data missing 'id' attribute -->
     <data id="timer" expr="0"/>
   </datamodel>
 
