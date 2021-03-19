@@ -132,7 +132,8 @@ impl Transition {
     /// Evaluates the guard condition for this Transition
     pub fn evaluate_condition(&self, sys_vars: &SystemVariables) -> Result<bool, TransitionError> {
         let interpreter = Interpreter::new(self.cond.as_str());
-        Ok(interpreter.interpret_as_bool(sys_vars)?)
+        
+        interpreter.interpret_as_bool(sys_vars).map_err(TransitionError::InterpreterError)
         
         //TODO: If condition has returned an error, an 'error.execution' event must be placed on the internal event queue
         //      See §5.9.1

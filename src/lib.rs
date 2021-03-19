@@ -93,6 +93,10 @@ use crate::{
     event::Event,
     executable_content::ExecutableContentError,
     interpreter::EcmaScriptValue,
+    parser::{
+        Parser,
+        ParserError,
+    },
     registry::{
         Registry,
         RegistryError,
@@ -130,6 +134,7 @@ pub enum StateChartError {
 
     // Wrappers
     ExecutableContentError(ExecutableContentError),
+    ParserError(ParserError),
     StateError(StateError),
 }
 
@@ -156,6 +161,14 @@ pub enum StateChartBuilderError {
 ///////////////////////////////////////////////////////////////////////////////
 
 impl StateChart {
+    pub fn from(path: &str) -> Result<Self, StateChartError> {
+        // Parse the SCXML doc at the given path
+        Parser::new(path)
+            .map_err(StateChartError::ParserError)?
+            .parse()
+            .map_err(StateChartError::ParserError)
+    }
+
 
     /*  *  *  *  *  *  *  *\
      *  Accessor Methods  *
@@ -390,6 +403,9 @@ impl fmt::Display for StateChartError {
             Self::ExecutableContentError(exec_err) => {
                 write!(f, "ExecutableContentError '{:?}' encountered while building state chart", exec_err)
             },
+            Self::ParserError(parse_err) => {
+                write!(f, "ParserError '{:?}' encountered while building state chart", parse_err)
+            },
             Self::StateError(state_err) => {
                 write!(f, "StateError '{:?}' encountered while building state chart", state_err)
             },
@@ -460,11 +476,11 @@ mod tests {
     };
 
     use crate::{
+        StateChart,
+        StateChartError,
         StateChartBuilder,
         StateChartBuilderError,
-        StateChartError,
         event::Event,
-        parser::Parser,
         registry::RegistryError,
         state::StateBuilder,
         transition::TransitionBuilder,
@@ -620,8 +636,7 @@ mod tests {
     #[test]
     fn end_to_end_scxml() -> TestResult {
         // Parse a StateChart from the microwave SCXML sample
-        let mut parser = Parser::new("res/examples/01_microwave.scxml")?;
-        let mut statechart = parser.parse()?;
+        let mut statechart = StateChart::from("res/examples/01_microwave.scxml")?;
 
         // Create events to be sent (already registered by parsing process)
         let turn_on = Event::from("turn.on")?;

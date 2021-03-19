@@ -183,7 +183,7 @@ impl Parser {
             }
         }
 
-        Ok(self.statechart_builder.build()?)
+        self.statechart_builder.build().map_err(ParserError::StateChartBuilderError)
     }
 
 
@@ -334,7 +334,7 @@ impl Parser {
             }
         }
 
-        Ok(state_builder.build()?)
+        state_builder.build().map_err(ParserError::StateBuilderError)
     }
 
     fn parse_transition(element: roxmltree::Node, parent_id: StateId) -> Result<Transition, ParserError> {

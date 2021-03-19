@@ -199,16 +199,13 @@ impl<'s> Interpreter<'s> {
 
     pub fn interpret(&self, sys_vars: &SystemVariables) -> Result<EcmaScriptValue, InterpreterError> {
         // Scan input string for tokens
-        let mut lexer = Lexer::new(self.expr_str);
-        let tokens = lexer.scan()?;
+        let tokens = Lexer::new(self.expr_str).scan()?;
 
         // Parse tokens for expression
-        let mut parser = Parser::new(&tokens);
-        let expr = parser.parse()?;
+        let expr = Parser::new(&tokens).parse()?;
 
         // Evaluate expression
-        let evaluator = Evaluator::new(&expr, sys_vars);
-        Ok(evaluator.evaluate()?)
+        Evaluator::new(&expr, sys_vars).evaluate().map_err(InterpreterError::EvaluatorError)
     }
 
     pub fn interpret_as_bool(&self, sys_vars: &SystemVariables) -> Result<bool, InterpreterError> {
