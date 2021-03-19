@@ -98,6 +98,9 @@ pub enum ParserError {
     InitialTransitionTargetless(
         String  /* Stringified XML Tree Node */
     ),
+    InvalidScxmlChild(
+        String  /* Name of child element */
+    ),
     InvalidScxmlNamespace(
         String  /* Invalid namespace */
     ),
@@ -146,7 +149,7 @@ impl Parser {
         
         Ok(
             Self {
-                path:               String::from(path),
+                path:               path.to_string(),
                 content:            file_contents,
                 statechart_builder: StateChartBuilder::default(),
             }
@@ -162,7 +165,7 @@ impl Parser {
 
         // Get Initial State from <scxml>, if specified
         if let Some(initial) = parsed_content.root_element().attribute("initial") {
-            self.statechart_builder.initial(String::from(initial));
+            self.statechart_builder.initial(initial.to_string());
         }
 
         // Get StateChart name from <scxml>, if specified
@@ -174,12 +177,28 @@ impl Parser {
             self.statechart_builder.name(Uuid::new_v4().to_string().as_str());
         }
 
-        // Begin iterating through the parsed content
-        for child in parsed_content.root_element().children() {
-            // Skip text and comment nodes
-            if !child.is_comment() && !child.is_text() {
-                // Make the appropriate callback for the type of element
-                Self::parse_element(child, &mut self.statechart_builder)?;
+        // Begin iterating through the parsed content, skipping comment and text nodes
+        for child in parsed_content.root_element().children().filter(|v| v.is_element()) {
+            // Parse element based on its tag name
+            match child.tag_name().name() {
+                "datamodel" => {
+                    Self::parse_datamodel(child, &mut self.statechart_builder.sys_vars)?;
+                },
+                "final" => {
+                    unimplemented!("Final states are not supported.")
+                }
+                "parallel" => {
+                    unimplemented!("Parallel States not yet supported.")
+                },
+                "script" => {
+                    unimplemented!("Scripting is not yet supported.")
+                },
+                "state" => {
+                    self.statechart_builder.state(Self::parse_state(child)?)?;
+                },
+                unexpected => {
+                    return Err(ParserError::InvalidScxmlChild(unexpected.to_string()));
+                }
             }
         }
 
@@ -198,7 +217,7 @@ impl Parser {
         // Verify namespace
         if let Some(namespace) = root_node.tag_name().namespace() {
             if namespace != VALID_SCXML_NAMESPACE {
-                return Err(ParserError::InvalidScxmlNamespace(String::from(namespace)));
+                return Err(ParserError::InvalidScxmlNamespace(namespace.to_string()));
             }
         }
         else {
@@ -209,7 +228,7 @@ impl Parser {
         // Verify version
         if let Some(version) = root_node.attribute("version") {
             if version != VALID_SCXML_VERSION {
-                return Err(ParserError::InvalidScxmlVersion(String::from(version)));
+                return Err(ParserError::InvalidScxmlVersion(version.to_string()));
             }
         }
         else {
@@ -220,7 +239,7 @@ impl Parser {
         // Verify datamodel
         if let Some(datamodel) = root_node.attribute("datamodel") {
             if datamodel != VALID_DATAMODEL {
-                return Err(ParserError::InvalidDataModel(String::from(datamodel)));
+                return Err(ParserError::InvalidDataModel(datamodel.to_string()));
             }
         }
         // NOTE: Not specifying datamodel is allowable - ECMAScript will be assumed.
@@ -228,34 +247,17 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_element(element: roxmltree::Node, statechart_builder: &mut StateChartBuilder) -> Result<(), ParserError> {
-        // Match the element class to the appropriate handling function
-        match ValidElementClass::from(element.tag_name().name()) {
-            ValidElementClass::DataModel => {
-                Self::parse_datamodel(element, &mut statechart_builder.sys_vars)?;
-            },
-            ValidElementClass::State => {
-                statechart_builder.state(Self::parse_state(element)?)?;
-            },
-        }
-
-        Ok(())
-    }
-
     fn parse_datamodel(element: roxmltree::Node, sys_vars: &mut SystemVariables) -> Result<(), ParserError> {
         // Collect all <data> children
-        for child in element.children() {
-            // Skip text and comment nodes
-            if !child.is_comment() && !child.is_text() {
-                if let (Some(id), Some(expr_str)) = (child.attribute("id"), child.attribute("expr")) {
-                    // Interpret value expression and insert into data map
-                    let interpreter = Interpreter::new(expr_str);
-                    let expr_value = interpreter.interpret(sys_vars)?;
-                    sys_vars.set_data_member(id.to_string(), expr_value);
-                }
-                else {
-                    return Err(ParserError::InvalidDataItem(format!("{:?}", element)));
-                }
+        for child in element.children().filter(|v| v.is_element()) {
+            if let (Some(id), Some(expr_str)) = (child.attribute("id"), child.attribute("expr")) {
+                // Interpret value expression and insert into data map
+                let interpreter = Interpreter::new(expr_str);
+                let expr_value = interpreter.interpret(sys_vars)?;
+                sys_vars.set_data_member(id.to_string(), expr_value);
+            }
+            else {
+                return Err(ParserError::InvalidDataItem(format!("{:?}", element)));
             }
         }
 
@@ -265,73 +267,61 @@ impl Parser {
     fn parse_state(element: roxmltree::Node) -> Result<State, ParserError> {
         let mut initial_specified = false;
 
-        // Get ID attribute to create StateBuilder
-        let state_id;
-        if let Some(id) = element.attribute("id") {
-            state_id = id;
-        }
-        else {
-            return Err(ParserError::StateHasNoId(format!("{:?}", element)));
-        }
-        let mut state_builder = StateBuilder::new(String::from(state_id));
+        // // Get ID attribute to create StateBuilder
+        let state_id = element.attribute("id").ok_or_else(|| ParserError::StateHasNoId(format!("{:?}", element)))?;
+        let mut state_builder = StateBuilder::new(state_id.to_string());
 
         // Check for initial attribute
         if let Some(initial) = element.attribute("initial") {
-            state_builder = state_builder.initial(String::from(initial));
+            state_builder = state_builder.initial(initial.to_string());
             initial_specified = true;
         }
 
         // Iterate through children, adding transitions or parsing substates
-        for child in element.children() {
-            // Skip text and comment nodes
-            if !child.is_comment() && !child.is_text() {
-                //TODO: Handle <onentry>
+        for child in element.children().filter(|v| v.is_element()) {
+            //FEAT: Handle <onentry>
 
-                //TODO: Handle <onexit>
+            //FEAT: Handle <onexit>
 
-                // Handle <transition>
-                if child.tag_name().name() == "transition" {
-                    state_builder = state_builder.transition(
-                        Self::parse_transition(
-                            child, 
-                            String::from(state_id),
-                        )?
-                    )?;
-                }
-
-                // Handle <initial>, if not already specified
-                if !initial_specified && child.tag_name().name() == "initial" {
-                    // Get the target of the internal <transition>'s target
-                    // If the internal <transition> does not exist, the document is not well-formed
-                    for grandchild in child.children() {
-                        // Skip text and comment nodes
-                        if !grandchild.is_comment() && !grandchild.is_text() {
-                            if let Some(initial) = grandchild.attribute("target") {
-                                state_builder = state_builder.initial(String::from(initial));
-                                initial_specified = true;
-                            }
-                            else {
-                                return Err(ParserError::InitialTransitionTargetless(format!("{:?}", element)));
-                            }
-                        }
-                    }
-                    // Ensure that a <transition> element was found, otherwise the document is not well-formed
-                    if !initial_specified {
-                        return Err(ParserError::InitialNodeChildless(format!("{:?}", element)));
-                    }
-                }
-
-                // Handle <state>
-                if child.tag_name().name() == "state" {
-                    state_builder = state_builder.substate(Self::parse_state(child)?)?;
-                }
-
-                //FEAT: Handle <parallel>
-
-                //FEAT: Handle <history>
-
-                //FEAT: Handle <datamodel>
+            // Handle <transition>
+            if child.tag_name().name() == "transition" {
+                state_builder = state_builder.transition(
+                    Self::parse_transition(
+                        child, 
+                        state_id.to_string(),
+                    )?
+                )?;
             }
+
+            // Handle <initial>, if not already specified
+            if !initial_specified && child.tag_name().name() == "initial" {
+                // Get the target of the internal <transition>'s target
+                // If the internal <transition> does not exist, the document is not well-formed
+                for grandchild in child.children().filter(|v| v.is_element()) {
+                    if let Some(initial) = grandchild.attribute("target") {
+                        state_builder = state_builder.initial(initial.to_string());
+                        initial_specified = true;
+                    }
+                    else {
+                        return Err(ParserError::InitialTransitionTargetless(format!("{:?}", element)));
+                    }
+                }
+                // Ensure that a <transition> element was found, otherwise the document is not well-formed
+                if !initial_specified {
+                    return Err(ParserError::InitialNodeChildless(format!("{:?}", element)));
+                }
+            }
+
+            // Handle sub <state>
+            if child.tag_name().name() == "state" {
+                state_builder = state_builder.substate(Self::parse_state(child)?)?;
+            }
+
+            //FEAT: Handle <parallel>
+
+            //FEAT: Handle <history>
+
+            //FEAT: Handle <datamodel>
         }
 
         state_builder.build().map_err(ParserError::StateBuilderError)
@@ -340,11 +330,9 @@ impl Parser {
     fn parse_transition(element: roxmltree::Node, parent_id: StateId) -> Result<Transition, ParserError> {
         let mut transition_builder = TransitionBuilder::new(parent_id);
 
-        // Collect Events
-        if let Some(event_ids) = element.attribute("event") {
-            // Tokenize event list
-            let event_id_list = event_ids.split_whitespace();
-            for event_id in event_id_list {
+        // Tokenize Events
+        if let Some(event_ids) = element.attribute("event").map(|v| v.split_whitespace()) {
+            for event_id in event_ids {
                 // Create an event and add it to the builder
                 let event = Event::from(event_id)?;
                 transition_builder = transition_builder.event(event)?;
@@ -358,22 +346,24 @@ impl Parser {
 
         // Set target State
         if let Some(target_id) = element.attribute("target") {
-            transition_builder = transition_builder.target_id(String::from(target_id))?;
+            transition_builder = transition_builder.target_id(target_id.to_string())?;
         }
 
-        //TODO: Refactor all child-check loops to use .filter()
         // Check for Executable Content children, skipping comments and text
-        for child in element.children().filter(|v| !v.is_comment() && !v.is_text()) {
+        for child in element.children().filter(|v| v.is_element()) {
             // Handle <assign>
             if child.tag_name().name() == "assign" {
                 if let Some(location) = child.attribute("location") {
-                    // 'expr' may be either an attribute of 'assign', or a child
+                    // 'expr' may be either an attribute of 'assign', or its child(ren)
                     if let Some(expr) = child.attribute("expr") {    
                         let assignment = ExecutableContent::Assign(location.to_string(), expr.to_string());
                         transition_builder = transition_builder.executable_content(assignment)?;
                     }
                     else if child.has_children() {
-                        unimplemented!("Multi-line expression are not yet supported");
+                        // When the 'expr' is not specified as part of the assign tag, it can be one
+                        // or more child nodes. This constitutes a multi-line expression, which
+                        // is not yet supported by the ECMAScript Interpreter
+                        unimplemented!("Multi-line ECMAScript expression are not yet supported");
                     }
                     // 'expr' was not specified, this is an error
                     else {
@@ -385,6 +375,8 @@ impl Parser {
                     return Err(ParserError::AssignWithoutLocation(format!("{:?}", child)));
                 }
             }
+
+            //FEAT: Handle other executable content
         }
 
         Ok(transition_builder.build())
@@ -416,6 +408,9 @@ impl fmt::Display for ParserError {
             },
             Self::InitialTransitionTargetless(parent_state) => {
                 write!(f, "State '{}' contains an <initial> element with a targetless <transition>", parent_state)
+            },
+            Self::InvalidScxmlChild(name) => {
+                write!(f, "Invalid Child '{}' of top-level SCXML element", name)
             },
             Self::InvalidScxmlNamespace(namespace) => {
                 write!(f, "Invalid SCXML Namespace '{}', expected '{}'", namespace, VALID_SCXML_NAMESPACE)
@@ -512,22 +507,6 @@ impl From<TransitionBuilderError> for ParserError {
 }
 
 
-/*  *  *  *  *  *  *  *\
- *  ValidElementClass *
-\*  *  *  *  *  *  *  */
-
-impl From<&str> for ValidElementClass {
-    fn from(src: &str) -> Self {
-        match src {
-            "datamodel" => Self::DataModel,
-            "state"     => Self::State,
-            _           => panic!("Invalid ValidElementClass conversion, '{}'", src),
-            //OPT: *DESIGN* Probably do something smarter than panic here
-        }
-    }
-}
-
-
 ///////////////////////////////////////////////////////////////////////////////
 //  Unit Tests
 ///////////////////////////////////////////////////////////////////////////////
@@ -584,7 +563,7 @@ mod tests {
 
     #[test]
     fn initial_node_errors() -> TestResult {
-        let state_string = String::from("Element { tag_name: {http://www.w3.org/2005/07/scxml}state, attributes: [Attribute { name: id, value: \"on\" }], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }");
+        let state_string = "Element { tag_name: {http://www.w3.org/2005/07/scxml}state, attributes: [Attribute { name: id, value: \"on\" }], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }".to_string();
 
         let mut parser_childless = Parser::new("res/test_cases/initial_node_childless.scxml")?;
         let mut parser_targetless = Parser::new("res/test_cases/initial_transition_targetless.scxml")?;
@@ -603,6 +582,19 @@ mod tests {
     }
 
     #[test]
+    fn invalid_scxml_child() -> TestResult {
+        let mut parser = Parser::new("res/test_cases/invalid_scxml_child.scxml")?;
+
+        // Verify that the invalid child element is caught
+        assert_eq!(
+            parser.parse(),
+            Err(ParserError::InvalidScxmlChild("invalid".to_string()))
+        );
+
+        Ok(())
+    }
+
+    #[test]
     fn namespace() -> TestResult {
         let mut parser_a = Parser::new("res/test_cases/invalid_scxml_namespace_empty.scxml")?;
         let mut parser_b = Parser::new("res/test_cases/invalid_scxml_namespace_invalid.scxml")?;
@@ -615,7 +607,7 @@ mod tests {
         // Verify that an invalid namespace is caught
         assert_eq!(
             parser_b.parse(),
-            Err(ParserError::InvalidScxmlNamespace(String::from("http://invalid.namespace")))
+            Err(ParserError::InvalidScxmlNamespace("http://invalid.namespace".to_string()))
         );
 
         Ok(())
@@ -635,7 +627,7 @@ mod tests {
         // Verify that an invalid version is caught
         assert_eq!(
             parser_b.parse(),
-            Err(ParserError::InvalidScxmlVersion(String::from("2.0")))
+            Err(ParserError::InvalidScxmlVersion("2.0".to_string()))
         );
 
         Ok(())
@@ -655,7 +647,7 @@ mod tests {
         // Verify that an invalid datamodel is caught
         assert_eq!(
             parser_b.parse(),
-            Err(ParserError::InvalidDataModel(String::from("someotherscript")))
+            Err(ParserError::InvalidDataModel("someotherscript".to_string()))
         );
 
         Ok(())
@@ -663,7 +655,7 @@ mod tests {
 
     #[test]
     fn data_item_invalid() -> TestResult {
-        let state_string = String::from("Element { tag_name: {http://www.w3.org/2005/07/scxml}datamodel, attributes: [], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }");
+        let state_string = "Element { tag_name: {http://www.w3.org/2005/07/scxml}datamodel, attributes: [], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }".to_string();
         let mut parser = Parser::new("res/test_cases/data_item_invalid.scxml")?;
 
         assert_eq!(
@@ -676,7 +668,7 @@ mod tests {
 
     #[test]
     fn no_id_state() -> TestResult {
-        let state_string = String::from("Element { tag_name: {http://www.w3.org/2005/07/scxml}state, attributes: [], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }");
+        let state_string = "Element { tag_name: {http://www.w3.org/2005/07/scxml}state, attributes: [], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }".to_string();
         let mut parser = Parser::new("res/test_cases/state_no_id.scxml")?;
 
         assert_eq!(
@@ -693,7 +685,7 @@ mod tests {
 
         assert_eq!(
             parser.parse(),
-            Err(ParserError::EventError(EventError::IdContainsDuplicates(String::from("turn.on.on"))))
+            Err(ParserError::EventError(EventError::IdContainsDuplicates("turn.on.on".to_string())))
         );
 
         Ok(())
@@ -720,7 +712,7 @@ mod tests {
                 ParserError::StateChartBuilderError(
                     StateChartBuilderError::RegistryError(
                         RegistryError::StateAlreadyRegistered(
-                            String::from("duplicate")
+                            "duplicate".to_string()
                         )
                     )
                 )
@@ -748,7 +740,7 @@ mod tests {
 
         assert_eq!(
             parser.parse(),
-            Err(ParserError::StateBuilderError(StateBuilderError::InitialIsNotChild(String::from("dne"))))
+            Err(ParserError::StateBuilderError(StateBuilderError::InitialIsNotChild("dne".to_string())))
         );
 
         Ok(())
@@ -795,7 +787,7 @@ mod tests {
         eprintln!("*** Active State(s):\n{:#?}", statechart.active_state_ids());
         assert_eq!(
             statechart.active_state_ids(),
-            vec![String::from("on"), String::from("cooking")],
+            vec!["on".to_string(), "cooking".to_string()],
         );
 
         // Send a door-open event
@@ -806,7 +798,7 @@ mod tests {
         eprintln!("*** Active State(s):\n{:#?}", statechart.active_state_ids());
         assert_eq!(
             statechart.active_state_ids(),
-            vec![String::from("on"), String::from("idle")],
+            vec!["on".to_string(), "idle".to_string()],
         );
 
         // Send a door-close event
@@ -817,7 +809,7 @@ mod tests {
         eprintln!("*** Active State(s):\n{:#?}", statechart.active_state_ids());
         assert_eq!(
             statechart.active_state_ids(),
-            vec![String::from("on"), String::from("cooking")],
+            vec!["on".to_string(), "cooking".to_string()],
         );
 
         // Send time event 6x
