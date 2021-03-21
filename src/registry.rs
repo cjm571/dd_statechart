@@ -72,6 +72,7 @@ impl Registry {
         &self.events
     }
     
+    //TODO: Take &StateId, probably do the same for other getters here
     pub fn get_state(&self, id: StateId) -> Option<&State> {
         for state in &self.states {
             if state.id() == id {
@@ -86,13 +87,13 @@ impl Registry {
         None
     }
 
-    pub fn get_mut_state(&mut self, id: StateId) -> Option<&mut State> {
+    pub fn get_mut_state(&mut self, id: &str) -> Option<&mut State> {
         for state in &mut self.states {
             if state.id() == id {
                 return Some(state)
             }
 
-            if let Some(state) = Self::get_mut_substates(state, id.clone()) {
+            if let Some(state) = Self::get_mut_substates(state, id.to_string()) {
                 return Some(state);
             }
         }
@@ -370,7 +371,7 @@ mod tests {
         );
 
         assert_eq!(
-            registry.get_mut_state(String::from("nonexistent")),
+            registry.get_mut_state(&String::from("nonexistent")),
             None,
             "get_mut_state() somehow found a nonexistent State"
         );

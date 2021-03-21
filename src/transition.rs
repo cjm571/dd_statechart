@@ -106,8 +106,8 @@ impl Transition {
         &self.events
     }
 
-    pub fn source_id(&self) -> StateId {
-        self.source_id.clone()
+    pub fn source_id(&self) -> &StateId {
+        &self.source_id
     }
 
     pub fn target_ids(&self) -> &Vec<StateId> {

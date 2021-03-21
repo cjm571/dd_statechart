@@ -267,8 +267,8 @@ impl StateChart {
             //TODO: Possible extraneous clone
             //TODO: awful style
             if !self.registry.get_transition(&transition_fingerprint).unwrap().target_ids().is_empty() {
-                let source_state_id = self.registry.get_transition(&transition_fingerprint).unwrap().source_id();
-                let source_state = self.registry.get_mut_state(source_state_id).unwrap();
+                let source_state_id = self.registry.get_transition(&transition_fingerprint).unwrap().source_id().clone();
+                let source_state = self.registry.get_mut_state(&source_state_id).unwrap();
 
                 source_state.exit()?;
             }
@@ -291,7 +291,7 @@ impl StateChart {
             let target_state_ids = self.registry.get_transition(&transition_fingerprint).unwrap().target_ids().clone();
             //TODO: Sort these too?
             for state_id in target_state_ids {
-                let target_state = self.registry.get_mut_state(state_id.clone()).unwrap();
+                let target_state = self.registry.get_mut_state(&state_id).unwrap();
                 target_state.enter()?;
             }
         }
@@ -320,7 +320,7 @@ impl StateChartBuilder {
 
         // Activate the Initial State
         //TODO: Initial cannot be copied due to StateId being a String. should be made into a &str
-        if let Some(state) = self.registry.get_mut_state(self.initial.clone().unwrap()) {
+        if let Some(state) = self.registry.get_mut_state(self.initial.as_ref().unwrap()) {
             state.activate()
             //TODO: Probably gotta recurse here for sub-states
             //      Or not? maybe the activate function could do that...

@@ -103,6 +103,7 @@ impl State {
      *  Accessor Methods  *
     \*  *  *  *  *  *  *  */
 
+    //TODO: Return reference
     pub fn id(&self) -> StateId {
         self.id.clone()
     }
@@ -293,8 +294,8 @@ impl StateBuilder {
 
         // Ensure all Transitions' source States match this one
         for transition in &self.transitions {
-            if transition.source_id() != self.id {
-                return Err(StateBuilderError::TransitionSourceMismatch(transition.fingerprint().clone(), transition.source_id()));
+            if transition.source_id() != &self.id {
+                return Err(StateBuilderError::TransitionSourceMismatch(transition.fingerprint().clone(), transition.source_id().clone()));
             }
         }
 
