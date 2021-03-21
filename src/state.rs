@@ -58,6 +58,8 @@ pub struct State {
     on_exit:        Vec<Callback>,
 }
 
+//OPT: *STYLE* Create StateIdRef type that is an alias for &str
+//             Search for all instances of &str to find things to replace with this type
 pub type StateId = String;
 
 //OPT: *DESIGN* Would it be useful to specify an error type here? Even if it's just Box<dyn Error>?
@@ -474,10 +476,10 @@ mod tests {
         let terminal_state_id = String::from("TERMINAL");
 
         // Build Transition
-        let hapless_transition = TransitionBuilder::new(initial_state_id.clone())
-            .event(initial_to_terminal.clone())?
-            .target_id(terminal_state_id.clone())?
-            .build();
+        let hapless_transition = TransitionBuilder::new(initial_state_id.as_str())
+            .event(&initial_to_terminal)?
+            .target_id(&terminal_state_id)?
+            .build()?;
 
         // Build States, one of which will fail its 2nd on_exit callback
         let initial = StateBuilder::new(initial_state_id)
@@ -512,10 +514,10 @@ mod tests {
         let terminal_state_id = String::from("TERMINAL");
 
         // Build Transition
-        let hapless_transition = TransitionBuilder::new(initial_state_id.clone())
-            .event(initial_to_terminal.clone())?
-            .target_id(terminal_state_id.clone())?
-            .build();
+        let hapless_transition = TransitionBuilder::new(initial_state_id.as_str())
+            .event(&initial_to_terminal)?
+            .target_id(&terminal_state_id)?
+            .build()?;
 
         // Build States, one of which will fail its 2nd on_entry callback
         let initial = StateBuilder::new(initial_state_id)
@@ -561,9 +563,12 @@ mod builder_tests {
         let state_id = String::from("source");
 
         // Build Transitions to be duplicated
-        //TODO: extraneous clone()s
-        let original_transition = TransitionBuilder::new(state_id.clone()).build();
-        let duplicate_transition = TransitionBuilder::new( state_id.clone()).build();
+        let original_transition = TransitionBuilder::new(state_id.as_str())
+            .target_id("dummy_target")?
+            .build()?;
+        let duplicate_transition = TransitionBuilder::new( state_id.as_str())
+            .target_id("dummy_target")?
+            .build()?;
 
         // Verify the duplicate transition is caught
         let builder = StateBuilder::new(state_id)
@@ -585,7 +590,9 @@ mod builder_tests {
         let wrong_source_id = String::from("wrong");
 
         // Build Transition with an incorrect source
-        let transition = TransitionBuilder::new(wrong_source_id.clone()).build();
+        let transition = TransitionBuilder::new(wrong_source_id.as_str())
+            .target_id("dummy_target")?
+            .build()?;
 
         // Verify mismatch is caught
         let builder = StateBuilder::new(correct_source_id)

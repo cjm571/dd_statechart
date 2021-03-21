@@ -512,10 +512,10 @@ mod tests {
         let imaging_id          = String::from("IMAGING");
 
         // Build Transitions
-        let idle_to_non_imaging = TransitionBuilder::new(idle_id.clone())
-            .event(go_to_non_imaging.clone())?
-            .target_id(non_imaging_id.clone())?
-            .build();
+        let idle_to_non_imaging = TransitionBuilder::new(idle_id.as_str())
+            .event(&go_to_non_imaging)?
+            .target_id(non_imaging_id.as_str())?
+            .build()?;
 
         // Build States
         let idle            = StateBuilder::new(idle_id.clone())
@@ -599,14 +599,14 @@ mod tests {
         let event_id = "test.event";
         let event = Event::from(event_id)?;
 
-        let eventful = TransitionBuilder::new(start_id.clone())
-            .event(event.clone())?
-            .build();
+        let eventful = TransitionBuilder::new(start_id.as_str())
+            .event(&event)?
+            .build()?;
 
         // Create the eventless Transition
-        let eventless = TransitionBuilder::new(start_id.clone())
-            .target_id(end_id.clone())?
-            .build();
+        let eventless = TransitionBuilder::new(start_id.as_str())
+            .target_id(end_id.as_str())?
+            .build()?;
 
         // Create a State using the 2 Transitions
         let start = StateBuilder::new(start_id)

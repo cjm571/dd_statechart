@@ -52,7 +52,6 @@ use crate::{
         State,
         StateBuilder,
         StateBuilderError,
-        StateId,
     },
     transition::{
         Transition,
@@ -286,10 +285,7 @@ impl Parser {
             // Handle <transition>
             if child.tag_name().name() == "transition" {
                 state_builder = state_builder.transition(
-                    Self::parse_transition(
-                        child, 
-                        state_id.to_string(),
-                    )?
+                    Self::parse_transition(child, state_id)?
                 )?;
             }
 
@@ -327,7 +323,7 @@ impl Parser {
         state_builder.build().map_err(ParserError::StateBuilderError)
     }
 
-    fn parse_transition(element: roxmltree::Node, parent_id: StateId) -> Result<Transition, ParserError> {
+    fn parse_transition(element: roxmltree::Node, parent_id: &str) -> Result<Transition, ParserError> {
         let mut transition_builder = TransitionBuilder::new(parent_id);
 
         // Tokenize Events
@@ -335,7 +331,7 @@ impl Parser {
             for event_id in event_ids {
                 // Create an event and add it to the builder
                 let event = Event::from(event_id)?;
-                transition_builder = transition_builder.event(event)?;
+                transition_builder = transition_builder.event(&event)?;
             }
         }
 
@@ -346,7 +342,7 @@ impl Parser {
 
         // Set target State
         if let Some(target_id) = element.attribute("target") {
-            transition_builder = transition_builder.target_id(target_id.to_string())?;
+            transition_builder = transition_builder.target_id(target_id)?;
         }
 
         // Check for Executable Content children, skipping comments and text
@@ -357,7 +353,7 @@ impl Parser {
                     // 'expr' may be either an attribute of 'assign', or its child(ren)
                     if let Some(expr) = child.attribute("expr") {    
                         let assignment = ExecutableContent::Assign(location.to_string(), expr.to_string());
-                        transition_builder = transition_builder.executable_content(assignment)?;
+                        transition_builder = transition_builder.executable_content(assignment);
                     }
                     else if child.has_children() {
                         // When the 'expr' is not specified as part of the assign tag, it can be one
@@ -379,7 +375,7 @@ impl Parser {
             //FEAT: Handle other executable content
         }
 
-        Ok(transition_builder.build())
+        transition_builder.build().map_err(ParserError::TransitionBuilderError)
     }
 }
 

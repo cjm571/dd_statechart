@@ -81,9 +81,13 @@ pub struct TransitionBuilder {
 
 #[derive(Debug, PartialEq)]
 pub enum TransitionBuilderError {
-    ConditionAlreadySet,
+    ConditionAlreadySet(
+        String, /* New (rejected) condition expression */
+        String, /* Existing condition expression */
+    ),
     DuplicateEventId(Event),
     DuplicateTargetId(StateId),
+    NoEventCondOrTarget,
     SourceTargetCollision(StateId),
 }
 
@@ -129,20 +133,20 @@ impl Transition {
         
         interpreter.interpret_as_bool(sys_vars).map_err(TransitionError::InterpreterError)
         
-        //TODO: If condition has returned an error, an 'error.execution' event must be placed on the internal event queue
+        //FEAT: If condition has returned an error, an 'error.execution' event must be placed on the internal event queue
         //      See §5.9.1
     }
 }
 
-//TODO: Make this a non-consuming builder
+//FEAT: Make this a non-consuming builder
 impl TransitionBuilder {
-    pub fn new(source_state_id: StateId) -> Self {
+    pub fn new(source_state_id: &str) -> Self {
         Self {
             fingerprint:        TransitionFingerprint::default(),
             events:             Vec::new(),
             cond:               String::from("true"),
             cond_set:           false,
-            source_id:          source_state_id,
+            source_id:          source_state_id.to_string(),
             target_ids:         Vec::new(),
             executable_content: Vec::new(),
         }
@@ -152,8 +156,11 @@ impl TransitionBuilder {
      *  Builder Methods   *
     \*  *  *  *  *  *  *  */
 
-    pub fn build(self) -> Transition {
-        //TODO: must have at least one of event, cond, or target
+    pub fn build(self) -> Result<Transition, TransitionBuilderError> {
+        // Per §3.5, Transitions must have at least one of 'event', 'cond', or 'target'
+        if self.events.is_empty() && !self.cond_set && self.target_ids.is_empty() {
+            return Err(TransitionBuilderError::NoEventCondOrTarget);
+        }
 
         // Assemble the components of the fingerprint
         let mut fingerprint_components = vec![self.source_id.clone()];
@@ -166,23 +173,27 @@ impl TransitionBuilder {
         }
 
         // Build the Transition
-        Transition {
+        Ok ( Transition {
             fingerprint:        fingerprint_components.into_iter().collect::<String>(),
             events:             self.events,
             cond:               self.cond,
             source_id:          self.source_id.clone(),
             target_ids:         self.target_ids,
             executable_content: self.executable_content,
-        }
+        })
     }
 
-    pub fn event(mut self, event: Event) -> Result<Self, TransitionBuilderError> {
+    pub fn event(mut self, event: &Event) -> Result<Self, TransitionBuilderError> {
+        // Clone the Event since we'll have to own it in order to push it into the vector
+        // or return it as an error
+        let owned_event = event.clone();
+
         // Ensure the given ID is not already in the event vector
-        if self.events.contains(&event) {
-            return Err(TransitionBuilderError::DuplicateEventId(event));
+        if self.events.contains(&owned_event) {
+            return Err(TransitionBuilderError::DuplicateEventId(owned_event));
         }
 
-        self.events.push(event);
+        self.events.push(owned_event);
 
         Ok(self)
     }
@@ -190,7 +201,7 @@ impl TransitionBuilder {
     pub fn cond(mut self, cond: &str) -> Result<Self, TransitionBuilderError> {
         // Ensure condition has not already been set
         if self.cond_set {
-            return Err(TransitionBuilderError::ConditionAlreadySet);
+            return Err(TransitionBuilderError::ConditionAlreadySet(cond.to_string(), self.cond));
         }
         
         self.cond = String::from(cond);
@@ -199,28 +210,32 @@ impl TransitionBuilder {
         Ok(self)
     }
 
-    pub fn target_id(mut self, target_id: StateId) -> Result<Self, TransitionBuilderError> {
+    pub fn target_id(mut self, target_id: &str) -> Result<Self, TransitionBuilderError> {
+        // Clone the ID since we'll have to own it in order to push it into the vector
+        // or return it as an error
+        let owned_id = target_id.to_string();
+
         // Ensure the given ID is not already in the target vector
-        if self.target_ids.contains(&target_id) {
-            return Err(TransitionBuilderError::DuplicateTargetId(target_id));
+        if self.target_ids.contains(&owned_id) {
+            return Err(TransitionBuilderError::DuplicateTargetId(owned_id));
         }
 
         // Ensure target is not the same as the source
         if target_id == self.source_id {
-            return Err(TransitionBuilderError::SourceTargetCollision(target_id));
+            return Err(TransitionBuilderError::SourceTargetCollision(owned_id));
         }
 
-        self.target_ids.push(target_id);
+        self.target_ids.push(owned_id);
 
         Ok(self)
     }
 
-    pub fn executable_content(mut self, content: ExecutableContent) -> Result<Self, TransitionBuilderError> {
-        //TODO: Sanity checks and stuff
-
+    pub fn executable_content(mut self, content: ExecutableContent) -> Self {
+        // Intentionally moving the ExecutableContent, since it doesn't make sense for
+        // the client to keep using it after passing in here
         self.executable_content.push(content);
 
-        Ok(self)
+        self
     }
 }
 
@@ -279,14 +294,17 @@ impl Error for TransitionBuilderError {}
 impl fmt::Display for TransitionBuilderError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::ConditionAlreadySet => {
-                write!(f, "transition condition has already been set")
+            Self::ConditionAlreadySet(new_cond, existing_cond) => {
+                write!(f, "Transition condition '{}' rejected, existing condition '{}' already set", new_cond, existing_cond)
             },
             Self::DuplicateEventId(event) => {
                 write!(f, "Event '{}' is already in the Event vector", event)
             },
             Self::DuplicateTargetId(target_id) => {
                 write!(f, "ID '{}' is already in the target State vector", target_id)
+            },
+            Self::NoEventCondOrTarget => {
+                write!(f, "Attempted to build a Transition that did not have at least one of 'event', 'cond', or 'target'")
             },
             Self::SourceTargetCollision(target_id) => {
                 write!(f, "ID '{}' collides with the Transition's source State ID", target_id)
@@ -319,11 +337,11 @@ mod builder_tests {
         let event = Event::from("event")?;
 
         // Verify that duplicate event is caught
-        let builder = TransitionBuilder::new(String::from("state"))
-            .event(event.clone())?;
+        let builder = TransitionBuilder::new("state")
+            .event(&event)?;
 
         assert_eq!(
-            builder.event(event.clone()),
+            builder.event(&event),
             Err(TransitionBuilderError::DuplicateEventId(event)),
             "Failed to catch duplicate event"
         );
@@ -333,14 +351,13 @@ mod builder_tests {
     
     #[test]
     fn duplicate_target() -> Result<(), Box<dyn Error>> {
-        //TODO: Extraneous clones
         // Verify that duplicate target is caught
         let target_id = String::from("target");
-        let builder = TransitionBuilder::new(String::from("source"))
-            .target_id(target_id.clone())?;
+        let builder = TransitionBuilder::new("source")
+            .target_id(&target_id)?;
 
         assert_eq!(
-            builder.target_id(target_id.clone()),
+            builder.target_id(&target_id),
             Err(TransitionBuilderError::DuplicateTargetId(target_id)),
             "Failed to catch duplicate target"
         );
@@ -350,13 +367,12 @@ mod builder_tests {
     
     #[test]
     fn source_target_collision() -> Result<(), Box<dyn Error>> {
-        //TODO: Extraneous clones
         // Verify that source-target collision is caught
         let source_id = String::from("source");
-        let builder = TransitionBuilder::new(source_id.clone());
+        let builder = TransitionBuilder::new(source_id.as_str());
 
         assert_eq!(
-            builder.target_id(source_id.clone()),
+            builder.target_id(&source_id),
             Err(TransitionBuilderError::SourceTargetCollision(source_id)),
             "Failed to catch source-target collision"
         );
@@ -367,12 +383,12 @@ mod builder_tests {
     #[test]
     fn condition_already_set() -> Result<(), Box<dyn Error>> {
         // Verify that already-set condition is caught
-        let builder = TransitionBuilder::new(String::from("source"))
+        let builder = TransitionBuilder::new("source")
             .cond("true")?;
 
         assert_eq!(
             builder.cond("true"),
-            Err(TransitionBuilderError::ConditionAlreadySet),
+            Err(TransitionBuilderError::ConditionAlreadySet("true".to_string(), "true".to_string())),
             "Failed to catch already-set condition"
         );
 
