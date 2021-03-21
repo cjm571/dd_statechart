@@ -49,7 +49,7 @@ use crate::{
 /// (source) state to a target state
 #[derive(Clone, PartialEq)]
 pub struct Transition {
-    id:                 TransitionId,
+    fingerprint:        TransitionFingerprint,
     events:             Vec<Event>,
     //OPT: *PERFORMANCE* Store lexed/parsed expression here?
     cond:               String,
@@ -58,13 +58,8 @@ pub struct Transition {
     executable_content: Vec<ExecutableContent>,
 }
 
-#[derive(Clone, Default, PartialEq)]
-pub struct TransitionId {
-    source:     StateId,
-    events:     Vec<String>,
-    cond:       String,
-    targets:    Vec<StateId>,
-}
+/// Unique String representation of a Transition for the purpose of lookups
+pub type TransitionFingerprint = String;
 
 #[derive(Debug, PartialEq)]
 pub enum TransitionError {
@@ -75,7 +70,7 @@ pub enum TransitionError {
 
 #[derive(Debug, PartialEq)]
 pub struct TransitionBuilder {
-    id:                 TransitionId,
+    fingerprint:        TransitionFingerprint,
     events:             Vec<Event>,
     cond:               String,
     cond_set:           bool,
@@ -103,9 +98,8 @@ impl Transition {
      *  Accessor Methods  *
     \*  *  *  *  *  *  *  */
 
-    pub fn id(&self) -> TransitionId {
-        //TODO: Possible extraneous clone
-        self.id.clone()
+    pub fn fingerprint(&self) -> &TransitionFingerprint {
+        &self.fingerprint
     }
 
     pub fn events(&self) -> &Vec<Event> {
@@ -144,7 +138,7 @@ impl Transition {
 impl TransitionBuilder {
     pub fn new(source_state_id: StateId) -> Self {
         Self {
-            id:                 TransitionId::default(),
+            fingerprint:        TransitionFingerprint::default(),
             events:             Vec::new(),
             cond:               String::from("true"),
             cond_set:           false,
@@ -161,25 +155,19 @@ impl TransitionBuilder {
     pub fn build(self) -> Transition {
         //TODO: must have at least one of event, cond, or target
 
-        // Construct ID fingerprint
-        let mut targets = Vec::new();
-        for target_id in &self.target_ids {
-            targets.push(target_id.clone());
-        }
-        let mut events = Vec::new();
+        // Assemble the components of the fingerprint
+        let mut fingerprint_components = vec![self.source_id.clone()];
         for event in &self.events {
-            events.push(event.id());
+            fingerprint_components.push(event.id());
+        }
+        fingerprint_components.push(self.cond.clone());
+        for target_id in &self.target_ids {
+            fingerprint_components.push(target_id.clone());
         }
 
-        let id = TransitionId {
-            source: self.source_id.clone(),
-            events,
-            cond:   self.cond.to_string(),
-            targets,
-        };
-
+        // Build the Transition
         Transition {
-            id,
+            fingerprint:        fingerprint_components.into_iter().collect::<String>(),
             events:             self.events,
             cond:               self.cond,
             source_id:          self.source_id.clone(),
@@ -248,7 +236,7 @@ impl TransitionBuilder {
 impl fmt::Debug for Transition {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Transition")
-            .field("id",            &self.id)
+            .field("fingerprint",   &self.fingerprint)
             .field("event",         &self.events)
             .field("cond",          &self.cond)
             .field("source_id",     &self.source_id)
@@ -278,22 +266,6 @@ impl fmt::Display for TransitionError {
 impl From<InterpreterError> for TransitionError {
     fn from(src: InterpreterError) -> Self {
         Self::InterpreterError(src)
-    }
-}
-
-
-/*  *  *  *  *  *  *  *\
- *    TransitionId    *
-\*  *  *  *  *  *  *  */
-
-impl fmt::Debug for TransitionId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("TransitionId")
-            .field("source",    &self.source)
-            .field("events",    &self.events)
-            .field("cond",      &self.cond)
-            .field("targets",   &self.targets)
-            .finish()
     }
 }
 

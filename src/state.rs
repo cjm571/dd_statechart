@@ -35,7 +35,7 @@ use crate::{
     transition::{
         Transition,
         TransitionError,
-        TransitionId,
+        TransitionFingerprint,
     },
 };
 
@@ -87,8 +87,8 @@ pub struct StateBuilder {
 #[derive(Debug, PartialEq)]
 pub enum StateBuilderError {
     DuplicateSubstate(StateId),
-    DuplicateTransition(TransitionId),
-    TransitionSourceMismatch(TransitionId, StateId),
+    DuplicateTransition(TransitionFingerprint),
+    TransitionSourceMismatch(TransitionFingerprint, StateId),
     InitialIsNotChild(StateId),
 }
 
@@ -181,7 +181,7 @@ impl State {
     }
     
 
-    pub fn evaluate_event(&self, event: Option<Event>, sys_vars: &SystemVariables) -> Result<Option<TransitionId>, StateError> {
+    pub fn evaluate_event(&self, event: Option<Event>, sys_vars: &SystemVariables) -> Result<Option<&TransitionFingerprint>, StateError> {
         let mut enable_candidates = Vec::new();
         
         // Handle evaluation of a non-null Event
@@ -209,7 +209,7 @@ impl State {
         for candidate in enable_candidates {
             if candidate.evaluate_condition(sys_vars)? {
                 // Short-circuit and return the Target of the first Transition to be Enabled
-                return Ok(Some(candidate.id()))
+                return Ok(Some(candidate.fingerprint()))
             }
         }
 
@@ -294,7 +294,7 @@ impl StateBuilder {
         // Ensure all Transitions' source States match this one
         for transition in &self.transitions {
             if transition.source_id() != self.id {
-                return Err(StateBuilderError::TransitionSourceMismatch(transition.id(), transition.source_id()));
+                return Err(StateBuilderError::TransitionSourceMismatch(transition.fingerprint().clone(), transition.source_id()));
             }
         }
 
@@ -336,7 +336,7 @@ impl StateBuilder {
     pub fn transition(mut self, transition: Transition) -> Result<Self, StateBuilderError> {
         // Ensure the Transition is not a duplicate
         if self.transitions.contains(&transition) {
-            return Err(StateBuilderError::DuplicateTransition(transition.id()));
+            return Err(StateBuilderError::DuplicateTransition(transition.fingerprint().clone()));
         }
 
         self.transitions.push(transition);
@@ -570,7 +570,7 @@ mod builder_tests {
 
         assert_eq!(
             builder.transition(duplicate_transition),
-            Err(StateBuilderError::DuplicateTransition(original_transition.id())),
+            Err(StateBuilderError::DuplicateTransition(original_transition.fingerprint().clone())),
             "Failed to catch duplicate Transition"
         );
 
@@ -592,7 +592,7 @@ mod builder_tests {
         
         assert_eq!(
             builder.build(),
-            Err(StateBuilderError::TransitionSourceMismatch(transition.id(), wrong_source_id)),
+            Err(StateBuilderError::TransitionSourceMismatch(transition.fingerprint().clone(), wrong_source_id)),
             "Failed to catch source State mismatch"
         );
 

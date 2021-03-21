@@ -106,7 +106,7 @@ use crate::{
         StateError,
         StateId,
     },
-    transition::TransitionId,
+    transition::TransitionFingerprint,
 };
 
 
@@ -194,18 +194,18 @@ impl StateChart {
         self.sys_vars.set_event(event.clone());
         
         // Collect and process the set of enabled Transitions
-        let mut enabled_transition_ids = self.select_transitions(Some(event.clone()))?;
+        let mut enabled_transition_fingerprints = self.select_transitions(Some(event.clone()))?;
 
         //OPT: *STYLE* I don't like this loop, it's not very easy to tell what's being processed in the microstep
         // Enter Microstep processing loop
-        while !enabled_transition_ids.is_empty() {
-            self.process_microstep(enabled_transition_ids)?;
+        while !enabled_transition_fingerprints.is_empty() {
+            self.process_microstep(enabled_transition_fingerprints)?;
             
             // Select eventless Transitions
-            enabled_transition_ids = self.select_transitions(None)?;
+            enabled_transition_fingerprints = self.select_transitions(None)?;
             
             // Found eventless Transitions, return to top of loop to process a Microstep
-            if !enabled_transition_ids.is_empty() {
+            if !enabled_transition_fingerprints.is_empty() {
                 continue;
             }
             // No eventless Transitions found, check the internal queue for Events
@@ -220,7 +220,7 @@ impl StateChart {
                 self.sys_vars.set_event(internal_event.clone());
 
                 // Select transitions for the internal Event and return to top of the loop
-                enabled_transition_ids = self.select_transitions(Some(internal_event))?;
+                enabled_transition_fingerprints = self.select_transitions(Some(internal_event))?;
                 continue;
             }
         }
@@ -233,7 +233,7 @@ impl StateChart {
      *  Helper Methods    *
     \*  *  *  *  *  *  *  */
 
-    fn select_transitions(&self, event: Option<Event>) -> Result<Vec<TransitionId>, StateChartError> {
+    fn select_transitions(&self, event: Option<Event>) -> Result<Vec<TransitionFingerprint>, StateChartError> {
         let mut enabled_transitions = Vec::new();
 
         // Traverse the map of states and send the event to each for evaluation
@@ -241,7 +241,9 @@ impl StateChart {
             let state = self.registry.get_state(state_id).unwrap();
 
             if let Some(enabled_transition) = state.evaluate_event(event.clone(), &self.sys_vars)? {
-                enabled_transitions.push(enabled_transition);
+                // These transitions will be used by &mut self methods, so we must clone() in order
+                // to give them owned TransitionFingerprints
+                enabled_transitions.push(enabled_transition.clone());
             }
         }
 
@@ -255,17 +257,17 @@ impl StateChart {
     /// 1. Exiting source State(s)
     /// 2. Executing executable content of a Transition
     /// 3. Entering target State(s)
-    fn process_microstep(&mut self, enabled_transition_ids: Vec<TransitionId>) -> Result<(), StateChartError> {
+    fn process_microstep(&mut self, enabled_transition_fingerprints: Vec<TransitionFingerprint>) -> Result<(), StateChartError> {
         //TODO: Sort transition source states into exit order, for now, just copying as-is
-        let exit_sorted_transition_ids = enabled_transition_ids.clone();
+        let exit_sorted_transition_fingerprints = enabled_transition_fingerprints.clone();
 
         // Exit source State(s) in "Exit Order"
-        for transition_id in exit_sorted_transition_ids {
+        for transition_fingerprint in exit_sorted_transition_fingerprints {
             // Only operate on Transitions with targets
             //TODO: Possible extraneous clone
             //TODO: awful style
-            if !self.registry.get_transition(transition_id.clone()).unwrap().target_ids().is_empty() {
-                let source_state_id = self.registry.get_transition(transition_id).unwrap().source_id();
+            if !self.registry.get_transition(&transition_fingerprint).unwrap().target_ids().is_empty() {
+                let source_state_id = self.registry.get_transition(&transition_fingerprint).unwrap().source_id();
                 let source_state = self.registry.get_mut_state(source_state_id).unwrap();
 
                 source_state.exit()?;
@@ -274,19 +276,19 @@ impl StateChart {
 
         // Perform executable content of Transition(s)
         //TODO: Fix this clone/unwrap() hideousness
-        for transition_id in enabled_transition_ids.clone() {
-            let cur_transition = self.registry.get_transition(transition_id).unwrap();
+        for transition_fingerprint in enabled_transition_fingerprints.clone() {
+            let cur_transition = self.registry.get_transition(&transition_fingerprint).unwrap();
             for exec_content in cur_transition.executable_content() {
                 exec_content.execute(&mut self.sys_vars)?;
             }
         }
         
         //TODO: Sort transition source states into entry order, for now, just copying as-is
-        let entry_sorted_transition_ids = enabled_transition_ids;
+        let entry_sorted_transition_fingerprints = enabled_transition_fingerprints;
 
         // Enter target State(s) in "Entry Order"
-        for transition_id in entry_sorted_transition_ids {
-            let target_state_ids = self.registry.get_transition(transition_id).unwrap().target_ids().clone();
+        for transition_fingerprint in entry_sorted_transition_fingerprints {
+            let target_state_ids = self.registry.get_transition(&transition_fingerprint).unwrap().target_ids().clone();
             //TODO: Sort these too?
             for state_id in target_state_ids {
                 let target_state = self.registry.get_mut_state(state_id.clone()).unwrap();

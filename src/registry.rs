@@ -38,10 +38,7 @@ use crate::{
         State,
         StateId,
     },
-    transition::{
-        Transition,
-        TransitionId,
-    }
+    transition::Transition,
 };
 
 
@@ -127,16 +124,16 @@ impl Registry {
         active_state_ids
     }
 
-    pub fn get_transition(&self, id: TransitionId) -> Option<&Transition> {
+    pub fn get_transition(&self, fingerprint: &str) -> Option<&Transition> {
         // Search State map for a State containing this ID
         for state in &self.states {
             for transition in state.transitions() {
-                if id == transition.id() {
+                if fingerprint == transition.fingerprint() {
                     return Some(transition);
                 }
             }
 
-            if let Some(transition) = Self::get_substate_transitions(state, id.clone()) {
+            if let Some(transition) = Self::get_substate_transitions(state, fingerprint) {
                 return Some(transition);
             }
         }
@@ -257,15 +254,15 @@ impl Registry {
         active_substate_ids
     }
 
-    fn get_substate_transitions(state: &State, id: TransitionId) -> Option<&Transition> {
+    fn get_substate_transitions<'s>(state: &'s State, fingerprint: &str) -> Option<&'s Transition> {
         for substate in state.substates() {
             for transition in substate.transitions() {
-                if id == transition.id() {
+                if fingerprint == transition.fingerprint() {
                     return Some(transition);
                 }
             }
 
-            if let Some(transition) = Self::get_substate_transitions(substate, id.clone()) {
+            if let Some(transition) = Self::get_substate_transitions(substate, fingerprint) {
                 return Some(transition);
             }
         }
@@ -318,7 +315,7 @@ mod tests {
             StateBuilder,
             StateId,
         },
-        transition::TransitionId,
+        transition::TransitionFingerprint,
     };
 
 
@@ -379,7 +376,7 @@ mod tests {
         );
 
         assert_eq!(
-            registry.get_transition(TransitionId::default()),
+            registry.get_transition(&TransitionFingerprint::default()),
             None,
            "get_transition() somehow found a nonexistent Transition"
         );
