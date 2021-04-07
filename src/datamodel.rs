@@ -99,9 +99,9 @@ impl SystemVariables {
         self._event = Some(event);
     }
     
-    pub fn set_data_member(&mut self, id: String, value: EcmaScriptValue) -> Option<EcmaScriptValue> {
+    pub fn set_data_member(&mut self, id: &str, value: EcmaScriptValue) -> Option<EcmaScriptValue> {
         // Insert value into data map
-        self._x.insert(id, value)
+        self._x.insert(id.to_string(), value)
     }
 }
 

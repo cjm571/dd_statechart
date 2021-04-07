@@ -425,7 +425,7 @@ mod tests {
         let expected = EcmaScriptValue::String(extant.clone());
         let expr2 = Expression::Identifier(extant.clone());
         let mut sys_vars2 = SystemVariables::default();
-        sys_vars2.set_data_member(extant.clone(), expected.clone());
+        sys_vars2.set_data_member(&extant, expected.clone());
 
         // Attempt to evaluate it
         let evaluator2 = Evaluator::new(&expr2, &sys_vars2);

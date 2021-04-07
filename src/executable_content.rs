@@ -15,7 +15,10 @@ Copyright (C) 2021 CJ McAllister
     Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
 
 Purpose:
-    //TODO: Purpose statement
+    This module defines a data structure and methods to record actions to be
+    performed before/during/after Transitions.
+
+    Conforms to §4 Executable Content of the SCXML spec.
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
@@ -40,18 +43,18 @@ use crate::{
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExecutableContent {
     Assign(
-        String, /* Identifier ('location' in SCXML parlance ) */
+        String, /* Identifier ('location' in SCXML parlance) */
         String, /* Value expression string */
     ),
-    Cancel,     /* Unimplemented */
-    ElseIf,     /* Unimplemented */
-    Else,       /* Unimplemented */
-    ForEach,    /* Unimplemented */
-    If,         /* Unimplemented */
-    Log,        /* Unimplemented */
-    Raise,      /* Unimplemented */
-    Script,     /* Unimplemented */
-    Send,       /* Unimplemented */
+    Cancel,     /* FEAT: <cancel> */
+    ElseIf,     /* FEAT: <elseif> */
+    Else,       /* FEAT: <else> */
+    ForEach,    /* FEAT: <foreach> */
+    If,         /* FEAT: <if> */
+    Log,        /* FEAT: <log> */
+    Raise,      /* FEAT: <raise> */
+    Script,     /* FEAT: <script> */
+    Send,       /* FEAT: <send> */
 }
 
 #[derive(Debug, PartialEq)]
@@ -74,11 +77,11 @@ impl ExecutableContent {
                 let value = interpreter.interpret(sys_vars)?;
 
                 // Set the value in the data model
-                sys_vars.set_data_member(location.clone(), value);
+                sys_vars.set_data_member(location, value);
 
                 Ok(())
             },
-            _ => unimplemented!(),
+            _ => todo!("Attempted to execute unimplemented ExecutableContent '{:?}'", self),
         }
     }
 }
@@ -139,7 +142,7 @@ mod tests {
         // Create a basic assignment statement and valid data model for it to act on
         let assignment = ExecutableContent::Assign(location.clone(), expr.clone());
         let mut sys_vars = SystemVariables::default();
-        sys_vars.set_data_member(location.clone(), initial_val);
+        sys_vars.set_data_member(&location, initial_val);
 
         // Display initial conditions
         eprintln!("=== Initial Data Model:\n{:?}", sys_vars._x());
@@ -168,7 +171,7 @@ mod tests {
         // Create a meta assignment statement and valid data model for it to act on
         let assignment = ExecutableContent::Assign(location.clone(), expr.clone());
         let mut sys_vars = SystemVariables::default();
-        sys_vars.set_data_member(location.clone(), initial_val.clone());
+        sys_vars.set_data_member(&location, initial_val.clone());
 
         // Display initial conditions
         eprintln!("=== Initial Data Model:\n{:?}", sys_vars._x());

@@ -360,7 +360,7 @@ impl StateChartBuilder {
         self
     }
 
-    pub fn data_member(&mut self, id: String, value: EcmaScriptValue) -> &mut Self {
+    pub fn data_member(&mut self, id: &str, value: EcmaScriptValue) -> &mut Self {
         self.sys_vars.set_data_member(id, value);
 
         self
