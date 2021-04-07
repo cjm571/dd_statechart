@@ -39,7 +39,7 @@ use std::{
 //  Data Structures
 ///////////////////////////////////////////////////////////////////////////////
 
-//TODO: Need to align this struct with §5.10.1
+//FEAT: Align this struct with §5.10.1
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Event {
     id_nodes:   Vec<String>,
@@ -91,8 +91,8 @@ impl Event {
         Ok(
             Self {
                 id_nodes: composed_nodes,
-                event_type: EventType::Platform, //TODO: Hardcoded default at the moment
-                                                 //TODO: Need to figure out how to pass the "origin" info to this module
+                //FEAT: Support external events
+                event_type: EventType::Platform,
             }
         )
     }

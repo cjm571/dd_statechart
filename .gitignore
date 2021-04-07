@@ -1,4 +1,12 @@
-/target
+# Rust-generated files
+/target/
 Cargo.lock
-docs/.~lock.design_musings.odt#
+
+# Visual Studio Code
+.vscode/*
+!.vscode/tasks.json
+!.vscode/launch.json
 *.code-workspace
+
+# Syncthing
+.stignore
