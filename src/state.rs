@@ -90,8 +90,9 @@ pub struct StateBuilder {
 pub enum StateBuilderError {
     DuplicateSubstate(StateId),
     DuplicateTransition(TransitionFingerprint),
-    TransitionSourceMismatch(TransitionFingerprint, StateId),
     InitialIsNotChild(StateId),
+    InitialSetWithoutChildStates(StateId),
+    TransitionSourceMismatch(TransitionFingerprint, StateId),
 }
 
 
@@ -268,27 +269,29 @@ impl StateBuilder {
 
     pub fn build(mut self) -> Result<State, StateBuilderError> {
         // No-child `initial` sanity check
-        if self.substates.is_empty() && self.initial_id.is_some() {
-            return Err(StateBuilderError::InitialIsNotChild(self.initial_id.unwrap()));
+        if let Some(initial_id) = self.initial_id.as_ref().filter(|_| self.substates.is_empty()) {
+            return Err(StateBuilderError::InitialSetWithoutChildStates(initial_id.clone()));
         }
 
-        // Sanity checks for child states, if they exist
-        if !self.substates.is_empty() {
-            // If no initial ID was provided, set to first doc-order child
-            if self.initial_id.is_none() {
-                self.initial_id = Some(self.substates.first().unwrap().id().to_string());
-            }
-
+        // Sanity checks for child states, if at least one exists
+        if let Some(first_child) = self.substates.first() {
             // Ensure that initial ID matches a child State
-            let mut child_matched = false;
-            for substate in &self.substates {
-                if Some(substate.id().to_string()) == self.initial_id {
-                    child_matched = true;
+            if let Some(initial_id) = self.initial_id.as_ref() {
+                let mut child_matched = false;
+                for substate in &self.substates {
+                    if substate.id() == initial_id {
+                        child_matched = true;
+                    }
+                }
+                if !child_matched {
+                    return Err(StateBuilderError::InitialIsNotChild(initial_id.clone()));
                 }
             }
-            if !child_matched {
-                return Err(StateBuilderError::InitialIsNotChild(self.initial_id.unwrap()));
+            else {
+                // If no initial ID was provided, set to first doc-order child
+                self.initial_id = Some(first_child.id().to_string());
             }
+
         }
 
         // Ensure all Transitions' source States match this one
@@ -432,11 +435,14 @@ impl fmt::Display for StateBuilderError {
             Self::DuplicateTransition(transition_id) => {
                 write!(f, "Transition '{:?}' is a duplicate of an existing Transition", transition_id)
             },
-            Self::TransitionSourceMismatch(transition_id, state_id) => {
-                write!(f, "Transition '{:?}' source State '{}' does not match parent State", transition_id, state_id)
-            },
             Self::InitialIsNotChild(initial_id) => {
                 write!(f, "Initial ID '{}' does not match any child State IDs", initial_id)
+            },
+            Self::InitialSetWithoutChildStates(initial_id) => {
+                write!(f, "Initial ID '{}' was set despite no child States existing", initial_id)
+            },
+            Self::TransitionSourceMismatch(transition_id, state_id) => {
+                write!(f, "Transition '{:?}' source State '{}' does not match parent State", transition_id, state_id)
             },
         }
     }
@@ -464,8 +470,11 @@ mod tests {
     };
 
 
+    type TestResult = Result<(), Box<dyn Error>>;
+
+
     #[test]
-    fn failed_on_exit() -> Result<(), Box<dyn Error>> {
+    fn failed_on_exit() -> TestResult {
         // Define Event and State IDs
         let initial_to_terminal = Event::from("initial_to_terminal")?;
         let initial_state_id = String::from("INITIAL");
@@ -490,7 +499,7 @@ mod tests {
             .initial(initial.id().to_string())
             .state(initial)?
             .state(terminal)?
-            .build().unwrap();
+            .build()?;
         
         assert_eq!(
             statechart.process_external_event(&initial_to_terminal),
@@ -503,7 +512,7 @@ mod tests {
 
     
     #[test]
-    fn failed_on_entry() -> Result<(), Box<dyn Error>> {
+    fn failed_on_entry() -> TestResult {
         // Define Event and State IDs
         let initial_to_terminal = Event::from("initial_to_terminal")?;
         let initial_state_id = String::from("INITIAL");
@@ -529,7 +538,7 @@ mod tests {
             .initial(initial.id().to_string())
             .state(initial)?
             .state(terminal)?
-            .build().unwrap();
+            .build()?;
         
         assert_eq!(
             statechart.process_external_event(&initial_to_terminal),
@@ -554,8 +563,10 @@ mod builder_tests {
         transition::TransitionBuilder,
     };
 
+    type TestResult = Result<(), Box<dyn Error>>;
+
     #[test]
-    fn duplicate_transition() -> Result<(), Box<dyn Error>> {
+    fn duplicate_transition() -> TestResult {
         let state_id = String::from("source");
 
         // Build Transitions to be duplicated
@@ -580,30 +591,7 @@ mod builder_tests {
     }
 
     #[test]
-    fn source_mismatch() -> Result<(), Box<dyn Error>> {
-        let correct_source_id = String::from("source");
-        let wrong_source_id = String::from("wrong");
-
-        // Build Transition with an incorrect source
-        let transition = TransitionBuilder::new(wrong_source_id.as_str())
-            .target_id("dummy_target")?
-            .build()?;
-
-        // Verify mismatch is caught
-        let builder = StateBuilder::new(correct_source_id)
-            .transition(transition.clone())?;
-        
-        assert_eq!(
-            builder.build(),
-            Err(StateBuilderError::TransitionSourceMismatch(transition.fingerprint().clone(), wrong_source_id)),
-            "Failed to catch source State mismatch"
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn duplicate_substate() -> Result<(), Box<dyn Error>> {
+    fn duplicate_substate() -> TestResult {
         // Verify that duplicates of parent state are caught
         let parent_id  = String::from("parent");
         let parent_dup_state = StateBuilder::new(parent_id.clone()).build()?;
@@ -634,7 +622,7 @@ mod builder_tests {
     }
 
     #[test]
-    fn initial_not_child() -> Result<(), Box<dyn Error>> {
+    fn initial_not_child() -> TestResult {
         let nonchild_id = String::from("nonchild");
 
         let child = StateBuilder::new(String::from("child")).build()?;
@@ -647,6 +635,42 @@ mod builder_tests {
             builder.build(),
             Err(StateBuilderError::InitialIsNotChild(nonchild_id)),
             "Failed to catch initial ID that matched no children"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn initial_set_without_child_states() -> TestResult {
+        let builder = StateBuilder::new("childless".to_string())
+            .initial("nonexistent".to_string());
+
+        assert_eq!(
+            builder.build(),
+            Err(StateBuilderError::InitialSetWithoutChildStates("nonexistent".to_string()))
+        );
+        
+        Ok(())
+    }
+
+    #[test]
+    fn source_mismatch() -> TestResult {
+        let correct_source_id = String::from("source");
+        let wrong_source_id = String::from("wrong");
+
+        // Build Transition with an incorrect source
+        let transition = TransitionBuilder::new(wrong_source_id.as_str())
+            .target_id("dummy_target")?
+            .build()?;
+
+        // Verify mismatch is caught
+        let builder = StateBuilder::new(correct_source_id)
+            .transition(transition.clone())?;
+        
+        assert_eq!(
+            builder.build(),
+            Err(StateBuilderError::TransitionSourceMismatch(transition.fingerprint().clone(), wrong_source_id)),
+            "Failed to catch source State mismatch"
         );
 
         Ok(())

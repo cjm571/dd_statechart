@@ -736,7 +736,7 @@ mod tests {
 
         assert_eq!(
             parser.parse(),
-            Err(ParserError::StateBuilderError(StateBuilderError::InitialIsNotChild("dne".to_string())))
+            Err(ParserError::StateBuilderError(StateBuilderError::InitialSetWithoutChildStates("dne".to_string())))
         );
 
         Ok(())
