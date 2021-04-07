@@ -126,16 +126,15 @@ impl Event {
 
 impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut id_node_iter = self.id_nodes.iter();
+        let mut id_node_iter = self.id_nodes.iter().peekable();
 
-        write!(f, "{}", id_node_iter.next().unwrap())?;
-        for id_node in id_node_iter {
-            // Break on first empty node
-            if id_node.is_empty() {
-                break;
+        while let Some(id_node) = id_node_iter.next() {
+            write!(f, "{}", id_node)?;
+            
+            // Only add a trailing . if there is another node after the current
+            if id_node_iter.peek().is_some() {
+                write!(f, ".")?;
             }
-
-            write!(f, ".{}", id_node)?;
         }
 
         Ok(())
@@ -170,14 +169,19 @@ impl fmt::Display for EventError {
 #[cfg(test)]
 mod tests {
 
+    use std::error::Error;
+
     use crate::event::{
         Event,
         EventError,
     };
 
 
+    type TestResult = Result<(), Box<dyn Error>>;
+
+
     #[test]
-    fn id_contains_duplicates() {
+    fn id_contains_duplicates() -> TestResult {
         let valid_string = "error.send.failed";
         let invalid_string = "error.send.error";
 
@@ -194,10 +198,12 @@ mod tests {
             Err(EventError::IdContainsDuplicates(String::from(invalid_string))),
             "Failed to reject invalid event descriptor"
         );
+
+        Ok(())
     }
 
     #[test]
-    fn empty_node() {
+    fn empty_node() -> TestResult {
         let empty_node = "this.has.an..empty.node";
 
         // Verify empty node is caught
@@ -206,12 +212,14 @@ mod tests {
             Err(EventError::IdNodeIsEmpty(String::from(empty_node), 3)),
             "Failed to catch empty node"
         );
+
+        Ok(())
     }
 
     #[test]
-    fn output() {
+    fn output() -> TestResult {
         let source = "error.send.failed";
-        let event = Event::from(source).unwrap();
+        let event = Event::from(source)?;
         
         println!("Event ID: '{}'", event);
 
@@ -220,5 +228,7 @@ mod tests {
             format!("{}", event),
             "Formatted Event does not match source string"
         );
+
+        Ok(())
     }
 }
