@@ -72,14 +72,13 @@ impl Registry {
         &self.events
     }
     
-    //TODO: Take &StateId, probably do the same for other getters here
-    pub fn get_state(&self, id: StateId) -> Option<&State> {
+    pub fn get_state(&self, id: &str) -> Option<&State> {
         for state in &self.states {
-            if state.id() == id {
+            if state.id() == *id {
                 return Some(state)
             }
 
-            if let Some(state) = Self::get_substates(state, id.clone()) {
+            if let Some(state) = Self::get_substates(state, id) {
                 return Some(state);
             }
         }
@@ -93,7 +92,7 @@ impl Registry {
                 return Some(state)
             }
 
-            if let Some(state) = Self::get_mut_substates(state, id.to_string()) {
+            if let Some(state) = Self::get_mut_substates(state, id) {
                 return Some(state);
             }
         }
@@ -142,8 +141,8 @@ impl Registry {
         None
     }
 
-    pub fn event_is_registered(&self, event: Event) -> bool {
-        self.events.contains(&event)
+    pub fn event_is_registered(&self, event: &Event) -> bool {
+        self.events.contains(event)
     }
 
 
@@ -156,8 +155,6 @@ impl Registry {
         if self.states.contains(&state) {
             return Err(RegistryError::StateAlreadyRegistered(state.id()));
         }
-        
-        //TODO: Sanity check(s) for invalid State arrangements
 
         // Traverse State and Substates for Events
         self.register_events_and_traverse_substates(&state)?;
@@ -188,6 +185,8 @@ impl Registry {
         // Check current State's Transitions for Events
         for transition in state.transitions() {
             for event in transition.events() {
+                // Clone is necessary as this function is meant to be called before moving
+                // the referenced state into the state registry vector
                 self.register_event(event.clone())?;
             }
         }
@@ -200,14 +199,14 @@ impl Registry {
         Ok(())
     }
 
-    fn get_substates(state: &State, id: StateId) -> Option<&State> {
+    fn get_substates<'s>(state: &'s State, id: &str) -> Option<&'s State> {
         for substate in state.substates() {
             if substate.id() == id {
                 return Some(substate)
             }
 
 
-            if let Some(substate) = Self::get_substates(substate, id.clone()) {
+            if let Some(substate) = Self::get_substates(substate, id) {
                 return Some(substate);
             }
         }
@@ -216,14 +215,14 @@ impl Registry {
     }
     
 
-    fn get_mut_substates(state: &mut State, id: StateId) -> Option<&mut State> {
+    fn get_mut_substates<'s>(state: &'s mut State, id: &str) -> Option<&'s mut State> {
         for substate in state.mut_substates() {
             if substate.id() == id {
                 return Some(substate)
             }
 
 
-            if let Some(substate) = Self::get_mut_substates(substate, id.clone()) {
+            if let Some(substate) = Self::get_mut_substates(substate, id) {
                 return Some(substate);
             }
         }
@@ -365,7 +364,7 @@ mod tests {
         let mut registry = Registry::default();
 
         assert_eq!(
-            registry.get_state(String::from("nonexistent")),
+            registry.get_state(&String::from("nonexistent")),
             None,
             "get_state() somehow found a nonexistent State"
         );

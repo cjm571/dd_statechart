@@ -186,7 +186,7 @@ impl StateChart {
 
     pub fn process_external_event(&mut self, event: &Event) -> Result<(), StateChartError> {
         // Ensure the given Event is registered
-        if !self.registry.event_is_registered(event.clone()) {
+        if !self.registry.event_is_registered(event) {
             return Err(StateChartError::ReceivedUnregisteredEvent(event.clone()));
         }
 
@@ -238,7 +238,7 @@ impl StateChart {
 
         // Traverse the map of states and send the event to each for evaluation
         for state_id in self.registry.get_active_state_ids() {
-            let state = self.registry.get_state(state_id).unwrap();
+            let state = self.registry.get_state(&state_id).unwrap();
 
             if let Some(enabled_transition) = state.evaluate_event(event.clone(), &self.sys_vars)? {
                 // These transitions will be used by &mut self methods, so we must clone() in order
