@@ -74,7 +74,7 @@ impl Registry {
     
     pub fn get_state(&self, id: &str) -> Option<&State> {
         for state in &self.states {
-            if state.id() == *id {
+            if state.id() == id {
                 return Some(state)
             }
 
@@ -100,7 +100,7 @@ impl Registry {
         None
     }
 
-    pub fn get_all_state_ids(&self) -> Vec<StateId> {
+    pub fn get_all_state_ids(&self) -> Vec<&str> {
         let mut state_ids = Vec::new();
 
         for state in &self.states {
@@ -111,7 +111,7 @@ impl Registry {
         state_ids
     }
 
-    pub fn get_active_state_ids(&self) -> Vec<StateId> {
+    pub fn get_active_state_ids(&self) -> Vec<&str> {
         let mut active_state_ids = Vec::new();
 
         for state in &self.states {
@@ -153,7 +153,7 @@ impl Registry {
     pub fn register_state(&mut self, state: State) -> Result<(), RegistryError> {
         // Ensure State is not already registered
         if self.states.contains(&state) {
-            return Err(RegistryError::StateAlreadyRegistered(state.id()));
+            return Err(RegistryError::StateAlreadyRegistered(state.id().to_string()));
         }
 
         // Traverse State and Substates for Events
@@ -230,7 +230,7 @@ impl Registry {
         None
     }
 
-    fn get_all_substate_ids(state: &State) -> Vec<StateId> {
+    fn get_all_substate_ids(state: &State) -> Vec<&str> {
         let mut substate_ids = Vec::new();
         
         for substate in state.substates() {
@@ -241,7 +241,7 @@ impl Registry {
         substate_ids
     }
 
-    fn get_active_substate_ids(state: &State) -> Vec<StateId> {
+    fn get_active_substate_ids(state: &State) -> Vec<&str> {
         let mut active_substate_ids = Vec::new();
         
         for substate in state.substates() {

@@ -175,7 +175,7 @@ impl StateChart {
     \*  *  *  *  *  *  *  */
 
     /// Retrieves all active states in the StateChart.
-    pub fn active_state_ids(&self) -> Vec<StateId> {
+    pub fn active_state_ids(&self) -> Vec<&str> {
         self.registry.get_active_state_ids()
     }
 
@@ -315,7 +315,7 @@ impl StateChartBuilder {
         
         // If no initial State ID was provided, set to first doc-order child
         if self.initial.is_none() {
-            self.initial = Some(self.registry.get_all_state_ids().first().unwrap().clone());
+            self.initial = Some(self.registry.get_all_state_ids().first().unwrap().to_string());
         }
 
         // Activate the Initial State
@@ -530,7 +530,7 @@ mod tests {
         // Build statechart
         let mut statechart = StateChartBuilder::default()
             .name("theia")
-            .initial(idle.id())
+            .initial(idle.id().to_string())
             .state(idle)?
             .state(diagnostic)?
             .state(non_imaging)?
@@ -542,8 +542,8 @@ mod tests {
         statechart.process_external_event(&go_to_non_imaging)?;
 
         // Verify that IDLE is inactive and NON-IMAGING is active
-        assert_eq!(statechart.active_state_ids().contains(&idle_id), false);
-        assert_eq!(statechart.active_state_ids().contains(&non_imaging_id), true);
+        assert_eq!(statechart.active_state_ids().contains(&idle_id.as_str()), false);
+        assert_eq!(statechart.active_state_ids().contains(&non_imaging_id.as_str()), true);
 
         Ok(())
     }
@@ -690,11 +690,11 @@ mod builder_tests {
         let mut invalid_builder = StateChartBuilder::default();
         invalid_builder
             .state(registered)?
-            .initial(unregistered.id());
+            .initial(unregistered.id().to_string());
 
         assert_eq!(
             invalid_builder.build(),
-            Err(StateChartBuilderError::InitialStateNotRegistered(unregistered.id())),
+            Err(StateChartBuilderError::InitialStateNotRegistered(unregistered.id().to_string())),
             "Failed to detect unregistered ID in the initial vector"
         );
 

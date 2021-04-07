@@ -105,9 +105,8 @@ impl State {
      *  Accessor Methods  *
     \*  *  *  *  *  *  *  */
 
-    //TODO: Return reference
-    pub fn id(&self) -> StateId {
-        self.id.clone()
+    pub fn id(&self) -> &str {
+        &self.id
     }
 
     pub fn is_active(&self) -> bool {
@@ -154,7 +153,7 @@ impl State {
         // If substates exist, enter the initial substate
         for substate in &mut self.substates {
             if let Some(initial_id) = &self.initial_id {
-                if &substate.id() == initial_id {
+                if substate.id() == initial_id {
                     substate.enter()?;
                 }
             }
@@ -267,7 +266,6 @@ impl StateBuilder {
      *  Builder Methods   *
     \*  *  *  *  *  *  *  */
 
-    //TODO: Make this a non-consuming Builder
     pub fn build(mut self) -> Result<State, StateBuilderError> {
         // No-child `initial` sanity check
         if self.substates.is_empty() && self.initial_id.is_some() {
@@ -278,14 +276,13 @@ impl StateBuilder {
         if !self.substates.is_empty() {
             // If no initial ID was provided, set to first doc-order child
             if self.initial_id.is_none() {
-                self.initial_id = Some(self.substates.first().unwrap().id());
+                self.initial_id = Some(self.substates.first().unwrap().id().to_string());
             }
 
             // Ensure that initial ID matches a child State
             let mut child_matched = false;
             for substate in &self.substates {
-                //TODO: Initial ID cannot be copied due to StateId == String. should be &str
-                if substate.id() == self.initial_id.clone().unwrap() {
+                if Some(substate.id().to_string()) == self.initial_id {
                     child_matched = true;
                 }
             }
@@ -317,11 +314,11 @@ impl StateBuilder {
     pub fn substate(mut self, state: State) -> Result<Self, StateBuilderError> {
         // Ensure the substate is not a duplicate
         if state.id() == self.id {
-            return Err(StateBuilderError::DuplicateSubstate(state.id()));
+            return Err(StateBuilderError::DuplicateSubstate(state.id().to_string()));
         }
         for substate in &self.substates {
             if state.id() == substate.id() {
-                return Err(StateBuilderError::DuplicateSubstate(state.id()));
+                return Err(StateBuilderError::DuplicateSubstate(state.id().to_string()));
             }
         }
 
@@ -469,7 +466,6 @@ mod tests {
 
     #[test]
     fn failed_on_exit() -> Result<(), Box<dyn Error>> {
-        //TODO: Extraneous clones
         // Define Event and State IDs
         let initial_to_terminal = Event::from("initial_to_terminal")?;
         let initial_state_id = String::from("INITIAL");
@@ -491,7 +487,7 @@ mod tests {
         
         // Build the StateChart and process the Event
         let mut statechart = StateChartBuilder::default()
-            .initial(initial.id())
+            .initial(initial.id().to_string())
             .state(initial)?
             .state(terminal)?
             .build().unwrap();
@@ -530,7 +526,7 @@ mod tests {
         
         // Build the StateChart and process the Event
         let mut statechart = StateChartBuilder::default()
-            .initial(initial.id())
+            .initial(initial.id().to_string())
             .state(initial)?
             .state(terminal)?
             .build().unwrap();
@@ -585,7 +581,6 @@ mod builder_tests {
 
     #[test]
     fn source_mismatch() -> Result<(), Box<dyn Error>> {
-        //TODO: Extraneous clones
         let correct_source_id = String::from("source");
         let wrong_source_id = String::from("wrong");
 
@@ -609,7 +604,6 @@ mod builder_tests {
 
     #[test]
     fn duplicate_substate() -> Result<(), Box<dyn Error>> {
-        //TODO: Extraneous clones()
         // Verify that duplicates of parent state are caught
         let parent_id  = String::from("parent");
         let parent_dup_state = StateBuilder::new(parent_id.clone()).build()?;
@@ -641,7 +635,6 @@ mod builder_tests {
 
     #[test]
     fn initial_not_child() -> Result<(), Box<dyn Error>> {
-        //TODO: Extraneous clones()
         let nonchild_id = String::from("nonchild");
 
         let child = StateBuilder::new(String::from("child")).build()?;
