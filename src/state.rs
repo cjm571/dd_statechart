@@ -183,8 +183,7 @@ impl State {
         Ok(())
     }
     
-
-    pub fn evaluate_event(&self, event: Option<Event>, sys_vars: &SystemVariables) -> Result<Option<&TransitionFingerprint>, StateError> {
+    pub fn evaluate_event(&self, event: Option<&Event>, sys_vars: &SystemVariables) -> Result<Option<&TransitionFingerprint>, StateError> {
         let mut enable_candidates = Vec::new();
         
         // Handle evaluation of a non-null Event
@@ -192,7 +191,7 @@ impl State {
             // Check for Event match in each of this State's Transitions
             for transition in &self.transitions {
                 for transition_event in transition.events() {
-                    if transition_event == event {
+                    if &transition_event == event {
                         enable_candidates.push(transition);
                     }
                 }

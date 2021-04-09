@@ -19,7 +19,7 @@ Purpose:
 
     It is meant to be a sole source of information on States, Transformation, and
     valid Events. Additionally, it is the gatekeeper for mutable State objects.
-    
+
     Many functions of StateChart processing require both reading and mutating
     States,such as determining if a target state should be activated, and Rust's
     borrow checker (wisely) will not allow these in-place mutations. The Registry
@@ -38,7 +38,10 @@ use crate::{
         State,
         StateId,
     },
-    transition::Transition,
+    transition::{
+        Transition,
+        TransitionFingerprint,
+    },
 };
 
 
@@ -54,8 +57,10 @@ pub struct Registry {
 
 #[derive(Debug, PartialEq)]
 pub enum RegistryError {
-    StateAlreadyRegistered(StateId),
     EventAlreadyRegistered(Event),
+    StateAlreadyRegistered(StateId),
+    StateNotFound(StateId),
+    TransitionNotFound(TransitionFingerprint),
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -63,7 +68,7 @@ pub enum RegistryError {
 ///////////////////////////////////////////////////////////////////////////////
 
 impl Registry {
-    
+
     /*  *  *  *  *  *  *  *\
      *  Accessor Methods  *
     \*  *  *  *  *  *  *  */
@@ -71,74 +76,74 @@ impl Registry {
     pub fn get_events(&self) -> &Vec<Event> {
         &self.events
     }
-    
-    pub fn get_state(&self, id: &str) -> Option<&State> {
+
+    pub fn get_state(&self, id: &str) -> Result<&State, RegistryError> {
         for state in &self.states {
             if state.id() == id {
-                return Some(state)
+                return Ok(state)
             }
 
             if let Some(state) = Self::get_substates(state, id) {
-                return Some(state);
+                return Ok(state);
             }
         }
 
-        None
+        Err(RegistryError::StateNotFound(id.to_string()))
     }
 
-    pub fn get_mut_state(&mut self, id: &str) -> Option<&mut State> {
+    pub fn get_mut_state(&mut self, id: &str) -> Result<&mut State, RegistryError> {
         for state in &mut self.states {
             if state.id() == id {
-                return Some(state)
+                return Ok(state)
             }
 
             if let Some(state) = Self::get_mut_substates(state, id) {
-                return Some(state);
+                return Ok(state);
             }
         }
 
-        None
+        Err(RegistryError::StateNotFound(id.to_string()))
     }
 
-    pub fn get_all_state_ids(&self) -> Vec<&str> {
-        let mut state_ids = Vec::new();
+    pub fn get_all_states(&self) -> Vec<&State> {
+        let mut states = Vec::new();
 
         for state in &self.states {
-            state_ids.push(state.id());
-            state_ids.append(&mut Self::get_all_substate_ids(state));
+            states.push(state);
+            states.append(&mut Self::get_all_substates(state));
         }
 
-        state_ids
+        states
     }
 
-    pub fn get_active_state_ids(&self) -> Vec<&str> {
-        let mut active_state_ids = Vec::new();
+    pub fn get_active_states(&self) -> Vec<&State> {
+        let mut active_states = Vec::new();
 
         for state in &self.states {
             if state.is_active() {
-                active_state_ids.push(state.id());
-                active_state_ids.append(&mut Self::get_active_substate_ids(state));
+                active_states.push(state);
+                active_states.append(&mut Self::get_active_substates(state));
             }
         }
 
-        active_state_ids
+        active_states
     }
 
-    pub fn get_transition(&self, fingerprint: &str) -> Option<&Transition> {
+    pub fn get_transition(&self, fingerprint: &str) -> Result<&Transition, RegistryError> {
         // Search State map for a State containing this ID
         for state in &self.states {
             for transition in state.transitions() {
                 if fingerprint == transition.fingerprint() {
-                    return Some(transition);
+                    return Ok(transition);
                 }
             }
 
             if let Some(transition) = Self::get_substate_transitions(state, fingerprint) {
-                return Some(transition);
+                return Ok(transition);
             }
         }
 
-        None
+        Err(RegistryError::TransitionNotFound(fingerprint.to_string()))
     }
 
     pub fn event_is_registered(&self, event: &Event) -> bool {
@@ -175,7 +180,7 @@ impl Registry {
         if self.events.contains(&event) {
             return Err(RegistryError::EventAlreadyRegistered(event));
         }
-        
+
         // Push Event into the vector
         self.events.push(event);
         Ok(())
@@ -213,7 +218,7 @@ impl Registry {
 
         None
     }
-    
+
 
     fn get_mut_substates<'s>(state: &'s mut State, id: &str) -> Option<&'s mut State> {
         for substate in state.mut_substates() {
@@ -230,30 +235,31 @@ impl Registry {
         None
     }
 
-    fn get_all_substate_ids(state: &State) -> Vec<&str> {
-        let mut substate_ids = Vec::new();
-        
+    fn get_all_substates(state: &State) -> Vec<&State> {
+        let mut substates = Vec::new();
+
         for substate in state.substates() {
-            substate_ids.push(substate.id());
-            substate_ids.append(&mut Self::get_all_substate_ids(substate));
+            substates.push(substate);
+            substates.append(&mut Self::get_all_substates(substate));
         }
 
-        substate_ids
+        substates
     }
 
-    fn get_active_substate_ids(state: &State) -> Vec<&str> {
-        let mut active_substate_ids = Vec::new();
-        
+    fn get_active_substates(state: &State) -> Vec<&State> {
+        let mut active_substates = Vec::new();
+
         for substate in state.substates() {
             if substate.is_active() {
-                active_substate_ids.push(substate.id());
-                active_substate_ids.append(&mut Self::get_active_substate_ids(substate));
+                active_substates.push(substate);
+                active_substates.append(&mut Self::get_active_substates(substate));
             }
         }
 
-        active_substate_ids
+        active_substates
     }
 
+    //OPT: *STYLE* Poorly-named function
     fn get_substate_transitions<'s>(state: &'s State, fingerprint: &str) -> Option<&'s Transition> {
         for substate in state.substates() {
             for transition in substate.transitions() {
@@ -285,12 +291,18 @@ impl Error for RegistryError {}
 impl fmt::Display for RegistryError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Self::EventAlreadyRegistered(event) => {
+                write!(f, "Event '{}' already registered", event)
+            }
             Self::StateAlreadyRegistered(state_id) => {
                 write!(f, "State with ID '{}' already registered", state_id)
             },
-            Self::EventAlreadyRegistered(event) => {
-                write!(f, "Event '{}' already registered", event)
-            }            
+            Self::StateNotFound(state_id) => {
+                write!(f, "Could not find any States with ID '{}' in the Registry", state_id)
+            },
+            Self::TransitionNotFound(fingerprint) => {
+                write!(f, "Could not find any Transitions with Fingerprint '{}' in the Registry", fingerprint)
+            },
         }
     }
 }
@@ -313,7 +325,7 @@ mod tests {
         },
         state::{
             StateBuilder,
-            StateId,
+            State,
         },
         transition::TransitionFingerprint,
     };
@@ -342,7 +354,7 @@ mod tests {
             Ok(()),
             "Valid Event registration failed"
         );
-        
+
         // Verify that double-registration fails for both elements
         assert_eq!(
             registry.register_state(state_b),
@@ -364,28 +376,28 @@ mod tests {
         let mut registry = Registry::default();
 
         assert_eq!(
-            registry.get_state(&String::from("nonexistent")),
-            None,
+            registry.get_state("nonexistent"),
+            Err(RegistryError::StateNotFound("nonexistent".to_string())),
             "get_state() somehow found a nonexistent State"
         );
 
         assert_eq!(
-            registry.get_mut_state(&String::from("nonexistent")),
-            None,
+            registry.get_mut_state("nonexistent"),
+            Err(RegistryError::StateNotFound("nonexistent".to_string())),
             "get_mut_state() somehow found a nonexistent State"
         );
 
         assert_eq!(
             registry.get_transition(&TransitionFingerprint::default()),
-            None,
+            Err(RegistryError::TransitionNotFound(TransitionFingerprint::default())),
            "get_transition() somehow found a nonexistent Transition"
         );
 
-        let empty_stateid_vec: Vec<StateId> = Vec::new();
+        let empty_stateid_vec: Vec<&State> = Vec::new();
         assert_eq!(
-            registry.get_active_state_ids(),
+            registry.get_active_states(),
             empty_stateid_vec,
-            "get_active_state_ids() somehow found nonexistent State(s)"
+            "get_active_states() somehow found nonexistent State(s)"
         );
 
         Ok(())

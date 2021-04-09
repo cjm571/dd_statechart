@@ -135,6 +135,7 @@ pub enum StateChartError {
     // Wrappers
     ExecutableContentError(ExecutableContentError),
     ParserError(ParserError),
+    RegistryError(RegistryError),
     StateError(StateError),
 }
 
@@ -174,9 +175,12 @@ impl StateChart {
      *  Accessor Methods  *
     \*  *  *  *  *  *  *  */
 
-    /// Retrieves all active states in the StateChart.
+    /// Retrieves the IDs of all active states in the StateChart.
     pub fn active_state_ids(&self) -> Vec<&str> {
-        self.registry.get_active_state_ids()
+        self.registry.get_active_states()
+        .iter()
+        .map(|v| v.id())
+        .collect()
     }
 
 
@@ -194,7 +198,7 @@ impl StateChart {
         self.sys_vars.set_event(event.clone());
         
         // Collect and process the set of enabled Transitions
-        let mut enabled_transition_fingerprints = self.select_transitions(Some(event.clone()))?;
+        let mut enabled_transition_fingerprints = self.select_transitions(Some(event))?;
 
         //OPT: *STYLE* I don't like this loop, it's not very easy to tell what's being processed in the microstep
         // Enter Microstep processing loop
@@ -208,20 +212,18 @@ impl StateChart {
             if !enabled_transition_fingerprints.is_empty() {
                 continue;
             }
-            // No eventless Transitions found, check the internal queue for Events
-            else if self.internal_queue.is_empty() {
-                break; // Nothing left to process, job done!
-            }
-            else {
-                // Pop the event off the queue
-                let internal_event = self.internal_queue.pop_front().unwrap();
 
+            // No eventless Transitions found, check the internal queue for Events
+            if let Some(internal_event) = self.internal_queue.pop_front() {
                 // Set the _event System Variable to the internal Event
                 self.sys_vars.set_event(internal_event.clone());
 
                 // Select transitions for the internal Event and return to top of the loop
-                enabled_transition_fingerprints = self.select_transitions(Some(internal_event))?;
+                enabled_transition_fingerprints = self.select_transitions(Some(&internal_event))?;
                 continue;
+            }
+            else {
+                break; // Nothing left to process, job done!
             }
         }
 
@@ -233,15 +235,13 @@ impl StateChart {
      *  Helper Methods    *
     \*  *  *  *  *  *  *  */
 
-    fn select_transitions(&self, event: Option<Event>) -> Result<Vec<TransitionFingerprint>, StateChartError> {
+    fn select_transitions(&self, event: Option<&Event>) -> Result<Vec<TransitionFingerprint>, StateChartError> {
         let mut enabled_transitions = Vec::new();
 
         // Traverse the map of states and send the event to each for evaluation
-        for state_id in self.registry.get_active_state_ids() {
-            let state = self.registry.get_state(&state_id).unwrap();
-
-            if let Some(enabled_transition) = state.evaluate_event(event.clone(), &self.sys_vars)? {
-                // These transitions will be used by &mut self methods, so we must clone() in order
+        for state in &self.registry.get_active_states() {
+            if let Some(enabled_transition) = state.evaluate_event(event, &self.sys_vars)? {
+                // These transitions will be used later by &mut self methods, so we must clone() in order
                 // to give them owned TransitionFingerprints
                 enabled_transitions.push(enabled_transition.clone());
             }
@@ -266,18 +266,18 @@ impl StateChart {
             // Only operate on Transitions with targets
             //TODO: Possible extraneous clone
             //TODO: awful style
-            if !self.registry.get_transition(&transition_fingerprint).unwrap().target_ids().is_empty() {
-                let source_state_id = self.registry.get_transition(&transition_fingerprint).unwrap().source_id().clone();
-                let source_state = self.registry.get_mut_state(&source_state_id).unwrap();
+            if !self.registry.get_transition(&transition_fingerprint)?.target_ids().is_empty() {
+                let source_state_id = self.registry.get_transition(&transition_fingerprint)?.source_id().clone();
+                let source_state = self.registry.get_mut_state(&source_state_id)?;
 
                 source_state.exit()?;
             }
         }
 
         // Perform executable content of Transition(s)
-        //TODO: Fix this clone/unwrap() hideousness
+        //TODO: Fix this clone hideousness
         for transition_fingerprint in enabled_transition_fingerprints.clone() {
-            let cur_transition = self.registry.get_transition(&transition_fingerprint).unwrap();
+            let cur_transition = self.registry.get_transition(&transition_fingerprint)?;
             for exec_content in cur_transition.executable_content() {
                 exec_content.execute(&mut self.sys_vars)?;
             }
@@ -288,10 +288,10 @@ impl StateChart {
 
         // Enter target State(s) in "Entry Order"
         for transition_fingerprint in entry_sorted_transition_fingerprints {
-            let target_state_ids = self.registry.get_transition(&transition_fingerprint).unwrap().target_ids().clone();
+            let target_state_ids = self.registry.get_transition(&transition_fingerprint)?.target_ids().clone();
             //TODO: Sort these too?
             for state_id in target_state_ids {
-                let target_state = self.registry.get_mut_state(&state_id).unwrap();
+                let target_state = self.registry.get_mut_state(&state_id)?;
                 target_state.enter()?;
             }
         }
@@ -307,30 +307,34 @@ impl StateChartBuilder {
      *  Builder Methods   *
     \*  *  *  *  *  *  *  */
     
+    //OPT: *DESIGN* Can this be converted to a mut self to avoid clones?
     pub fn build(&mut self) -> Result<StateChart, StateChartBuilderError> {
         // Ensure at least one State has been registered
-        if self.registry.get_all_state_ids().is_empty() {
-            return Err(StateChartBuilderError::NoStatesRegistered);
+        if let Some(first_state) = self.registry.get_all_states().first() {
+            // If no initial State ID was provided, set to first doc-order child
+            if self.initial.is_none() {
+                self.initial = Some(first_state.id().to_string());
+            }
         }
-        
-        // If no initial State ID was provided, set to first doc-order child
-        if self.initial.is_none() {
-            self.initial = Some(self.registry.get_all_state_ids().first().unwrap().to_string());
+        else {
+            return Err(StateChartBuilderError::NoStatesRegistered);
         }
 
         // Activate the Initial State
-        //TODO: Initial cannot be copied due to StateId being a String. should be made into a &str
-        if let Some(state) = self.registry.get_mut_state(self.initial.as_ref().unwrap()) {
-            state.activate()
-            //TODO: Probably gotta recurse here for sub-states
-            //      Or not? maybe the activate function could do that...
+        if let Some(initial_id) = &self.initial {
+            if let Ok(state) = self.registry.get_mut_state(initial_id.as_ref()) {
+                state.activate()
+            }
+            else {
+                // Initial State was not found in the Registry, therefore the StateChart is invalid.
+                return Err(StateChartBuilderError::InitialStateNotRegistered(initial_id.clone()));
+            }
         }
         else {
-            // Initial State was not found in the Registry, therefore the StateChart is invalid.
-            //TODO: must also be a top-level state
-            return Err(StateChartBuilderError::InitialStateNotRegistered(self.initial.clone().unwrap()));
+            // Intentionally left blank
+            // self.initial is guaranteed to contain a value since it is set above
         }
-        
+
         Ok(
             StateChart {
                 sys_vars:       self.sys_vars.clone(),
@@ -403,26 +407,34 @@ impl fmt::Display for StateChartError {
 
             // Wrappers
             Self::ExecutableContentError(exec_err) => {
-                write!(f, "ExecutableContentError '{:?}' encountered while building state chart", exec_err)
+                write!(f, "ExecutableContentError '{:?}' encountered while processing state chart", exec_err)
             },
             Self::ParserError(parse_err) => {
-                write!(f, "ParserError '{:?}' encountered while building state chart", parse_err)
+                write!(f, "ParserError '{:?}' encountered while processing state chart", parse_err)
+            },
+            Self::RegistryError(registry_err) => {
+                write!(f, "RegistryError '{:?}' encountered while processing state chart", registry_err)
             },
             Self::StateError(state_err) => {
-                write!(f, "StateError '{:?}' encountered while building state chart", state_err)
+                write!(f, "StateError '{:?}' encountered while processing state chart", state_err)
             },
         }
     }
 }
 
-impl From<StateError> for StateChartError {
-    fn from (src: StateError) -> Self {
-        Self::StateError(src)
-    }
-}
 impl From<ExecutableContentError> for StateChartError {
     fn from (src: ExecutableContentError) -> Self {
         Self::ExecutableContentError(src)
+    }
+}
+impl From<RegistryError> for StateChartError {
+    fn from (src: RegistryError) -> Self {
+        Self::RegistryError(src)
+    }
+}
+impl From<StateError> for StateChartError {
+    fn from (src: StateError) -> Self {
+        Self::StateError(src)
     }
 }
 
@@ -627,8 +639,8 @@ mod tests {
         statechart.process_external_event(&event)?;
 
         assert_eq!(
-            statechart.active_state_ids().first().unwrap(),
-            &end_id,
+            statechart.active_state_ids().first(),
+            Some(&end_id.as_str()),
             "Failed to trigger eventless transition."
         );
 
