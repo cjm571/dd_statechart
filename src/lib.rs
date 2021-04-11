@@ -258,40 +258,36 @@ impl StateChart {
     /// 2. Executing executable content of a Transition
     /// 3. Entering target State(s)
     fn process_microstep(&mut self, enabled_transition_fingerprints: Vec<TransitionFingerprint>) -> Result<(), StateChartError> {
-        //TODO: Sort transition source states into exit order, for now, just copying as-is
-        let exit_sorted_transition_fingerprints = enabled_transition_fingerprints.clone();
+        // Transitions are selected in Document Order, so reverse this Vec to get Exit Order
+        let mut exit_sorted_transition_fingerprints = enabled_transition_fingerprints.clone();
+        exit_sorted_transition_fingerprints.reverse();
 
-        // Exit source State(s) in "Exit Order"
-        for transition_fingerprint in exit_sorted_transition_fingerprints {
-            // Only operate on Transitions with targets
-            //TODO: Possible extraneous clone
-            //TODO: awful style
-            if !self.registry.get_transition(&transition_fingerprint)?.target_ids().is_empty() {
-                let source_state_id = self.registry.get_transition(&transition_fingerprint)?.source_id().clone();
+        // Exit source State(s) in Exit Order
+        for transition_fingerprint in &exit_sorted_transition_fingerprints {
+            // Only operate on Transitions with targets here
+            if !self.registry.get_transition(transition_fingerprint)?.target_ids().is_empty() {
+                // Clone is necessary as the ID will be used by mutable methods next
+                let source_state_id = self.registry.get_transition(transition_fingerprint)?.source_id().clone();
                 let source_state = self.registry.get_mut_state(&source_state_id)?;
 
                 source_state.exit()?;
             }
         }
 
-        // Perform executable content of Transition(s)
-        //TODO: Fix this clone hideousness
-        for transition_fingerprint in enabled_transition_fingerprints.clone() {
-            let cur_transition = self.registry.get_transition(&transition_fingerprint)?;
+        // Perform executable content of Transition(s) in Document Order
+        for transition_fingerprint in &enabled_transition_fingerprints {
+            let cur_transition = self.registry.get_transition(transition_fingerprint)?;
             for exec_content in cur_transition.executable_content() {
                 exec_content.execute(&mut self.sys_vars)?;
             }
         }
-        
-        //TODO: Sort transition source states into entry order, for now, just copying as-is
-        let entry_sorted_transition_fingerprints = enabled_transition_fingerprints;
 
-        // Enter target State(s) in "Entry Order"
-        for transition_fingerprint in entry_sorted_transition_fingerprints {
-            let target_state_ids = self.registry.get_transition(&transition_fingerprint)?.target_ids().clone();
-            //TODO: Sort these too?
-            for state_id in target_state_ids {
-                let target_state = self.registry.get_mut_state(&state_id)?;
+        // Enter target State(s) in Entry Order (same as Document Order)
+        for transition_fingerprint in &enabled_transition_fingerprints {
+            // Clone is necessary as the IDs will be used by mutable methods next
+            let target_state_ids = self.registry.get_transition(transition_fingerprint)?.target_ids().clone();
+            for state_id in &target_state_ids {
+                let target_state = self.registry.get_mut_state(state_id)?;
                 target_state.enter()?;
             }
         }
