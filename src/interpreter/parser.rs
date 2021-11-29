@@ -36,21 +36,10 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-use std::{
-    error::Error,
-    fmt,
-    iter::Peekable,
-    slice::Iter,
-};
+use std::{error::Error, fmt, iter::Peekable, slice::Iter};
 
 use crate::interpreter::{
-    ArithmeticOperator,
-    Expression,
-    Literal,
-    LogicalOperator,
-    Operator,
-    Token,
-    Unary,
+    ArithmeticOperator, Expression, Literal, LogicalOperator, Operator, Token, Unary,
 };
 
 
@@ -60,23 +49,22 @@ use crate::interpreter::{
 
 pub struct Parser<'i> {
     token_iter: Peekable<Iter<'i, Token>>,
-    position:   u32,
+    position: u32,
 }
 #[derive(Debug, PartialEq)]
 pub enum ParserError {
     InvalidOperatorConversion(
-        Token,  /* Token that could not be converted to Operator */
+        Token, /* Token that could not be converted to Operator */
     ),
     InvalidPrimaryToken(
-        Token,      /* Invalid Token */
-        u32,        /* Start location of invalid Token */
+        Token, /* Invalid Token */
+        u32,   /* Start location of invalid Token */
     ),
     UnexpectedEndOfExpression,
     UnterminatedGroup(
         Expression, /* Expression within unterminated group */
         u32,        /* Start location of unterminated group */
     ),
-
 }
 
 
@@ -88,7 +76,7 @@ impl<'i> Parser<'i> {
     pub fn new(tokens: &'i [Token]) -> Self {
         Self {
             token_iter: tokens.iter().peekable(),
-            position:   0,
+            position: 0,
         }
     }
 
@@ -114,10 +102,7 @@ impl<'i> Parser<'i> {
 
     // equality → comparison ( ( "!=" | "==" ) comparison )* ;
     fn equality(&mut self) -> Result<Expression, ParserError> {
-        let equivalence_tokens = [
-            &&Token::EqualEqual,
-            &&Token::BangEqual,
-        ];
+        let equivalence_tokens = [&&Token::EqualEqual, &&Token::BangEqual];
 
         // The LHS of an Equality can be parsed as a Comparison, so call down to that level
         let mut expr = self.comparison()?;
@@ -125,10 +110,13 @@ impl<'i> Parser<'i> {
         // The rest of an Equality (if it exists) can also be parsed as Comparison(s)
         // Continually peek the next Token and see if it is an equivalence operator,
         // attempt conversion and catch invalid Tokens if filter is passed.
-        while let Some(eq_op) = self.token_iter.peek()
-                                .filter(|v| equivalence_tokens.contains(v))
-                                .map(|v| Self::try_op_from_token(v))
-                                .transpose()? {
+        while let Some(eq_op) = self
+            .token_iter
+            .peek()
+            .filter(|v| equivalence_tokens.contains(v))
+            .map(|v| Self::try_op_from_token(v))
+            .transpose()?
+        {
             // Match and convert succeeded, consume Token
             self.consume_token();
 
@@ -154,10 +142,13 @@ impl<'i> Parser<'i> {
         // The rest of a Comparison (if it exists) can also be parsed as Term(s)
         // Continually peek the next Token and see if it is a comparison operator,
         // attempt conversion and catch invalid Tokens if filter is passed.
-        while let Some(comp_op) = self.token_iter.peek()
-                                    .filter(|v| comparison_tokens.contains(v))
-                                    .map(|v| Self::try_op_from_token(v))
-                                    .transpose()? {
+        while let Some(comp_op) = self
+            .token_iter
+            .peek()
+            .filter(|v| comparison_tokens.contains(v))
+            .map(|v| Self::try_op_from_token(v))
+            .transpose()?
+        {
             // Match and convert succeeded, consume Token
             self.consume_token();
 
@@ -170,10 +161,7 @@ impl<'i> Parser<'i> {
 
     // term → factor ( ( "-" | "+" ) factor )* ;
     fn term(&mut self) -> Result<Expression, ParserError> {
-        let arithmetic_tokens = [
-            &&Token::Minus,
-            &&Token::Plus,
-        ];
+        let arithmetic_tokens = [&&Token::Minus, &&Token::Plus];
 
         // The LHS of a Term can be parsed as a Factor, so call down to that level
         let mut expr = self.factor()?;
@@ -181,10 +169,13 @@ impl<'i> Parser<'i> {
         // The rest of a Term (if it exists) can also be parsed as Factor(s)
         // Continually peek the next Token and see if it is an arithmetic operator,
         // attempt conversion and catch invalid Tokens if filter is passed.
-        while let Some(math_op) = self.token_iter.peek()
-                                    .filter(|v| arithmetic_tokens.contains(v))
-                                    .map(|v| Self::try_op_from_token(v))
-                                    .transpose()? {
+        while let Some(math_op) = self
+            .token_iter
+            .peek()
+            .filter(|v| arithmetic_tokens.contains(v))
+            .map(|v| Self::try_op_from_token(v))
+            .transpose()?
+        {
             // Match and convert succeeded, consume Token
             self.consume_token();
 
@@ -197,10 +188,7 @@ impl<'i> Parser<'i> {
 
     // factor → unary ( ( "/" | "*" ) unary )* ;
     fn factor(&mut self) -> Result<Expression, ParserError> {
-        let arithmetic_tokens = [
-            &&Token::Slash,
-            &&Token::Star,
-        ];
+        let arithmetic_tokens = [&&Token::Slash, &&Token::Star];
 
         // The LHS of a Factor can be parsed as a Unary, so call down to that level
         let mut expr = self.unary()?;
@@ -208,10 +196,13 @@ impl<'i> Parser<'i> {
         // The rest of a Factor (if it exists) can also be parsed as Unary(s)
         // Continually peek the next Token and see if it is an arithmetic operator,
         // attempt conversion and catch invalid Tokens if filter is passed.
-        while let Some(math_op) = self.token_iter.peek()
-                                    .filter(|v| arithmetic_tokens.contains(v))
-                                    .map(|v| Self::try_op_from_token(v))
-                                    .transpose()? {
+        while let Some(math_op) = self
+            .token_iter
+            .peek()
+            .filter(|v| arithmetic_tokens.contains(v))
+            .map(|v| Self::try_op_from_token(v))
+            .transpose()?
+        {
             // Match and convert succeeded, consume Token
             self.consume_token();
 
@@ -231,11 +222,11 @@ impl<'i> Parser<'i> {
             Some(&&Token::Bang) => {
                 self.consume_token();
                 Ok(Expression::Unary(Unary::Not(Box::new(self.unary()?))))
-            },
+            }
             Some(&&Token::Minus) => {
                 self.consume_token();
                 Ok(Expression::Unary(Unary::Negation(Box::new(self.unary()?))))
-            },
+            }
             // Otherwise, the Unary can be parsed as a Primary, so call down to that level
             _ => self.primary(),
         }
@@ -249,15 +240,15 @@ impl<'i> Parser<'i> {
         // Primaries are either Literals/Identifiers, or a Grouping containing another Expression
         match self.consume_token() {
             // Literals and Identifiers can be parsed directly
-            Some(&Token::Number(value))                 => Ok(Expression::Literal(Literal::Number(value))),
-            Some(&Token::String(ref string))            => Ok(Expression::Literal(Literal::String(string.clone()))),
-            Some(&Token::Identifier(ref identifier)) => {
-                match identifier.as_str() {
-                    "true"  => Ok(Expression::Literal(Literal::True)),
-                    "false" => Ok(Expression::Literal(Literal::False)),
-                    "null"  => Ok(Expression::Literal(Literal::Null)),
-                    _       => Ok(Expression::Identifier(identifier.clone())),
-                }
+            Some(&Token::Number(value)) => Ok(Expression::Literal(Literal::Number(value))),
+            Some(&Token::String(ref string)) => {
+                Ok(Expression::Literal(Literal::String(string.clone())))
+            }
+            Some(&Token::Identifier(ref identifier)) => match identifier.as_str() {
+                "true" => Ok(Expression::Literal(Literal::True)),
+                "false" => Ok(Expression::Literal(Literal::False)),
+                "null" => Ok(Expression::Literal(Literal::Null)),
+                _ => Ok(Expression::Identifier(identifier.clone())),
             },
 
             // Groupings result in parsing of the contained Expression
@@ -270,15 +261,14 @@ impl<'i> Parser<'i> {
                     self.consume_token();
 
                     Ok(Expression::Grouping(Box::new(expr)))
-                }
-                else {
+                } else {
                     Err(ParserError::UnterminatedGroup(expr, start))
                 }
             }
 
             // Unexpected Tokens and End-of-Expression are both errors at this point
-            Some(unexpected)    => Err(ParserError::InvalidPrimaryToken(unexpected.clone(), start)),
-            None                => Err(ParserError::UnexpectedEndOfExpression),
+            Some(unexpected) => Err(ParserError::InvalidPrimaryToken(unexpected.clone(), start)),
+            None => Err(ParserError::UnexpectedEndOfExpression),
         }
     }
 
@@ -295,20 +285,21 @@ impl<'i> Parser<'i> {
 
     fn try_op_from_token(src: &Token) -> Result<Operator, ParserError> {
         match src {
-            Token::EqualEqual           => Ok(Operator::Logical(LogicalOperator::EqualTo)),
-            Token::BangEqual            => Ok(Operator::Logical(LogicalOperator::NotEqualTo)),
-            Token::GreaterThan          => Ok(Operator::Logical(LogicalOperator::GreaterThan)),
-            Token::GreaterThanOrEqualTo => Ok(Operator::Logical(LogicalOperator::GreaterThanOrEqualTo)),
-            Token::LessThan             => Ok(Operator::Logical(LogicalOperator::LessThan)),
-            Token::LessThanOrEqualTo    => Ok(Operator::Logical(LogicalOperator::LessThanOrEqualTo)),
-            Token::Plus                 => Ok(Operator::Arithmetic(ArithmeticOperator::Plus)),
-            Token::Minus                => Ok(Operator::Arithmetic(ArithmeticOperator::Minus)),
-            Token::Star                 => Ok(Operator::Arithmetic(ArithmeticOperator::Star)),
-            Token::Slash                => Ok(Operator::Arithmetic(ArithmeticOperator::Slash)),
-            _                           => Err(ParserError::InvalidOperatorConversion(src.clone())),
+            Token::EqualEqual => Ok(Operator::Logical(LogicalOperator::EqualTo)),
+            Token::BangEqual => Ok(Operator::Logical(LogicalOperator::NotEqualTo)),
+            Token::GreaterThan => Ok(Operator::Logical(LogicalOperator::GreaterThan)),
+            Token::GreaterThanOrEqualTo => {
+                Ok(Operator::Logical(LogicalOperator::GreaterThanOrEqualTo))
+            }
+            Token::LessThan => Ok(Operator::Logical(LogicalOperator::LessThan)),
+            Token::LessThanOrEqualTo => Ok(Operator::Logical(LogicalOperator::LessThanOrEqualTo)),
+            Token::Plus => Ok(Operator::Arithmetic(ArithmeticOperator::Plus)),
+            Token::Minus => Ok(Operator::Arithmetic(ArithmeticOperator::Minus)),
+            Token::Star => Ok(Operator::Arithmetic(ArithmeticOperator::Star)),
+            Token::Slash => Ok(Operator::Arithmetic(ArithmeticOperator::Slash)),
+            _ => Err(ParserError::InvalidOperatorConversion(src.clone())),
         }
     }
-
 }
 
 
@@ -328,16 +319,24 @@ impl fmt::Display for ParserError {
         match self {
             Self::InvalidOperatorConversion(token) => {
                 write!(f, "Could not convert Token '{:?}' to Operator", token)
-            },
+            }
             Self::InvalidPrimaryToken(token, start) => {
-                write!(f, "Invalid token '{:?}' starting at location {}", token, start)
-            },
+                write!(
+                    f,
+                    "Invalid token '{:?}' starting at location {}",
+                    token, start
+                )
+            }
             Self::UnexpectedEndOfExpression => {
                 write!(f, "Expression ended unexpectedly")
             }
             Self::UnterminatedGroup(expr, start) => {
-                write!(f, "Unterminated grouping expression '{}' starting at location {}", expr, start)
-            },
+                write!(
+                    f,
+                    "Unterminated grouping expression '{}' starting at location {}",
+                    expr, start
+                )
+            }
         }
     }
 }
@@ -353,17 +352,9 @@ mod tests {
     use std::error::Error;
 
     use crate::interpreter::{
-        Token,
-        Expression,
-        Literal,
-        Unary,
-        Operator,
-        ArithmeticOperator,
         lexer::Lexer,
-        parser::{
-            Parser,
-            ParserError,
-        }
+        parser::{Parser, ParserError},
+        ArithmeticOperator, Expression, Literal, Operator, Token, Unary,
     };
 
 
@@ -385,10 +376,7 @@ mod tests {
         eprintln!("Expression '{}' \"pretty\"-printed:\n{}", expr_str, expr);
 
         let pretty_expr = format!("{}", expr);
-        assert_eq!(
-            pretty_expr,
-            "(* (- 123.0) (group 45.67))"
-        );
+        assert_eq!(pretty_expr, "(* (- 123.0) (group 45.67))");
 
         Ok(())
     }
@@ -432,30 +420,26 @@ mod tests {
         let mut valid_parser = Parser::new(&valid_tokens);
         assert_eq!(
             valid_parser.parse(),
-            Ok(
-                Expression::Binary(
-                    Box::new(Expression::Literal(Literal::Number(1.0))),
-                    Operator::Arithmetic(ArithmeticOperator::Plus),
-                    Box::new(Expression::Grouping(
-                        Box::new(Expression::Literal(Literal::Number(2.0)))
-                    ))
-                )
-            )
+            Ok(Expression::Binary(
+                Box::new(Expression::Literal(Literal::Number(1.0))),
+                Operator::Arithmetic(ArithmeticOperator::Plus),
+                Box::new(Expression::Grouping(Box::new(Expression::Literal(
+                    Literal::Number(2.0)
+                ))))
+            ))
         );
 
         let mut invalid_parser = Parser::new(&invalid_tokens);
         assert_eq!(
             invalid_parser.parse(),
-            Err(
-                ParserError::UnterminatedGroup(
-                    Expression::Binary(
-                        Box::new(Expression::Literal(Literal::Number(2.0))),
-                        Operator::Arithmetic(ArithmeticOperator::Star),
-                        Box::new(Expression::Literal(Literal::Number(5.0)))
-                    ),
-                    2,
-                )
-            )
+            Err(ParserError::UnterminatedGroup(
+                Expression::Binary(
+                    Box::new(Expression::Literal(Literal::Number(2.0))),
+                    Operator::Arithmetic(ArithmeticOperator::Star),
+                    Box::new(Expression::Literal(Literal::Number(5.0)))
+                ),
+                2,
+            ))
         );
 
         Ok(())
@@ -463,23 +447,15 @@ mod tests {
 
     #[test]
     fn invalid_primary_token() -> TestResult {
-        let valid_tokens = vec![
-            Token::Minus,
-            Token::Number(1.0),
-        ];
-        let invalid_tokens = vec![
-            Token::Minus,
-            Token::Plus,
-        ];
+        let valid_tokens = vec![Token::Minus, Token::Number(1.0)];
+        let invalid_tokens = vec![Token::Minus, Token::Plus];
 
         let mut valid_parser = Parser::new(&valid_tokens);
         assert_eq!(
             valid_parser.parse(),
-            Ok(
-                Expression::Unary(Unary::Negation(
-                    Box::new(Expression::Literal(Literal::Number(1.0)))
-                ))
-            )
+            Ok(Expression::Unary(Unary::Negation(Box::new(
+                Expression::Literal(Literal::Number(1.0))
+            ))))
         );
 
         let mut invalid_parser = Parser::new(&invalid_tokens);

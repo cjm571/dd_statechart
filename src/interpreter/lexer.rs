@@ -23,13 +23,7 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-use std::{
-    error::Error,
-    fmt,
-    iter::Peekable,
-    num::ParseFloatError,
-    str::Chars,
-};
+use std::{error::Error, fmt, iter::Peekable, num::ParseFloatError, str::Chars};
 
 use crate::interpreter::Token;
 
@@ -39,8 +33,8 @@ use crate::interpreter::Token;
 ///////////////////////////////////////////////////////////////////////////////
 
 pub struct Lexer<'c> {
-    expr_iter:  Peekable<Chars<'c>>,
-    position:   u32,
+    expr_iter: Peekable<Chars<'c>>,
+    position: u32,
 }
 
 #[derive(Debug, PartialEq)]
@@ -56,8 +50,8 @@ pub enum LexerError {
 
     // Wrappers
     ParseFloatError(
-        ParseFloatError,    /* Wrapped Error */
-        u32,                /* Start of Number */
+        ParseFloatError, /* Wrapped Error */
+        u32,             /* Start of Number */
     ),
 }
 
@@ -69,8 +63,8 @@ pub enum LexerError {
 impl<'c> Lexer<'c> {
     pub fn new(expr_str: &'c str) -> Self {
         Self {
-            expr_iter:  expr_str.chars().peekable(),
-            position:   0,
+            expr_iter: expr_str.chars().peekable(),
+            position: 0,
         }
     }
 
@@ -116,72 +110,54 @@ impl<'c> Lexer<'c> {
             Some('!') => {
                 if self.match_next('=') {
                     Some(Token::BangEqual)
-                }
-                else {
+                } else {
                     Some(Token::Bang)
                 }
-            },
+            }
             Some('=') => {
                 if self.match_next('=') {
                     Some(Token::EqualEqual)
-                }
-                else {
+                } else {
                     Some(Token::Equal)
                 }
-            },
+            }
             Some('>') => {
                 if self.match_next('=') {
                     Some(Token::GreaterThanOrEqualTo)
-                }
-                else {
+                } else {
                     Some(Token::GreaterThan)
                 }
-            },
+            }
             Some('<') => {
                 if self.match_next('=') {
                     Some(Token::LessThanOrEqualTo)
-                }
-                else {
+                } else {
                     Some(Token::LessThan)
                 }
-            },
+            }
 
             // String Literals
-            Some('\'') => {
-                Some (
-                    self.capture_string_literal()?
-                )
-            },
+            Some('\'') => Some(self.capture_string_literal()?),
 
             // Numerical Literals
-            Some(x) if x.is_digit(10) => {
-                Some (
-                    self.capture_numerical_literal(x)?
-                )
-            },
+            Some(x) if x.is_digit(10) => Some(self.capture_numerical_literal(x)?),
 
             // Identifiers
-            Some(x) if x.is_alphabetic() || x == '_' => {
-                Some (
-                    self.capture_identifier(x)
-                )
-            },
+            Some(x) if x.is_alphabetic() || x == '_' => Some(self.capture_identifier(x)),
 
             // Whitespace
             Some(x) if x.is_ascii_whitespace() => {
                 // Allow whitespace character to be consumed and scan the next token
                 self.scan_single()?
-            },
+            }
 
             // Unexpected Character
             Some(unexpected_char) => {
-                return Err (
-                    LexerError::UnexpectedCharacter (
-                        unexpected_char.to_string(),
-                        self.position,
-                    )
-                )
-            },
+                return Err(LexerError::UnexpectedCharacter(
+                    unexpected_char.to_string(),
+                    self.position,
+                ))
+            }
 
             // End of expression string
             None => None,
@@ -193,13 +169,16 @@ impl<'c> Lexer<'c> {
 
     fn match_next(&mut self, expected: char) -> bool {
         // Peek next character and check for match against the expected
-        if self.expr_iter.peek().map_or_else(|| false, |v| v == &expected) {
+        if self
+            .expr_iter
+            .peek()
+            .map_or_else(|| false, |v| v == &expected)
+        {
             // Match succeeded, consume peeked value and update position
             self.consume_character();
 
             true
-        }
-        else {
+        } else {
             // Match failed or reached end of expression string
             false
         }
@@ -211,21 +190,16 @@ impl<'c> Lexer<'c> {
 
         // Continually consume the next character until closing ' or end of expression is encountered
         // If EoE is encountered by this loop condition, we have an unterminated string literal
-        while let Some(next_char) = Some(self.consume_character().ok_or_else(
-                                        || LexerError::UnterminatedStringLiteral(
-                                            string_chars.clone().into_iter().collect(),
-                                            start
-                                        )
-                                    )?).filter(|v| v != &'\'') {
+        while let Some(next_char) = Some(self.consume_character().ok_or_else(|| {
+            LexerError::UnterminatedStringLiteral(string_chars.clone().into_iter().collect(), start)
+        })?)
+        .filter(|v| v != &'\'')
+        {
             // Consume the character and add it to the char vector
             string_chars.push(next_char);
         }
 
-        Ok (
-            Token::String (
-                string_chars.into_iter().collect()
-            )
-        )
+        Ok(Token::String(string_chars.into_iter().collect()))
     }
 
     fn capture_numerical_literal(&mut self, first_char: char) -> Result<Token, LexerError> {
@@ -234,13 +208,19 @@ impl<'c> Lexer<'c> {
         let mut decimal_encountered = false;
 
         // Continually peek the next character until a non-digit or non-dot is encountered
-        while let Some(next_char) = self.expr_iter.peek().filter(|v| v.is_digit(10) || v == &&'.') {
+        while let Some(next_char) = self
+            .expr_iter
+            .peek()
+            .filter(|v| v.is_digit(10) || v == &&'.')
+        {
             if next_char == &'.' {
                 if decimal_encountered {
                     // Already encountered a '.', another is invalid
-                    return Err(LexerError::UnexpectedCharacter(next_char.to_string(), self.position+1));
-                }
-                else {
+                    return Err(LexerError::UnexpectedCharacter(
+                        next_char.to_string(),
+                        self.position + 1,
+                    ));
+                } else {
                     decimal_encountered = true;
                 }
             }
@@ -252,14 +232,21 @@ impl<'c> Lexer<'c> {
 
         // Collect string and parse into a Number
         let numerical_string: String = numerical_chars.into_iter().collect();
-        numerical_string.parse::<f64>().map(Token::Number).map_err(|err| LexerError::ParseFloatError(err, start))
+        numerical_string
+            .parse::<f64>()
+            .map(Token::Number)
+            .map_err(|err| LexerError::ParseFloatError(err, start))
     }
 
     fn capture_identifier(&mut self, first_char: char) -> Token {
         let mut identifier_chars = vec![first_char];
 
         // Continually consume the next character until one that isn't alphanumeric or a '_' is encountered
-        while let Some(next_char) = self.expr_iter.peek().filter(|v| v.is_alphanumeric() || v == &&'_') {
+        while let Some(next_char) = self
+            .expr_iter
+            .peek()
+            .filter(|v| v.is_alphanumeric() || v == &&'_')
+        {
             // Push the character onto the vector and consume
             identifier_chars.push(*next_char);
             self.consume_character();
@@ -291,16 +278,28 @@ impl fmt::Display for LexerError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::UnexpectedCharacter(lexeme, position) => {
-                write!(f, "Unexpected character '{}' at position {} in expression", lexeme, position)
-            },
+                write!(
+                    f,
+                    "Unexpected character '{}' at position {} in expression",
+                    lexeme, position
+                )
+            }
             Self::UnterminatedStringLiteral(string, start_pos) => {
-                write!(f, "Unterminated string literal '{}' starting at position {}", string, start_pos)
-            },
+                write!(
+                    f,
+                    "Unterminated string literal '{}' starting at position {}",
+                    string, start_pos
+                )
+            }
 
             // Wrappers
             Self::ParseFloatError(parse_err, start) => {
-                write!(f, "ParseFloatError '{:?}' encountered in number beginning at position {}", parse_err, start)
-            },
+                write!(
+                    f,
+                    "ParseFloatError '{:?}' encountered in number beginning at position {}",
+                    parse_err, start
+                )
+            }
         }
     }
 }
@@ -315,10 +314,7 @@ mod tests {
 
     use std::error::Error;
 
-    use crate::interpreter::lexer::{
-        Lexer,
-        LexerError,
-    };
+    use crate::interpreter::lexer::{Lexer, LexerError};
 
 
     type TestResult = Result<(), Box<dyn Error>>;
@@ -358,7 +354,10 @@ mod tests {
 
         assert_eq!(
             lexer.scan(),
-            Err(LexerError::UnterminatedStringLiteral(String::from("unterm_string_literal"), 1)),
+            Err(LexerError::UnterminatedStringLiteral(
+                String::from("unterm_string_literal"),
+                1
+            )),
         );
 
         Ok(())

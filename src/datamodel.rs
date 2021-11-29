@@ -21,17 +21,9 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-use std::{
-    collections::HashMap,
-    error::Error,
-    fmt,
-};
+use std::{collections::HashMap, error::Error, fmt};
 
-use crate::{
-    StateChartId,
-    event::Event,
-    interpreter::EcmaScriptValue,
-};
+use crate::{event::Event, interpreter::EcmaScriptValue, StateChartId};
 
 use uuid::Uuid;
 
@@ -43,18 +35,16 @@ use uuid::Uuid;
 //OPT: *PERFORMANCE* Clone is not necessary, but requires major re-architecting of StateChartBuilder
 #[derive(Clone, Debug, PartialEq)]
 pub struct SystemVariables {
-    _event:         Option<Event>,
-    _sessionid:     Uuid,
-    _name:          StateChartId,
-    _ioprocessors:  Vec<String>,
-    _x:             HashMap<String, EcmaScriptValue>,
+    _event: Option<Event>,
+    _sessionid: Uuid,
+    _name: StateChartId,
+    _ioprocessors: Vec<String>,
+    _x: HashMap<String, EcmaScriptValue>,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum DataModelError {
-    InvalidValueType(
-        String /* Identifier name */
-    ),
+    InvalidValueType(String /* Identifier name */),
 }
 
 
@@ -63,29 +53,22 @@ pub enum DataModelError {
 ///////////////////////////////////////////////////////////////////////////////
 
 impl SystemVariables {
-
     /*  *  *  *  *  *  *  *\
      *  Accessor Methods  *
     \*  *  *  *  *  *  *  */
 
     pub fn _event(&self) -> Option<Event> {
-        if let Some(event) = &self._event {
-            Some(event.clone())
-        }
-        else {
-            None
-        }
+        self._event.as_ref().cloned()
     }
 
     pub fn _x(&self) -> &HashMap<String, EcmaScriptValue> {
         &self._x
     }
-    
+
     pub fn get_data_member(&self, id: &str) -> Option<&EcmaScriptValue> {
         // Insert value into data map
         self._x.get(id)
     }
-
 
     /*  *  *  *  *  *  *  *\
      *  Mutator Methods   *
@@ -98,7 +81,7 @@ impl SystemVariables {
     pub fn set_event(&mut self, event: Event) {
         self._event = Some(event);
     }
-    
+
     pub fn set_data_member(&mut self, id: &str, value: EcmaScriptValue) -> Option<EcmaScriptValue> {
         // Insert value into data map
         self._x.insert(id.to_string(), value)
@@ -110,7 +93,6 @@ impl SystemVariables {
 //  Trait Implementations
 ///////////////////////////////////////////////////////////////////////////////
 
-
 /*  *  *  *  *  *  *  *\
  *   DataModelError   *
 \*  *  *  *  *  *  *  */
@@ -121,12 +103,15 @@ impl fmt::Display for DataModelError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::InvalidValueType(identifier_name) => {
-                write!(f, "Type of identifier '{}' is and invalid type.", identifier_name)
-            },
+                write!(
+                    f,
+                    "Type of identifier '{}' is and invalid type.",
+                    identifier_name
+                )
+            }
         }
     }
 }
-
 
 /*  *  *  *  *  *  *  *\
  *  SystemVariables   *
@@ -135,12 +120,11 @@ impl fmt::Display for DataModelError {
 impl Default for SystemVariables {
     fn default() -> Self {
         Self {
-            _event:         None,
-            _sessionid:     Uuid::new_v4(),
-            _name:          String::new(),
-            _ioprocessors:  Vec::new(),
-            _x:             HashMap::default()
+            _event: None,
+            _sessionid: Uuid::new_v4(),
+            _name: String::new(),
+            _ioprocessors: Vec::new(),
+            _x: HashMap::default(),
         }
     }
 }
-

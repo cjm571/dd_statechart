@@ -15,7 +15,7 @@ Copyright (C) 2020 CJ McAllister
     Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
 
 Purpose:
-    This module defines a Transition object and ID. Transitions conform to 
+    This module defines a Transition object and ID. Transitions conform to
     §3.5 <transition> of the SCXML Spec.
 
     Transitions are the actionable components of a StateChart. They are enabled
@@ -24,19 +24,13 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-use std::{
-    error::Error,
-    fmt,
-};
+use std::{error::Error, fmt};
 
 use crate::{
     datamodel::SystemVariables,
     event::Event,
     executable_content::ExecutableContent,
-    interpreter::{
-        Interpreter,
-        InterpreterError,
-    },
+    interpreter::{Interpreter, InterpreterError},
     state::StateId,
 };
 
@@ -49,12 +43,12 @@ use crate::{
 /// (source) state to a target state
 #[derive(Clone, PartialEq)]
 pub struct Transition {
-    fingerprint:        TransitionFingerprint,
-    events:             Vec<Event>,
+    fingerprint: TransitionFingerprint,
+    events: Vec<Event>,
     //OPT: *PERFORMANCE* Store lexed/parsed expression here?
-    cond:               String,
-    source_id:          StateId,
-    target_ids:         Vec<StateId>,
+    cond: String,
+    source_id: StateId,
+    target_ids: Vec<StateId>,
     executable_content: Vec<ExecutableContent>,
 }
 
@@ -70,12 +64,12 @@ pub enum TransitionError {
 
 #[derive(Debug, PartialEq)]
 pub struct TransitionBuilder {
-    fingerprint:        TransitionFingerprint,
-    events:             Vec<Event>,
-    cond:               String,
-    cond_set:           bool,
-    source_id:          StateId,
-    target_ids:         Vec<StateId>,
+    fingerprint: TransitionFingerprint,
+    events: Vec<Event>,
+    cond: String,
+    cond_set: bool,
+    source_id: StateId,
+    target_ids: Vec<StateId>,
     executable_content: Vec<ExecutableContent>,
 }
 
@@ -97,7 +91,6 @@ pub enum TransitionBuilderError {
 ///////////////////////////////////////////////////////////////////////////////
 
 impl Transition {
-
     /*  *  *  *  *  *  *  *\
      *  Accessor Methods  *
     \*  *  *  *  *  *  *  */
@@ -126,13 +119,15 @@ impl Transition {
     /*  *  *  *  *  *  *  *\
      *  Utility Methods   *
     \*  *  *  *  *  *  *  */
-    
+
     /// Evaluates the guard condition for this Transition
     pub fn evaluate_condition(&self, sys_vars: &SystemVariables) -> Result<bool, TransitionError> {
         let interpreter = Interpreter::new(self.cond.as_str());
-        
-        interpreter.interpret_as_bool(sys_vars).map_err(TransitionError::InterpreterError)
-        
+
+        interpreter
+            .interpret_as_bool(sys_vars)
+            .map_err(TransitionError::InterpreterError)
+
         //FEAT: If condition has returned an error, an 'error.execution' event must be placed on the internal event queue
         //      See §5.9.1
     }
@@ -142,12 +137,12 @@ impl Transition {
 impl TransitionBuilder {
     pub fn new(source_state_id: &str) -> Self {
         Self {
-            fingerprint:        TransitionFingerprint::default(),
-            events:             Vec::new(),
-            cond:               String::from("true"),
-            cond_set:           false,
-            source_id:          source_state_id.to_string(),
-            target_ids:         Vec::new(),
+            fingerprint: TransitionFingerprint::default(),
+            events: Vec::new(),
+            cond: String::from("true"),
+            cond_set: false,
+            source_id: source_state_id.to_string(),
+            target_ids: Vec::new(),
             executable_content: Vec::new(),
         }
     }
@@ -173,12 +168,12 @@ impl TransitionBuilder {
         }
 
         // Build the Transition
-        Ok ( Transition {
-            fingerprint:        fingerprint_components.into_iter().collect::<String>(),
-            events:             self.events,
-            cond:               self.cond,
-            source_id:          self.source_id.clone(),
-            target_ids:         self.target_ids,
+        Ok(Transition {
+            fingerprint: fingerprint_components.into_iter().collect::<String>(),
+            events: self.events,
+            cond: self.cond,
+            source_id: self.source_id.clone(),
+            target_ids: self.target_ids,
             executable_content: self.executable_content,
         })
     }
@@ -201,9 +196,12 @@ impl TransitionBuilder {
     pub fn cond(mut self, cond: &str) -> Result<Self, TransitionBuilderError> {
         // Ensure condition has not already been set
         if self.cond_set {
-            return Err(TransitionBuilderError::ConditionAlreadySet(cond.to_string(), self.cond));
+            return Err(TransitionBuilderError::ConditionAlreadySet(
+                cond.to_string(),
+                self.cond,
+            ));
         }
-        
+
         self.cond = String::from(cond);
         self.cond_set = true;
 
@@ -251,11 +249,11 @@ impl TransitionBuilder {
 impl fmt::Debug for Transition {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Transition")
-            .field("fingerprint",   &self.fingerprint)
-            .field("event",         &self.events)
-            .field("cond",          &self.cond)
-            .field("source_id",     &self.source_id)
-            .field("target_ids",    &self.target_ids)
+            .field("fingerprint", &self.fingerprint)
+            .field("event", &self.events)
+            .field("cond", &self.cond)
+            .field("source_id", &self.source_id)
+            .field("target_ids", &self.target_ids)
             .finish()
     }
 }
@@ -272,8 +270,12 @@ impl fmt::Display for TransitionError {
         match self {
             // Wrappers
             Self::InterpreterError(interp_err) => {
-                write!(f, "InterpreterError '{:?}' encountered while processing a Transition", interp_err)
-            },
+                write!(
+                    f,
+                    "InterpreterError '{:?}' encountered while processing a Transition",
+                    interp_err
+                )
+            }
         }
     }
 }
@@ -295,19 +297,34 @@ impl fmt::Display for TransitionBuilderError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::ConditionAlreadySet(new_cond, existing_cond) => {
-                write!(f, "Transition condition '{}' rejected, existing condition '{}' already set", new_cond, existing_cond)
-            },
+                write!(
+                    f,
+                    "Transition condition '{}' rejected, existing condition '{}' already set",
+                    new_cond, existing_cond
+                )
+            }
             Self::DuplicateEventId(event) => {
                 write!(f, "Event '{}' is already in the Event vector", event)
-            },
+            }
             Self::DuplicateTargetId(target_id) => {
-                write!(f, "ID '{}' is already in the target State vector", target_id)
-            },
+                write!(
+                    f,
+                    "ID '{}' is already in the target State vector",
+                    target_id
+                )
+            }
             Self::NoEventCondOrTarget => {
-                write!(f, "Attempted to build a Transition that did not have at least one of 'event', 'cond', or 'target'")
-            },
+                write!(
+                    f,
+                    "Attempted to build a Transition that did not have at least one of 'event', 'cond', or 'target'"
+                )
+            }
             Self::SourceTargetCollision(target_id) => {
-                write!(f, "ID '{}' collides with the Transition's source State ID", target_id)
+                write!(
+                    f,
+                    "ID '{}' collides with the Transition's source State ID",
+                    target_id
+                )
             }
         }
     }
@@ -325,10 +342,7 @@ mod builder_tests {
 
     use crate::{
         event::Event,
-        transition::{
-            TransitionBuilder,
-            TransitionBuilderError,
-        },
+        transition::{TransitionBuilder, TransitionBuilderError},
     };
 
     #[test]
@@ -337,8 +351,7 @@ mod builder_tests {
         let event = Event::from("event")?;
 
         // Verify that duplicate event is caught
-        let builder = TransitionBuilder::new("state")
-            .event(&event)?;
+        let builder = TransitionBuilder::new("state").event(&event)?;
 
         assert_eq!(
             builder.event(&event),
@@ -348,13 +361,12 @@ mod builder_tests {
 
         Ok(())
     }
-    
+
     #[test]
     fn duplicate_target() -> Result<(), Box<dyn Error>> {
         // Verify that duplicate target is caught
         let target_id = String::from("target");
-        let builder = TransitionBuilder::new("source")
-            .target_id(&target_id)?;
+        let builder = TransitionBuilder::new("source").target_id(&target_id)?;
 
         assert_eq!(
             builder.target_id(&target_id),
@@ -364,7 +376,7 @@ mod builder_tests {
 
         Ok(())
     }
-    
+
     #[test]
     fn source_target_collision() -> Result<(), Box<dyn Error>> {
         // Verify that source-target collision is caught
@@ -383,12 +395,14 @@ mod builder_tests {
     #[test]
     fn condition_already_set() -> Result<(), Box<dyn Error>> {
         // Verify that already-set condition is caught
-        let builder = TransitionBuilder::new("source")
-            .cond("true")?;
+        let builder = TransitionBuilder::new("source").cond("true")?;
 
         assert_eq!(
             builder.cond("true"),
-            Err(TransitionBuilderError::ConditionAlreadySet("true".to_string(), "true".to_string())),
+            Err(TransitionBuilderError::ConditionAlreadySet(
+                "true".to_string(),
+                "true".to_string()
+            )),
             "Failed to catch already-set condition"
         );
 

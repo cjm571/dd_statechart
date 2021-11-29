@@ -22,17 +22,11 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-use std::{
-    error::Error,
-    fmt,
-};
+use std::{error::Error, fmt};
 
 use crate::{
     datamodel::SystemVariables,
-    interpreter::{
-        Interpreter,
-        InterpreterError,
-    },
+    interpreter::{Interpreter, InterpreterError},
 };
 
 
@@ -46,15 +40,15 @@ pub enum ExecutableContent {
         String, /* Identifier ('location' in SCXML parlance) */
         String, /* Value expression string */
     ),
-    Cancel,     /* FEAT: <cancel> */
-    ElseIf,     /* FEAT: <elseif> */
-    Else,       /* FEAT: <else> */
-    ForEach,    /* FEAT: <foreach> */
-    If,         /* FEAT: <if> */
-    Log,        /* FEAT: <log> */
-    Raise,      /* FEAT: <raise> */
-    Script,     /* FEAT: <script> */
-    Send,       /* FEAT: <send> */
+    Cancel,  /* FEAT: <cancel> */
+    ElseIf,  /* FEAT: <elseif> */
+    Else,    /* FEAT: <else> */
+    ForEach, /* FEAT: <foreach> */
+    If,      /* FEAT: <if> */
+    Log,     /* FEAT: <log> */
+    Raise,   /* FEAT: <raise> */
+    Script,  /* FEAT: <script> */
+    Send,    /* FEAT: <send> */
 }
 
 #[derive(Debug, PartialEq)]
@@ -80,8 +74,11 @@ impl ExecutableContent {
                 sys_vars.set_data_member(location, value);
 
                 Ok(())
-            },
-            _ => todo!("Attempted to execute unimplemented ExecutableContent '{:?}'", self),
+            }
+            _ => todo!(
+                "Attempted to execute unimplemented ExecutableContent '{:?}'",
+                self
+            ),
         }
     }
 }
@@ -102,8 +99,12 @@ impl fmt::Display for ExecutableContentError {
         match self {
             // Wrappers
             Self::InterpreterError(interp_err) => {
-                write!(f, "InterpreterError '{:?}' encountered within Executable Content", interp_err)
-            },
+                write!(
+                    f,
+                    "InterpreterError '{:?}' encountered within Executable Content",
+                    interp_err
+                )
+            }
         }
     }
 }
@@ -124,8 +125,7 @@ mod tests {
     use std::error::Error;
 
     use crate::{
-        datamodel::SystemVariables,
-        executable_content::ExecutableContent,
+        datamodel::SystemVariables, executable_content::ExecutableContent,
         interpreter::EcmaScriptValue,
     };
 
@@ -146,7 +146,7 @@ mod tests {
 
         // Display initial conditions
         eprintln!("=== Initial Data Model:\n{:?}", sys_vars._x());
-        
+
         // Execute the assignment
         assignment.execute(&mut sys_vars)?;
 
@@ -161,7 +161,7 @@ mod tests {
 
         Ok(())
     }
-    
+
     #[test]
     fn meta_assignment() -> TestResult {
         let location = "loc".to_string();
@@ -175,7 +175,7 @@ mod tests {
 
         // Display initial conditions
         eprintln!("=== Initial Data Model:\n{:?}", sys_vars._x());
-        
+
         // Execute the assignment several times
         let executions = 4;
         for _ in 0..executions {

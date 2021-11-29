@@ -53,7 +53,7 @@ Purpose:
         Final State, which is not supported.
 
     5) §3.2.1 [<scxml>] Attribute Details - `initial` Description
-         "The id of the initial state(s) for the document. If not specified, 
+         "The id of the initial state(s) for the document. If not specified,
           the default initial state is the first child state in document order."
         Multiple initial states shall not be supported.
         Note: I don't think they're actually supported by the standard either...
@@ -65,11 +65,7 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-use std::{
-    collections::VecDeque,
-    error::Error,
-    fmt,
-};
+use std::{collections::VecDeque, error::Error, fmt};
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -86,29 +82,15 @@ pub mod state;
 pub mod transition;
 
 use crate::{
-    datamodel::{
-        DataModelError,
-        SystemVariables,
-    },
+    datamodel::{DataModelError, SystemVariables},
     event::Event,
     executable_content::ExecutableContentError,
     interpreter::EcmaScriptValue,
-    parser::{
-        Parser,
-        ParserError,
-    },
-    registry::{
-        Registry,
-        RegistryError,
-    },
-    state::{
-        State,
-        StateError,
-        StateId,
-    },
+    parser::{Parser, ParserError},
+    registry::{Registry, RegistryError},
+    state::{State, StateError, StateId},
     transition::TransitionFingerprint,
 };
-
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -120,10 +102,10 @@ use crate::{
 /// Contains a list of all nodes and events that make up the statechart.
 #[derive(PartialEq)]
 pub struct StateChart {
-    initial:        Option<StateId>,
+    initial: Option<StateId>,
     internal_queue: VecDeque<Event>,
-    registry:       Registry,
-    sys_vars:       SystemVariables,
+    registry: Registry,
+    sys_vars: SystemVariables,
 }
 
 pub type StateChartId = String;
@@ -141,9 +123,9 @@ pub enum StateChartError {
 
 #[derive(Debug, Default, PartialEq)]
 pub struct StateChartBuilder {
-    initial:    Option<StateId>,
-    registry:   Registry,
-    sys_vars:   SystemVariables,
+    initial: Option<StateId>,
+    registry: Registry,
+    sys_vars: SystemVariables,
 }
 
 #[derive(Debug, PartialEq)]
@@ -177,10 +159,11 @@ impl StateChart {
 
     /// Retrieves the IDs of all active states in the StateChart.
     pub fn active_state_ids(&self) -> Vec<&str> {
-        self.registry.get_active_states()
-        .iter()
-        .map(|v| v.id())
-        .collect()
+        self.registry
+            .get_active_states()
+            .iter()
+            .map(|v| v.id())
+            .collect()
     }
 
 
@@ -196,7 +179,7 @@ impl StateChart {
 
         // Set the _event System Variable to the given Event
         self.sys_vars.set_event(event.clone());
-        
+
         // Collect and process the set of enabled Transitions
         let mut enabled_transition_fingerprints = self.select_transitions(Some(event))?;
 
@@ -204,10 +187,10 @@ impl StateChart {
         // Enter Microstep processing loop
         while !enabled_transition_fingerprints.is_empty() {
             self.process_microstep(enabled_transition_fingerprints)?;
-            
+
             // Select eventless Transitions
             enabled_transition_fingerprints = self.select_transitions(None)?;
-            
+
             // Found eventless Transitions, return to top of loop to process a Microstep
             if !enabled_transition_fingerprints.is_empty() {
                 continue;
@@ -221,8 +204,7 @@ impl StateChart {
                 // Select transitions for the internal Event and return to top of the loop
                 enabled_transition_fingerprints = self.select_transitions(Some(&internal_event))?;
                 continue;
-            }
-            else {
+            } else {
                 break; // Nothing left to process, job done!
             }
         }
@@ -235,7 +217,10 @@ impl StateChart {
      *  Helper Methods    *
     \*  *  *  *  *  *  *  */
 
-    fn select_transitions(&self, event: Option<&Event>) -> Result<Vec<TransitionFingerprint>, StateChartError> {
+    fn select_transitions(
+        &self,
+        event: Option<&Event>,
+    ) -> Result<Vec<TransitionFingerprint>, StateChartError> {
         let mut enabled_transitions = Vec::new();
 
         // Traverse the map of states and send the event to each for evaluation
@@ -257,7 +242,10 @@ impl StateChart {
     /// 1. Exiting source State(s)
     /// 2. Executing executable content of a Transition
     /// 3. Entering target State(s)
-    fn process_microstep(&mut self, enabled_transition_fingerprints: Vec<TransitionFingerprint>) -> Result<(), StateChartError> {
+    fn process_microstep(
+        &mut self,
+        enabled_transition_fingerprints: Vec<TransitionFingerprint>,
+    ) -> Result<(), StateChartError> {
         // Transitions are selected in Document Order, so reverse this Vec to get Exit Order
         let mut exit_sorted_transition_fingerprints = enabled_transition_fingerprints.clone();
         exit_sorted_transition_fingerprints.reverse();
@@ -265,9 +253,18 @@ impl StateChart {
         // Exit source State(s) in Exit Order
         for transition_fingerprint in &exit_sorted_transition_fingerprints {
             // Only operate on Transitions with targets here
-            if !self.registry.get_transition(transition_fingerprint)?.target_ids().is_empty() {
+            if !self
+                .registry
+                .get_transition(transition_fingerprint)?
+                .target_ids()
+                .is_empty()
+            {
                 // Clone is necessary as the ID will be used by mutable methods next
-                let source_state_id = self.registry.get_transition(transition_fingerprint)?.source_id().clone();
+                let source_state_id = self
+                    .registry
+                    .get_transition(transition_fingerprint)?
+                    .source_id()
+                    .clone();
                 let source_state = self.registry.get_mut_state(&source_state_id)?;
 
                 source_state.exit()?;
@@ -285,7 +282,11 @@ impl StateChart {
         // Enter target State(s) in Entry Order (same as Document Order)
         for transition_fingerprint in &enabled_transition_fingerprints {
             // Clone is necessary as the IDs will be used by mutable methods next
-            let target_state_ids = self.registry.get_transition(transition_fingerprint)?.target_ids().clone();
+            let target_state_ids = self
+                .registry
+                .get_transition(transition_fingerprint)?
+                .target_ids()
+                .clone();
             for state_id in &target_state_ids {
                 let target_state = self.registry.get_mut_state(state_id)?;
                 target_state.enter()?;
@@ -298,11 +299,10 @@ impl StateChart {
 
 
 impl StateChartBuilder {
-
     /*  *  *  *  *  *  *  *\
      *  Builder Methods   *
     \*  *  *  *  *  *  *  */
-    
+
     //OPT: *DESIGN* Can this be converted to a mut self to avoid clones?
     pub fn build(&mut self) -> Result<StateChart, StateChartBuilderError> {
         // Ensure at least one State has been registered
@@ -311,8 +311,7 @@ impl StateChartBuilder {
             if self.initial.is_none() {
                 self.initial = Some(first_state.id().to_string());
             }
-        }
-        else {
+        } else {
             return Err(StateChartBuilderError::NoStatesRegistered);
         }
 
@@ -320,25 +319,23 @@ impl StateChartBuilder {
         if let Some(initial_id) = &self.initial {
             if let Ok(state) = self.registry.get_mut_state(initial_id.as_ref()) {
                 state.activate()
-            }
-            else {
+            } else {
                 // Initial State was not found in the Registry, therefore the StateChart is invalid.
-                return Err(StateChartBuilderError::InitialStateNotRegistered(initial_id.clone()));
+                return Err(StateChartBuilderError::InitialStateNotRegistered(
+                    initial_id.clone(),
+                ));
             }
-        }
-        else {
+        } else {
             // Intentionally left blank
             // self.initial is guaranteed to contain a value since it is set above
         }
 
-        Ok(
-            StateChart {
-                sys_vars:       self.sys_vars.clone(),
-                initial:        self.initial.clone(),
-                registry:       self.registry.clone(),
-                internal_queue: VecDeque::new(),
-            }
-        )
+        Ok(StateChart {
+            sys_vars: self.sys_vars.clone(),
+            initial: self.initial.clone(),
+            registry: self.registry.clone(),
+            internal_queue: VecDeque::new(),
+        })
     }
 
     pub fn name(&mut self, name: &str) -> &mut Self {
@@ -347,7 +344,7 @@ impl StateChartBuilder {
         self
     }
 
-    pub fn state(&mut self, state: State) -> Result<&mut Self, StateChartBuilderError> {        
+    pub fn state(&mut self, state: State) -> Result<&mut Self, StateChartBuilderError> {
         // Register the State
         self.registry.register_state(state)?;
 
@@ -379,10 +376,10 @@ impl StateChartBuilder {
 impl fmt::Debug for StateChart {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("StateChart")
-            .field("sys_vars",          &self.sys_vars)
-            .field("initial",           &self.initial)
-            .field("registry",          &self.registry)
-            .field("internal_queue",    &self.internal_queue)
+            .field("sys_vars", &self.sys_vars)
+            .field("initial", &self.initial)
+            .field("registry", &self.registry)
+            .field("internal_queue", &self.internal_queue)
             .finish()
     }
 }
@@ -399,37 +396,53 @@ impl fmt::Display for StateChartError {
         match self {
             Self::ReceivedUnregisteredEvent(event) => {
                 write!(f, "Received Event '{}', which is unregistered", event)
-            },
+            }
 
             // Wrappers
             Self::ExecutableContentError(exec_err) => {
-                write!(f, "ExecutableContentError '{:?}' encountered while processing state chart", exec_err)
-            },
+                write!(
+                    f,
+                    "ExecutableContentError '{:?}' encountered while processing state chart",
+                    exec_err
+                )
+            }
             Self::ParserError(parse_err) => {
-                write!(f, "ParserError '{:?}' encountered while processing state chart", parse_err)
-            },
+                write!(
+                    f,
+                    "ParserError '{:?}' encountered while processing state chart",
+                    parse_err
+                )
+            }
             Self::RegistryError(registry_err) => {
-                write!(f, "RegistryError '{:?}' encountered while processing state chart", registry_err)
-            },
+                write!(
+                    f,
+                    "RegistryError '{:?}' encountered while processing state chart",
+                    registry_err
+                )
+            }
             Self::StateError(state_err) => {
-                write!(f, "StateError '{:?}' encountered while processing state chart", state_err)
-            },
+                write!(
+                    f,
+                    "StateError '{:?}' encountered while processing state chart",
+                    state_err
+                )
+            }
         }
     }
 }
 
 impl From<ExecutableContentError> for StateChartError {
-    fn from (src: ExecutableContentError) -> Self {
+    fn from(src: ExecutableContentError) -> Self {
         Self::ExecutableContentError(src)
     }
 }
 impl From<RegistryError> for StateChartError {
-    fn from (src: RegistryError) -> Self {
+    fn from(src: RegistryError) -> Self {
         Self::RegistryError(src)
     }
 }
 impl From<StateError> for StateChartError {
-    fn from (src: StateError) -> Self {
+    fn from(src: StateError) -> Self {
         Self::StateError(src)
     }
 }
@@ -445,19 +458,31 @@ impl fmt::Display for StateChartBuilderError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::InitialStateNotRegistered(state_id) => {
-                write!(f, "ID '{}' is in the `initial` vector, but is not registered", state_id)
-            },
+                write!(
+                    f,
+                    "ID '{}' is in the `initial` vector, but is not registered",
+                    state_id
+                )
+            }
             Self::NoStatesRegistered => {
                 write!(f, "No States registered")
-            },
+            }
 
             // Wrappers
             Self::DataModelError(data_err) => {
-                write!(f, "DataModelError '{:?}' encountered while building state chart", data_err)
-            },
+                write!(
+                    f,
+                    "DataModelError '{:?}' encountered while building state chart",
+                    data_err
+                )
+            }
             Self::RegistryError(reg_err) => {
-                write!(f, "RegistryError '{:?}' encountered while building state chart", reg_err)
-            },
+                write!(
+                    f,
+                    "RegistryError '{:?}' encountered while building state chart",
+                    reg_err
+                )
+            }
         }
     }
 }
@@ -480,25 +505,16 @@ impl From<RegistryError> for StateChartBuilderError {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        error::Error,
-        fmt,
-    };
+    use std::{error::Error, fmt};
 
     use crate::{
-        StateChart,
-        StateChartError,
-        StateChartBuilder,
-        StateChartBuilderError,
-        event::Event,
-        registry::RegistryError,
-        state::StateBuilder,
-        transition::TransitionBuilder,
+        event::Event, registry::RegistryError, state::StateBuilder, transition::TransitionBuilder,
+        StateChart, StateChartBuilder, StateChartBuilderError, StateChartError,
     };
 
 
     type TestResult = Result<(), Box<dyn Error>>;
-    
+
     #[derive(Debug, PartialEq)]
     struct GenericError {}
     impl Error for GenericError {}
@@ -510,14 +526,14 @@ mod tests {
 
 
     #[test]
-    fn theia() -> TestResult  {
+    fn theia() -> TestResult {
         // Define Event and State IDs for reference
-        let go_to_non_imaging   = Event::from("go_to_non_imaging")?;
-        let idle_id             = String::from("IDLE");
-        let diagnostic_id       = String::from("DIAGNOSTIC");
-        let non_imaging_id      = String::from("NON-IMAGING");
-        let imaging_standby_id  = String::from("IMAGING STANDBY");
-        let imaging_id          = String::from("IMAGING");
+        let go_to_non_imaging = Event::from("go_to_non_imaging")?;
+        let idle_id = String::from("IDLE");
+        let diagnostic_id = String::from("DIAGNOSTIC");
+        let non_imaging_id = String::from("NON-IMAGING");
+        let imaging_standby_id = String::from("IMAGING STANDBY");
+        let imaging_id = String::from("IMAGING");
 
         // Build Transitions
         let idle_to_non_imaging = TransitionBuilder::new(idle_id.as_str())
@@ -526,14 +542,14 @@ mod tests {
             .build()?;
 
         // Build States
-        let idle            = StateBuilder::new(idle_id.clone())
+        let idle = StateBuilder::new(idle_id.clone())
             .transition(idle_to_non_imaging)?
             .build()?;
 
-        let diagnostic      = StateBuilder::new(diagnostic_id).build()?;
-        let non_imaging     = StateBuilder::new(non_imaging_id.clone()).build()?;
+        let diagnostic = StateBuilder::new(diagnostic_id).build()?;
+        let non_imaging = StateBuilder::new(non_imaging_id.clone()).build()?;
         let imaging_standby = StateBuilder::new(imaging_standby_id).build()?;
-        let imaging         = StateBuilder::new(imaging_id).build()?;
+        let imaging = StateBuilder::new(imaging_id).build()?;
 
         // Build statechart
         let mut statechart = StateChartBuilder::default()
@@ -550,8 +566,16 @@ mod tests {
         statechart.process_external_event(&go_to_non_imaging)?;
 
         // Verify that IDLE is inactive and NON-IMAGING is active
-        assert_eq!(statechart.active_state_ids().contains(&idle_id.as_str()), false);
-        assert_eq!(statechart.active_state_ids().contains(&non_imaging_id.as_str()), true);
+        assert_eq!(
+            statechart.active_state_ids().contains(&idle_id.as_str()),
+            false
+        );
+        assert_eq!(
+            statechart
+                .active_state_ids()
+                .contains(&non_imaging_id.as_str()),
+            true
+        );
 
         Ok(())
     }
@@ -570,7 +594,9 @@ mod tests {
         // Verify that adding the duplicate ID results in an error
         assert_eq!(
             statechart_builder.state(duplicate_b),
-            Err(StateChartBuilderError::RegistryError(RegistryError::StateAlreadyRegistered(duplicate_id))),
+            Err(StateChartBuilderError::RegistryError(
+                RegistryError::StateAlreadyRegistered(duplicate_id)
+            )),
             "Failed to detect duplicate State ID error."
         );
 
@@ -578,20 +604,20 @@ mod tests {
     }
 
     #[test]
-    fn unregistered_event() -> TestResult  {
+    fn unregistered_event() -> TestResult {
         // Create an event but don't register it
         let unregistered_event = Event::from("unregistered")?;
 
         let state = StateBuilder::new(String::from("state")).build()?;
 
-        let mut statechart = StateChartBuilder::default()
-            .state(state)?
-            .build()?;
+        let mut statechart = StateChartBuilder::default().state(state)?.build()?;
 
         // Verify the unregistered event is rejected
         assert_eq!(
             statechart.process_external_event(&unregistered_event),
-            Err(StateChartError::ReceivedUnregisteredEvent(unregistered_event)),
+            Err(StateChartError::ReceivedUnregisteredEvent(
+                unregistered_event
+            )),
             "Failed to reject an unregistered event"
         );
 
@@ -621,7 +647,7 @@ mod tests {
             .transition(eventful)?
             .transition(eventless)?
             .build()?;
-        
+
         // Create target State
         let end = StateBuilder::new(end_id.clone()).build()?;
 
@@ -630,7 +656,7 @@ mod tests {
             .state(start)?
             .state(end)?
             .build()?;
-        
+
         // Send the test Event to the statechart, and verify that the eventless transition is also executed
         statechart.process_external_event(&event)?;
 
@@ -663,10 +689,7 @@ mod tests {
         }
 
         eprintln!("*** Active State(s):\n{:#?}", statechart.active_state_ids());
-        assert_eq!(
-            statechart.active_state_ids(),
-            vec!["off".to_string()],
-        );
+        assert_eq!(statechart.active_state_ids(), vec!["off".to_string()]);
 
         Ok(())
     }
@@ -678,11 +701,7 @@ mod builder_tests {
 
     use std::error::Error;
 
-    use crate::{
-        StateChartBuilder,
-        StateChartBuilderError,
-        state::StateBuilder,
-    };
+    use crate::{state::StateBuilder, StateChartBuilder, StateChartBuilderError};
 
 
     type TestResult = Result<(), Box<dyn Error>>;
@@ -702,7 +721,9 @@ mod builder_tests {
 
         assert_eq!(
             invalid_builder.build(),
-            Err(StateChartBuilderError::InitialStateNotRegistered(unregistered.id().to_string())),
+            Err(StateChartBuilderError::InitialStateNotRegistered(
+                unregistered.id().to_string()
+            )),
             "Failed to detect unregistered ID in the initial vector"
         );
 
@@ -711,7 +732,6 @@ mod builder_tests {
 
     #[test]
     fn no_states_registered() -> TestResult {
-        
         assert_eq!(
             StateChartBuilder::default().build(),
             Err(StateChartBuilderError::NoStatesRegistered),

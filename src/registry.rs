@@ -27,21 +27,12 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-use std::{
-    error::Error,
-    fmt,
-};
+use std::{error::Error, fmt};
 
 use crate::{
     event::Event,
-    state::{
-        State,
-        StateId,
-    },
-    transition::{
-        Transition,
-        TransitionFingerprint,
-    },
+    state::{State, StateId},
+    transition::{Transition, TransitionFingerprint},
 };
 
 
@@ -68,7 +59,6 @@ pub enum RegistryError {
 ///////////////////////////////////////////////////////////////////////////////
 
 impl Registry {
-
     /*  *  *  *  *  *  *  *\
      *  Accessor Methods  *
     \*  *  *  *  *  *  *  */
@@ -80,7 +70,7 @@ impl Registry {
     pub fn get_state(&self, id: &str) -> Result<&State, RegistryError> {
         for state in &self.states {
             if state.id() == id {
-                return Ok(state)
+                return Ok(state);
             }
 
             if let Some(state) = Self::get_substates(state, id) {
@@ -94,7 +84,7 @@ impl Registry {
     pub fn get_mut_state(&mut self, id: &str) -> Result<&mut State, RegistryError> {
         for state in &mut self.states {
             if state.id() == id {
-                return Ok(state)
+                return Ok(state);
             }
 
             if let Some(state) = Self::get_mut_substates(state, id) {
@@ -158,7 +148,9 @@ impl Registry {
     pub fn register_state(&mut self, state: State) -> Result<(), RegistryError> {
         // Ensure State is not already registered
         if self.states.contains(&state) {
-            return Err(RegistryError::StateAlreadyRegistered(state.id().to_string()));
+            return Err(RegistryError::StateAlreadyRegistered(
+                state.id().to_string(),
+            ));
         }
 
         // Traverse State and Substates for Events
@@ -186,7 +178,10 @@ impl Registry {
         Ok(())
     }
 
-    fn register_events_and_traverse_substates(&mut self, state: &State) -> Result<(), RegistryError> {
+    fn register_events_and_traverse_substates(
+        &mut self,
+        state: &State,
+    ) -> Result<(), RegistryError> {
         // Check current State's Transitions for Events
         for transition in state.transitions() {
             for event in transition.events() {
@@ -207,7 +202,7 @@ impl Registry {
     fn get_substates<'s>(state: &'s State, id: &str) -> Option<&'s State> {
         for substate in state.substates() {
             if substate.id() == id {
-                return Some(substate)
+                return Some(substate);
             }
 
 
@@ -223,7 +218,7 @@ impl Registry {
     fn get_mut_substates<'s>(state: &'s mut State, id: &str) -> Option<&'s mut State> {
         for substate in state.mut_substates() {
             if substate.id() == id {
-                return Some(substate)
+                return Some(substate);
             }
 
 
@@ -296,13 +291,21 @@ impl fmt::Display for RegistryError {
             }
             Self::StateAlreadyRegistered(state_id) => {
                 write!(f, "State with ID '{}' already registered", state_id)
-            },
+            }
             Self::StateNotFound(state_id) => {
-                write!(f, "Could not find any States with ID '{}' in the Registry", state_id)
-            },
+                write!(
+                    f,
+                    "Could not find any States with ID '{}' in the Registry",
+                    state_id
+                )
+            }
             Self::TransitionNotFound(fingerprint) => {
-                write!(f, "Could not find any Transitions with Fingerprint '{}' in the Registry", fingerprint)
-            },
+                write!(
+                    f,
+                    "Could not find any Transitions with Fingerprint '{}' in the Registry",
+                    fingerprint
+                )
+            }
         }
     }
 }
@@ -319,14 +322,8 @@ mod tests {
 
     use crate::{
         event::Event,
-        registry::{
-            Registry,
-            RegistryError,
-        },
-        state::{
-            StateBuilder,
-            State,
-        },
+        registry::{Registry, RegistryError},
+        state::{State, StateBuilder},
         transition::TransitionFingerprint,
     };
 
@@ -358,7 +355,9 @@ mod tests {
         // Verify that double-registration fails for both elements
         assert_eq!(
             registry.register_state(state_b),
-            Err(RegistryError::StateAlreadyRegistered(String::from(state_id))),
+            Err(RegistryError::StateAlreadyRegistered(String::from(
+                state_id
+            ))),
             "Failed to reject State double-registration"
         );
         assert_eq!(
@@ -389,8 +388,10 @@ mod tests {
 
         assert_eq!(
             registry.get_transition(&TransitionFingerprint::default()),
-            Err(RegistryError::TransitionNotFound(TransitionFingerprint::default())),
-           "get_transition() somehow found a nonexistent Transition"
+            Err(RegistryError::TransitionNotFound(
+                TransitionFingerprint::default()
+            )),
+            "get_transition() somehow found a nonexistent Transition"
         );
 
         let empty_stateid_vec: Vec<&State> = Vec::new();

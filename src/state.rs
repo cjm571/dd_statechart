@@ -24,19 +24,12 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-use std::{
-    error::Error,
-    fmt,
-};
+use std::{error::Error, fmt};
 
 use crate::{
     datamodel::SystemVariables,
     event::Event,
-    transition::{
-        Transition,
-        TransitionError,
-        TransitionFingerprint,
-    },
+    transition::{Transition, TransitionError, TransitionFingerprint},
 };
 
 
@@ -45,17 +38,17 @@ use crate::{
 ///////////////////////////////////////////////////////////////////////////////
 
 /// Represents a state within the statechart.
-/// 
+///
 /// May contain one or more of: initial states, transitions, entry/exit callbacks, substates
 #[derive(Clone, Default, PartialEq)]
 pub struct State {
-    id:             StateId,
-    substates:      Vec<State>,
-    is_active:      bool,
-    initial_id:     Option<StateId>,
-    transitions:    Vec<Transition>,
-    on_entry:       Vec<Callback>,
-    on_exit:        Vec<Callback>,
+    id: StateId,
+    substates: Vec<State>,
+    is_active: bool,
+    initial_id: Option<StateId>,
+    transitions: Vec<Transition>,
+    on_entry: Vec<Callback>,
+    on_exit: Vec<Callback>,
 }
 
 //OPT: *STYLE* Create StateIdRef type that is an alias for &str
@@ -77,13 +70,13 @@ pub enum StateError {
 
 #[derive(Debug, PartialEq)]
 pub struct StateBuilder {
-    id:             StateId,
-    substates:      Vec<State>,
-    is_active:      bool,
-    initial_id:     Option<StateId>,
-    transitions:    Vec<Transition>,
-    on_entry:       Vec<Callback>,
-    on_exit:        Vec<Callback>,
+    id: StateId,
+    substates: Vec<State>,
+    is_active: bool,
+    initial_id: Option<StateId>,
+    transitions: Vec<Transition>,
+    on_entry: Vec<Callback>,
+    on_exit: Vec<Callback>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -101,7 +94,6 @@ pub enum StateBuilderError {
 ///////////////////////////////////////////////////////////////////////////////
 
 impl State {
-
     /*  *  *  *  *  *  *  *\
      *  Accessor Methods  *
     \*  *  *  *  *  *  *  */
@@ -130,7 +122,7 @@ impl State {
     pub fn activate(&mut self) {
         self.is_active = true;
     }
-    
+
     pub fn deactivate(&mut self) {
         self.is_active = false;
     }
@@ -138,7 +130,7 @@ impl State {
     pub fn mut_substates(&mut self) -> &mut Vec<State> {
         &mut self.substates
     }
-    
+
 
     /*  *  *  *  *  *  *  *\
      *  Utility Methods   *
@@ -157,8 +149,7 @@ impl State {
                 if substate.id() == initial_id {
                     substate.enter()?;
                 }
-            }
-            else {
+            } else {
                 return Err(StateError::SubstatesSpecifiedWithoutInitial);
             }
         }
@@ -173,19 +164,23 @@ impl State {
                 substate.exit()?;
             }
         }
-        
+
         // Execute any on_exit callbacks
         self.execute_on_exit()?;
-        
+
         // Deactivate the State
         self.deactivate();
 
         Ok(())
     }
-    
-    pub fn evaluate_event(&self, event: Option<&Event>, sys_vars: &SystemVariables) -> Result<Option<&TransitionFingerprint>, StateError> {
+
+    pub fn evaluate_event(
+        &self,
+        event: Option<&Event>,
+        sys_vars: &SystemVariables,
+    ) -> Result<Option<&TransitionFingerprint>, StateError> {
         let mut enable_candidates = Vec::new();
-        
+
         // Handle evaluation of a non-null Event
         if let Some(event) = &event {
             // Check for Event match in each of this State's Transitions
@@ -211,7 +206,7 @@ impl State {
         for candidate in enable_candidates {
             if candidate.evaluate_condition(sys_vars)? {
                 // Short-circuit and return the Target of the first Transition to be Enabled
-                return Ok(Some(candidate.fingerprint()))
+                return Ok(Some(candidate.fingerprint()));
             }
         }
 
@@ -219,7 +214,7 @@ impl State {
         Ok(None)
     }
 
-    
+
     /*  *  *  *  *  *  *  *\
      *  Helper Methods    *
     \*  *  *  *  *  *  *  */
@@ -252,12 +247,12 @@ impl StateBuilder {
     pub fn new(id: StateId) -> Self {
         Self {
             id,
-            is_active:      false,
-            substates:      Vec::new(),
-            initial_id:     None,
-            transitions:    Vec::new(),
-            on_entry:       Vec::new(),
-            on_exit:        Vec::new(),
+            is_active: false,
+            substates: Vec::new(),
+            initial_id: None,
+            transitions: Vec::new(),
+            on_entry: Vec::new(),
+            on_exit: Vec::new(),
         }
     }
 
@@ -268,8 +263,14 @@ impl StateBuilder {
 
     pub fn build(mut self) -> Result<State, StateBuilderError> {
         // No-child `initial` sanity check
-        if let Some(initial_id) = self.initial_id.as_ref().filter(|_| self.substates.is_empty()) {
-            return Err(StateBuilderError::InitialSetWithoutChildStates(initial_id.clone()));
+        if let Some(initial_id) = self
+            .initial_id
+            .as_ref()
+            .filter(|_| self.substates.is_empty())
+        {
+            return Err(StateBuilderError::InitialSetWithoutChildStates(
+                initial_id.clone(),
+            ));
         }
 
         // Sanity checks for child states, if at least one exists
@@ -285,32 +286,31 @@ impl StateBuilder {
                 if !child_matched {
                     return Err(StateBuilderError::InitialIsNotChild(initial_id.clone()));
                 }
-            }
-            else {
+            } else {
                 // If no initial ID was provided, set to first doc-order child
                 self.initial_id = Some(first_child.id().to_string());
             }
-
         }
 
         // Ensure all Transitions' source States match this one
         for transition in &self.transitions {
             if transition.source_id() != &self.id {
-                return Err(StateBuilderError::TransitionSourceMismatch(transition.fingerprint().clone(), transition.source_id().clone()));
+                return Err(StateBuilderError::TransitionSourceMismatch(
+                    transition.fingerprint().clone(),
+                    transition.source_id().clone(),
+                ));
             }
         }
 
-        Ok(
-            State {
-                id:             self.id,
-                substates:      self.substates,
-                is_active:      self.is_active,
-                initial_id:     self.initial_id,
-                transitions:    self.transitions,
-                on_entry:       self.on_entry,
-                on_exit:        self.on_exit,
-            }
-        )        
+        Ok(State {
+            id: self.id,
+            substates: self.substates,
+            is_active: self.is_active,
+            initial_id: self.initial_id,
+            transitions: self.transitions,
+            on_entry: self.on_entry,
+            on_exit: self.on_exit,
+        })
     }
 
     pub fn substate(mut self, state: State) -> Result<Self, StateBuilderError> {
@@ -338,7 +338,9 @@ impl StateBuilder {
     pub fn transition(mut self, transition: Transition) -> Result<Self, StateBuilderError> {
         // Ensure the Transition is not a duplicate
         if self.transitions.contains(&transition) {
-            return Err(StateBuilderError::DuplicateTransition(transition.fingerprint().clone()));
+            return Err(StateBuilderError::DuplicateTransition(
+                transition.fingerprint().clone(),
+            ));
         }
 
         self.transitions.push(transition);
@@ -361,7 +363,6 @@ impl StateBuilder {
 
         self
     }
-
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -375,13 +376,13 @@ impl StateBuilder {
 impl fmt::Debug for State {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("State")
-            .field("id",            &self.id)
-            .field("substates",     &self.substates)
-            .field("is_active",     &self.is_active)
-            .field("initial_id",    &self.initial_id)
-            .field("transitions",   &self.transitions)
-            .field("on_entry",      &self.on_entry)
-            .field("on_exit",       &self.on_exit)
+            .field("id", &self.id)
+            .field("substates", &self.substates)
+            .field("is_active", &self.is_active)
+            .field("initial_id", &self.initial_id)
+            .field("transitions", &self.transitions)
+            .field("on_entry", &self.on_entry)
+            .field("on_exit", &self.on_exit)
             .finish()
     }
 }
@@ -398,15 +399,19 @@ impl fmt::Display for StateError {
         match self {
             Self::FailedCallback(idx) => {
                 write!(f, "callback at index {} failed", idx)
-            },
+            }
             Self::SubstatesSpecifiedWithoutInitial => {
                 write!(f, "State has substates but no Initial State")
-            },
-            
+            }
+
             // Wrappers
             Self::TransitionError(trans_err) => {
-                write!(f, "TransitionError '{:?}' encountered while processing State", trans_err)
-            },
+                write!(
+                    f,
+                    "TransitionError '{:?}' encountered while processing State",
+                    trans_err
+                )
+            }
         }
     }
 }
@@ -416,7 +421,6 @@ impl From<TransitionError> for StateError {
         Self::TransitionError(src)
     }
 }
-
 
 
 /*  *  *  *  *  *  *  *\
@@ -429,20 +433,40 @@ impl fmt::Display for StateBuilderError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::DuplicateSubstate(state_id) => {
-                write!(f, "Substate '{}' is a duplicate of an existing Substate or the parent", state_id)
-            },
+                write!(
+                    f,
+                    "Substate '{}' is a duplicate of an existing Substate or the parent",
+                    state_id
+                )
+            }
             Self::DuplicateTransition(transition_id) => {
-                write!(f, "Transition '{:?}' is a duplicate of an existing Transition", transition_id)
-            },
+                write!(
+                    f,
+                    "Transition '{:?}' is a duplicate of an existing Transition",
+                    transition_id
+                )
+            }
             Self::InitialIsNotChild(initial_id) => {
-                write!(f, "Initial ID '{}' does not match any child State IDs", initial_id)
-            },
+                write!(
+                    f,
+                    "Initial ID '{}' does not match any child State IDs",
+                    initial_id
+                )
+            }
             Self::InitialSetWithoutChildStates(initial_id) => {
-                write!(f, "Initial ID '{}' was set despite no child States existing", initial_id)
-            },
+                write!(
+                    f,
+                    "Initial ID '{}' was set despite no child States existing",
+                    initial_id
+                )
+            }
             Self::TransitionSourceMismatch(transition_id, state_id) => {
-                write!(f, "Transition '{:?}' source State '{}' does not match parent State", transition_id, state_id)
-            },
+                write!(
+                    f,
+                    "Transition '{:?}' source State '{}' does not match parent State",
+                    transition_id, state_id
+                )
+            }
         }
     }
 }
@@ -458,14 +482,10 @@ mod tests {
     use std::error::Error;
 
     use crate::{
-        StateChartBuilder,
-        StateChartError,
         event::Event,
-        state::{
-            StateBuilder,
-            StateError,
-        },
+        state::{StateBuilder, StateError},
         transition::TransitionBuilder,
+        StateChartBuilder, StateChartError,
     };
 
 
@@ -488,18 +508,18 @@ mod tests {
         // Build States, one of which will fail its 2nd on_exit callback
         let initial = StateBuilder::new(initial_state_id)
             .transition(hapless_transition)?
-            .on_exit(|| {Ok(())})
-            .on_exit(|| {Err(())})
+            .on_exit(|| Ok(()))
+            .on_exit(|| Err(()))
             .build()?;
         let terminal = StateBuilder::new(terminal_state_id).build()?;
-        
+
         // Build the StateChart and process the Event
         let mut statechart = StateChartBuilder::default()
             .initial(initial.id().to_string())
             .state(initial)?
             .state(terminal)?
             .build()?;
-        
+
         assert_eq!(
             statechart.process_external_event(&initial_to_terminal),
             Err(StateChartError::StateError(StateError::FailedCallback(1))),
@@ -509,7 +529,7 @@ mod tests {
         Ok(())
     }
 
-    
+
     #[test]
     fn failed_on_entry() -> TestResult {
         // Define Event and State IDs
@@ -528,17 +548,17 @@ mod tests {
             .transition(hapless_transition)?
             .build()?;
         let terminal = StateBuilder::new(terminal_state_id)
-            .on_entry(|| {Ok(())})
-            .on_entry(|| {Err(())})
+            .on_entry(|| Ok(()))
+            .on_entry(|| Err(()))
             .build()?;
-        
+
         // Build the StateChart and process the Event
         let mut statechart = StateChartBuilder::default()
             .initial(initial.id().to_string())
             .state(initial)?
             .state(terminal)?
             .build()?;
-        
+
         assert_eq!(
             statechart.process_external_event(&initial_to_terminal),
             Err(StateChartError::StateError(StateError::FailedCallback(1))),
@@ -551,14 +571,11 @@ mod tests {
 
 #[cfg(test)]
 mod builder_tests {
-    
+
     use std::error::Error;
 
     use crate::{
-        state::{
-            StateBuilder,
-            StateBuilderError,
-        },
+        state::{StateBuilder, StateBuilderError},
         transition::TransitionBuilder,
     };
 
@@ -572,17 +589,18 @@ mod builder_tests {
         let original_transition = TransitionBuilder::new(state_id.as_str())
             .target_id("dummy_target")?
             .build()?;
-        let duplicate_transition = TransitionBuilder::new( state_id.as_str())
+        let duplicate_transition = TransitionBuilder::new(state_id.as_str())
             .target_id("dummy_target")?
             .build()?;
 
         // Verify the duplicate transition is caught
-        let builder = StateBuilder::new(state_id)
-            .transition(original_transition.clone())?;
+        let builder = StateBuilder::new(state_id).transition(original_transition.clone())?;
 
         assert_eq!(
             builder.transition(duplicate_transition),
-            Err(StateBuilderError::DuplicateTransition(original_transition.fingerprint().clone())),
+            Err(StateBuilderError::DuplicateTransition(
+                original_transition.fingerprint().clone()
+            )),
             "Failed to catch duplicate Transition"
         );
 
@@ -592,7 +610,7 @@ mod builder_tests {
     #[test]
     fn duplicate_substate() -> TestResult {
         // Verify that duplicates of parent state are caught
-        let parent_id  = String::from("parent");
+        let parent_id = String::from("parent");
         let parent_dup_state = StateBuilder::new(parent_id.clone()).build()?;
 
         let parent_dup_builder = StateBuilder::new(parent_id.clone());
@@ -608,8 +626,7 @@ mod builder_tests {
         let dup_state_a = StateBuilder::new(duplicate_id.clone()).build()?;
         let dup_state_b = StateBuilder::new(duplicate_id.clone()).build()?;
 
-        let substate_dup_builder = StateBuilder::new(parent_id)
-            .substate(dup_state_a)?;
+        let substate_dup_builder = StateBuilder::new(parent_id).substate(dup_state_a)?;
 
         assert_eq!(
             substate_dup_builder.substate(dup_state_b),
@@ -641,14 +658,15 @@ mod builder_tests {
 
     #[test]
     fn initial_set_without_child_states() -> TestResult {
-        let builder = StateBuilder::new("childless".to_string())
-            .initial("nonexistent".to_string());
+        let builder = StateBuilder::new("childless".to_string()).initial("nonexistent".to_string());
 
         assert_eq!(
             builder.build(),
-            Err(StateBuilderError::InitialSetWithoutChildStates("nonexistent".to_string()))
+            Err(StateBuilderError::InitialSetWithoutChildStates(
+                "nonexistent".to_string()
+            ))
         );
-        
+
         Ok(())
     }
 
@@ -663,12 +681,14 @@ mod builder_tests {
             .build()?;
 
         // Verify mismatch is caught
-        let builder = StateBuilder::new(correct_source_id)
-            .transition(transition.clone())?;
-        
+        let builder = StateBuilder::new(correct_source_id).transition(transition.clone())?;
+
         assert_eq!(
             builder.build(),
-            Err(StateBuilderError::TransitionSourceMismatch(transition.fingerprint().clone(), wrong_source_id)),
+            Err(StateBuilderError::TransitionSourceMismatch(
+                transition.fingerprint().clone(),
+                wrong_source_id
+            )),
             "Failed to catch source State mismatch"
         );
 

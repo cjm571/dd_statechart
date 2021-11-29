@@ -29,10 +29,7 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-use std::{
-    error::Error,
-    fmt,
-};
+use std::{error::Error, fmt};
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -42,15 +39,15 @@ use std::{
 //FEAT: Align this struct with §5.10.1
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Event {
-    id_nodes:   Vec<String>,
+    id_nodes: Vec<String>,
     event_type: EventType,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum EventType {
-    Platform,   // Raised by the platform itself, such as error events
-    Internal,   // Raised by <raise>/<send> with _internal as the target
-    External,   // All other events
+    Platform, // Raised by the platform itself, such as error events
+    Internal, // Raised by <raise>/<send> with _internal as the target
+    External, // All other events
 }
 
 #[derive(Debug, PartialEq)]
@@ -59,6 +56,7 @@ pub enum EventError {
     IdNodeIsEmpty(String, usize),
 }
 
+
 ///////////////////////////////////////////////////////////////////////////////
 //  Object Implementations
 ///////////////////////////////////////////////////////////////////////////////
@@ -66,14 +64,14 @@ pub enum EventError {
 impl Event {
     pub fn from(source_str: &str) -> Result<Self, EventError> {
         let source_nodes: Vec<&str> = source_str.split('.').collect();
-        
+
         // Ensure no node is empty
         for (idx, node) in source_nodes.iter().enumerate() {
             if node.is_empty() {
                 return Err(EventError::IdNodeIsEmpty(String::from(source_str), idx));
             }
         }
-        
+
         // Ensure there are no repeated ID nodes in the ID
         let mut deduped_nodes = source_nodes.clone();
         deduped_nodes.sort_unstable();
@@ -88,15 +86,13 @@ impl Event {
             composed_nodes.push(String::from(*node));
         }
 
-        Ok(
-            Self {
-                id_nodes: composed_nodes,
-                //FEAT: Support external events
-                event_type: EventType::Platform,
-            }
-        )
+        Ok(Self {
+            id_nodes: composed_nodes,
+            //FEAT: Support external events
+            event_type: EventType::Platform,
+        })
     }
-    
+
 
     /*  *  *  *  *  *  *  *\
      *  Accessor Methods  *
@@ -130,7 +126,7 @@ impl fmt::Display for Event {
 
         while let Some(id_node) = id_node_iter.next() {
             write!(f, "{}", id_node)?;
-            
+
             // Only add a trailing . if there is another node after the current
             if id_node_iter.peek().is_some() {
                 write!(f, ".")?;
@@ -140,7 +136,6 @@ impl fmt::Display for Event {
         Ok(())
     }
 }
-
 
 /*  *  *  *  *  *  *  *\
  *     EventError     *
@@ -153,9 +148,13 @@ impl fmt::Display for EventError {
         match self {
             Self::IdContainsDuplicates(source) => {
                 write!(f, "source string '{}' contains duplicate ID nodes", source)
-            },
+            }
             Self::IdNodeIsEmpty(source, node_idx) => {
-                write!(f, "source string '{}' node index {} is empty", source, node_idx)
+                write!(
+                    f,
+                    "source string '{}' node index {} is empty",
+                    source, node_idx
+                )
             }
         }
     }
@@ -171,10 +170,7 @@ mod tests {
 
     use std::error::Error;
 
-    use crate::event::{
-        Event,
-        EventError,
-    };
+    use crate::event::{Event, EventError};
 
 
     type TestResult = Result<(), Box<dyn Error>>;
@@ -195,7 +191,9 @@ mod tests {
         // Verify invalid string handling
         assert_eq!(
             Event::from(invalid_string),
-            Err(EventError::IdContainsDuplicates(String::from(invalid_string))),
+            Err(EventError::IdContainsDuplicates(String::from(
+                invalid_string
+            ))),
             "Failed to reject invalid event descriptor"
         );
 
@@ -220,7 +218,7 @@ mod tests {
     fn output() -> TestResult {
         let source = "error.send.failed";
         let event = Event::from(source)?;
-        
+
         println!("Event ID: '{}'", event);
 
         assert_eq!(

@@ -23,41 +23,17 @@ Purpose:
 extern crate roxmltree;
 extern crate uuid;
 
-use std::{
-    error::Error,
-    fmt,
-    fs,
-    io::Read,
-};
+use std::{error::Error, fmt, fs, io::Read};
 
 use crate::{
-    StateChart,
-    StateChartBuilder,
-    StateChartBuilderError,
-    datamodel::{
-        DataModelError,
-        SystemVariables,
-    },
-    event::{
-        Event,
-        EventError,
-    },
+    datamodel::{DataModelError, SystemVariables},
+    event::{Event, EventError},
     executable_content::ExecutableContent,
-    interpreter::{
-        Interpreter,
-        InterpreterError,
-    },
+    interpreter::{Interpreter, InterpreterError},
     registry::RegistryError,
-    state::{
-        State,
-        StateBuilder,
-        StateBuilderError,
-    },
-    transition::{
-        Transition,
-        TransitionBuilder,
-        TransitionBuilderError,
-    }
+    state::{State, StateBuilder, StateBuilderError},
+    transition::{Transition, TransitionBuilder, TransitionBuilderError},
+    StateChart, StateChartBuilder, StateChartBuilderError,
 };
 
 use uuid::Uuid;
@@ -78,43 +54,23 @@ const VALID_DATAMODEL: &str = "ecmascript";
 
 #[derive(Debug, PartialEq)]
 pub struct Parser {
-    path:               String,
-    content:            String,
+    path: String,
+    content: String,
     statechart_builder: StateChartBuilder,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum ParserError {
-    AssignWithoutLocation(
-        String  /* Stringified XML Tree Node */
-    ),
-    AssignWithoutExpr(
-        String  /* Stringified XML Tree Node */
-    ),
-    InitialNodeChildless(
-        String  /* Stringified XML Tree Node */
-    ),
-    InitialTransitionTargetless(
-        String  /* Stringified XML Tree Node */
-    ),
-    InvalidScxmlChild(
-        String  /* Name of child element */
-    ),
-    InvalidScxmlNamespace(
-        String  /* Invalid namespace */
-    ),
-    InvalidScxmlVersion(
-        String  /* Invalid version */
-    ),
-    InvalidDataModel(
-        String  /* Invalid data model name */
-    ),
-    InvalidDataItem(
-        String  /* Stringified XML Tree Node */
-    ),
-    StateHasNoId(
-        String  /* Stringified XML Tree Node */
-    ),
+    AssignWithoutLocation(String /* Stringified XML Tree Node */),
+    AssignWithoutExpr(String /* Stringified XML Tree Node */),
+    InitialNodeChildless(String /* Stringified XML Tree Node */),
+    InitialTransitionTargetless(String /* Stringified XML Tree Node */),
+    InvalidScxmlChild(String /* Name of child element */),
+    InvalidScxmlNamespace(String /* Invalid namespace */),
+    InvalidScxmlVersion(String /* Invalid version */),
+    InvalidDataModel(String /* Invalid data model name */),
+    InvalidDataItem(String /* Stringified XML Tree Node */),
+    StateHasNoId(String /* Stringified XML Tree Node */),
 
     // Wrappers
     DataModelError(DataModelError),
@@ -145,14 +101,12 @@ impl Parser {
         let mut file = fs::File::open(path)?;
         let mut file_contents = String::new();
         file.read_to_string(&mut file_contents)?;
-        
-        Ok(
-            Self {
-                path:               path.to_string(),
-                content:            file_contents,
-                statechart_builder: StateChartBuilder::default(),
-            }
-        )
+
+        Ok(Self {
+            path: path.to_string(),
+            content: file_contents,
+            statechart_builder: StateChartBuilder::default(),
+        })
     }
 
     pub fn parse(&mut self) -> Result<StateChart, ParserError> {
@@ -170,38 +124,44 @@ impl Parser {
         // Get StateChart name from <scxml>, if specified
         if let Some(chart_name) = parsed_content.root_element().attribute("name") {
             self.statechart_builder.name(chart_name);
-        }
-        else {
+        } else {
             // Name was not specified, generate a UUID
-            self.statechart_builder.name(Uuid::new_v4().to_string().as_str());
+            self.statechart_builder
+                .name(Uuid::new_v4().to_string().as_str());
         }
 
         // Begin iterating through the parsed content, skipping comment and text nodes
-        for child in parsed_content.root_element().children().filter(|v| v.is_element()) {
+        for child in parsed_content
+            .root_element()
+            .children()
+            .filter(|v| v.is_element())
+        {
             // Parse element based on its tag name
             match child.tag_name().name() {
                 "datamodel" => {
                     Self::parse_datamodel(child, &mut self.statechart_builder.sys_vars)?;
-                },
+                }
                 "final" => {
                     unimplemented!("Final states are not supported.")
                 }
                 "parallel" => {
                     unimplemented!("Parallel States not yet supported.")
-                },
+                }
                 "script" => {
                     unimplemented!("Scripting is not yet supported.")
-                },
+                }
                 "state" => {
                     self.statechart_builder.state(Self::parse_state(child)?)?;
-                },
+                }
                 unexpected => {
                     return Err(ParserError::InvalidScxmlChild(unexpected.to_string()));
                 }
             }
         }
 
-        self.statechart_builder.build().map_err(ParserError::StateChartBuilderError)
+        self.statechart_builder
+            .build()
+            .map_err(ParserError::StateChartBuilderError)
     }
 
 
@@ -218,8 +178,7 @@ impl Parser {
             if namespace != VALID_SCXML_NAMESPACE {
                 return Err(ParserError::InvalidScxmlNamespace(namespace.to_string()));
             }
-        }
-        else {
+        } else {
             // Namespace was not specified
             return Err(ParserError::InvalidScxmlNamespace(String::new()));
         }
@@ -229,8 +188,7 @@ impl Parser {
             if version != VALID_SCXML_VERSION {
                 return Err(ParserError::InvalidScxmlVersion(version.to_string()));
             }
-        }
-        else {
+        } else {
             // Version not specified
             return Err(ParserError::InvalidScxmlVersion(String::new()));
         }
@@ -242,11 +200,14 @@ impl Parser {
             }
         }
         // NOTE: Not specifying datamodel is allowable - ECMAScript will be assumed.
-        
+
         Ok(())
     }
 
-    fn parse_datamodel(element: roxmltree::Node, sys_vars: &mut SystemVariables) -> Result<(), ParserError> {
+    fn parse_datamodel(
+        element: roxmltree::Node,
+        sys_vars: &mut SystemVariables,
+    ) -> Result<(), ParserError> {
         // Collect all <data> children
         for child in element.children().filter(|v| v.is_element()) {
             if let (Some(id), Some(expr_str)) = (child.attribute("id"), child.attribute("expr")) {
@@ -254,8 +215,7 @@ impl Parser {
                 let interpreter = Interpreter::new(expr_str);
                 let expr_value = interpreter.interpret(sys_vars)?;
                 sys_vars.set_data_member(id, expr_value);
-            }
-            else {
+            } else {
                 return Err(ParserError::InvalidDataItem(format!("{:?}", element)));
             }
         }
@@ -267,7 +227,9 @@ impl Parser {
         let mut initial_specified = false;
 
         // // Get ID attribute to create StateBuilder
-        let state_id = element.attribute("id").ok_or_else(|| ParserError::StateHasNoId(format!("{:?}", element)))?;
+        let state_id = element
+            .attribute("id")
+            .ok_or_else(|| ParserError::StateHasNoId(format!("{:?}", element)))?;
         let mut state_builder = StateBuilder::new(state_id.to_string());
 
         // Check for initial attribute
@@ -284,9 +246,8 @@ impl Parser {
 
             // Handle <transition>
             if child.tag_name().name() == "transition" {
-                state_builder = state_builder.transition(
-                    Self::parse_transition(child, state_id)?
-                )?;
+                state_builder =
+                    state_builder.transition(Self::parse_transition(child, state_id)?)?;
             }
 
             // Handle <initial>, if not already specified
@@ -297,9 +258,11 @@ impl Parser {
                     if let Some(initial) = grandchild.attribute("target") {
                         state_builder = state_builder.initial(initial.to_string());
                         initial_specified = true;
-                    }
-                    else {
-                        return Err(ParserError::InitialTransitionTargetless(format!("{:?}", element)));
+                    } else {
+                        return Err(ParserError::InitialTransitionTargetless(format!(
+                            "{:?}",
+                            element
+                        )));
                     }
                 }
                 // Ensure that a <transition> element was found, otherwise the document is not well-formed
@@ -320,10 +283,15 @@ impl Parser {
             //FEAT: Handle <datamodel>
         }
 
-        state_builder.build().map_err(ParserError::StateBuilderError)
+        state_builder
+            .build()
+            .map_err(ParserError::StateBuilderError)
     }
 
-    fn parse_transition(element: roxmltree::Node, parent_id: &str) -> Result<Transition, ParserError> {
+    fn parse_transition(
+        element: roxmltree::Node,
+        parent_id: &str,
+    ) -> Result<Transition, ParserError> {
         let mut transition_builder = TransitionBuilder::new(parent_id);
 
         // Tokenize Events
@@ -336,7 +304,7 @@ impl Parser {
         }
 
         // Parse guard condition
-        if let Some(cond_str) = element.attribute("cond") {            
+        if let Some(cond_str) = element.attribute("cond") {
             transition_builder = transition_builder.cond(cond_str)?;
         }
 
@@ -351,11 +319,11 @@ impl Parser {
             if child.tag_name().name() == "assign" {
                 if let Some(location) = child.attribute("location") {
                     // 'expr' may be either an attribute of 'assign', or its child(ren)
-                    if let Some(expr) = child.attribute("expr") {    
-                        let assignment = ExecutableContent::Assign(location.to_string(), expr.to_string());
+                    if let Some(expr) = child.attribute("expr") {
+                        let assignment =
+                            ExecutableContent::Assign(location.to_string(), expr.to_string());
                         transition_builder = transition_builder.executable_content(assignment);
-                    }
-                    else if child.has_children() {
+                    } else if child.has_children() {
                         // When the 'expr' is not specified as part of the assign tag, it can be one
                         // or more child nodes. This constitutes a multi-line expression, which
                         // is not yet supported by the ECMAScript Interpreter
@@ -375,7 +343,9 @@ impl Parser {
             //FEAT: Handle other executable content
         }
 
-        transition_builder.build().map_err(ParserError::TransitionBuilderError)
+        transition_builder
+            .build()
+            .map_err(ParserError::TransitionBuilderError)
     }
 }
 
@@ -395,63 +365,123 @@ impl fmt::Display for ParserError {
         match self {
             Self::AssignWithoutLocation(parent_assign) => {
                 write!(f, "Assignment '{}' is missing a 'location'", parent_assign)
-            },
+            }
             Self::AssignWithoutExpr(parent_assign) => {
                 write!(f, "Assignment '{}' is missing an 'expr'", parent_assign)
-            },
+            }
             Self::InitialNodeChildless(parent_state) => {
-                write!(f, "State '{}' contains a childless <initial> element", parent_state)
-            },
+                write!(
+                    f,
+                    "State '{}' contains a childless <initial> element",
+                    parent_state
+                )
+            }
             Self::InitialTransitionTargetless(parent_state) => {
-                write!(f, "State '{}' contains an <initial> element with a targetless <transition>", parent_state)
-            },
+                write!(
+                    f,
+                    "State '{}' contains an <initial> element with a targetless <transition>",
+                    parent_state
+                )
+            }
             Self::InvalidScxmlChild(name) => {
                 write!(f, "Invalid Child '{}' of top-level SCXML element", name)
-            },
+            }
             Self::InvalidScxmlNamespace(namespace) => {
-                write!(f, "Invalid SCXML Namespace '{}', expected '{}'", namespace, VALID_SCXML_NAMESPACE)
-            },
+                write!(
+                    f,
+                    "Invalid SCXML Namespace '{}', expected '{}'",
+                    namespace, VALID_SCXML_NAMESPACE
+                )
+            }
             Self::InvalidScxmlVersion(version) => {
-                write!(f, "Invalid SCXML Version '{}', expected '{}'", version, VALID_SCXML_VERSION)
-            },
+                write!(
+                    f,
+                    "Invalid SCXML Version '{}', expected '{}'",
+                    version, VALID_SCXML_VERSION
+                )
+            }
             Self::InvalidDataModel(datamodel) => {
-                write!(f, "Invalid SCXML Datamodel '{}', expected '{}'", datamodel, VALID_DATAMODEL)
-            },
+                write!(
+                    f,
+                    "Invalid SCXML Datamodel '{}', expected '{}'",
+                    datamodel, VALID_DATAMODEL
+                )
+            }
             Self::InvalidDataItem(node_id) => {
                 write!(f, "Invalid Data Item '{:?}'", node_id)
-            },
+            }
             Self::StateHasNoId(node_id) => {
-                write!(f, "Node ID {:?} is a <state> element with no 'id' attribute", node_id)
-            },
+                write!(
+                    f,
+                    "Node ID {:?} is a <state> element with no 'id' attribute",
+                    node_id
+                )
+            }
 
             // Wrappers
             Self::DataModelError(data_error) => {
-                write!(f, "DataModelError '{:?}' encountered while parsing", data_error)
-            },
+                write!(
+                    f,
+                    "DataModelError '{:?}' encountered while parsing",
+                    data_error
+                )
+            }
             Self::EventError(event_error) => {
-                write!(f, "EventError '{:?}' encountered while parsing", event_error)
-            },
+                write!(
+                    f,
+                    "EventError '{:?}' encountered while parsing",
+                    event_error
+                )
+            }
             Self::InterpreterError(interp_error) => {
-                write!(f, "InterpreterError '{:?}' encountered while parsing", interp_error)
-            },
+                write!(
+                    f,
+                    "InterpreterError '{:?}' encountered while parsing",
+                    interp_error
+                )
+            }
             Self::IoError(io_err_kind) => {
-                write!(f, "IoError of kind '{:?}' encountered when attempting to create Parser object", io_err_kind)
-            },
+                write!(
+                    f,
+                    "IoError of kind '{:?}' encountered when attempting to create Parser object",
+                    io_err_kind
+                )
+            }
             Self::RegistryError(reg_error) => {
-                write!(f, "RegistryError '{:?}' encountered while parsing", reg_error)
-            },
+                write!(
+                    f,
+                    "RegistryError '{:?}' encountered while parsing",
+                    reg_error
+                )
+            }
             Self::RoxmlTreeError(roxmltree_error) => {
-                write!(f, "roxmltree::Error '{:?}' encountered while parsing", roxmltree_error)
-            },
+                write!(
+                    f,
+                    "roxmltree::Error '{:?}' encountered while parsing",
+                    roxmltree_error
+                )
+            }
             Self::StateBuilderError(sb_error) => {
-                write!(f, "StateBuilderError '{:?}' encountered while parsing", sb_error)
-            },
+                write!(
+                    f,
+                    "StateBuilderError '{:?}' encountered while parsing",
+                    sb_error
+                )
+            }
             Self::StateChartBuilderError(scb_error) => {
-                write!(f, "StateChartBuilderError '{:?}' encountered while parsing", scb_error)
-            },
+                write!(
+                    f,
+                    "StateChartBuilderError '{:?}' encountered while parsing",
+                    scb_error
+                )
+            }
             Self::TransitionBuilderError(tb_error) => {
-                write!(f, "TransitionBuilderError '{:?}' encountered while parsing", tb_error)
-            },
+                write!(
+                    f,
+                    "TransitionBuilderError '{:?}' encountered while parsing",
+                    tb_error
+                )
+            }
         }
     }
 }
@@ -513,18 +543,12 @@ mod tests {
     use std::error::Error;
 
     use crate::{
-        StateChartBuilderError,
-        event::{
-            Event,
-            EventError,
-        },
-        parser::{
-            Parser,
-            ParserError
-        },
+        event::{Event, EventError},
+        parser::{Parser, ParserError},
         registry::RegistryError,
         state::StateBuilderError,
         transition::TransitionBuilderError,
+        StateChartBuilderError,
     };
 
 
@@ -562,7 +586,8 @@ mod tests {
         let state_string = "Element { tag_name: {http://www.w3.org/2005/07/scxml}state, attributes: [Attribute { name: id, value: \"on\" }], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }".to_string();
 
         let mut parser_childless = Parser::new("res/test_cases/initial_node_childless.scxml")?;
-        let mut parser_targetless = Parser::new("res/test_cases/initial_transition_targetless.scxml")?;
+        let mut parser_targetless =
+            Parser::new("res/test_cases/initial_transition_targetless.scxml")?;
 
         assert_eq!(
             parser_childless.parse(),
@@ -603,7 +628,9 @@ mod tests {
         // Verify that an invalid namespace is caught
         assert_eq!(
             parser_b.parse(),
-            Err(ParserError::InvalidScxmlNamespace("http://invalid.namespace".to_string()))
+            Err(ParserError::InvalidScxmlNamespace(
+                "http://invalid.namespace".to_string()
+            ))
         );
 
         Ok(())
@@ -635,10 +662,7 @@ mod tests {
         let mut parser_b = Parser::new("res/test_cases/datamodel_invalid.scxml")?;
 
         // Verify that the empty datamodel is allowed
-        assert_eq!(
-            parser_a.parse().is_ok(),
-            true
-        );
+        assert_eq!(parser_a.parse().is_ok(), true);
 
         // Verify that an invalid datamodel is caught
         assert_eq!(
@@ -667,10 +691,7 @@ mod tests {
         let state_string = "Element { tag_name: {http://www.w3.org/2005/07/scxml}state, attributes: [], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }".to_string();
         let mut parser = Parser::new("res/test_cases/state_no_id.scxml")?;
 
-        assert_eq!(
-            parser.parse(),
-            Err(ParserError::StateHasNoId(state_string))
-        );
+        assert_eq!(parser.parse(), Err(ParserError::StateHasNoId(state_string)));
 
         Ok(())
     }
@@ -681,7 +702,9 @@ mod tests {
 
         assert_eq!(
             parser.parse(),
-            Err(ParserError::EventError(EventError::IdContainsDuplicates("turn.on.on".to_string())))
+            Err(ParserError::EventError(EventError::IdContainsDuplicates(
+                "turn.on.on".to_string()
+            )))
         );
 
         Ok(())
@@ -704,15 +727,11 @@ mod tests {
 
         assert_eq!(
             parser.parse(),
-            Err(
-                ParserError::StateChartBuilderError(
-                    StateChartBuilderError::RegistryError(
-                        RegistryError::StateAlreadyRegistered(
-                            "duplicate".to_string()
-                        )
-                    )
-                )
-            )
+            Err(ParserError::StateChartBuilderError(
+                StateChartBuilderError::RegistryError(RegistryError::StateAlreadyRegistered(
+                    "duplicate".to_string()
+                ))
+            ))
         );
 
         Ok(())
@@ -736,7 +755,9 @@ mod tests {
 
         assert_eq!(
             parser.parse(),
-            Err(ParserError::StateBuilderError(StateBuilderError::InitialSetWithoutChildStates("dne".to_string())))
+            Err(ParserError::StateBuilderError(
+                StateBuilderError::InitialSetWithoutChildStates("dne".to_string())
+            ))
         );
 
         Ok(())
@@ -748,7 +769,9 @@ mod tests {
 
         assert_eq!(
             parser.parse(),
-            Err(ParserError::StateChartBuilderError(StateChartBuilderError::NoStatesRegistered))
+            Err(ParserError::StateChartBuilderError(
+                StateChartBuilderError::NoStatesRegistered
+            ))
         );
 
         Ok(())
@@ -760,7 +783,9 @@ mod tests {
 
         assert_eq!(
             parser.parse(),
-            Err(ParserError::TransitionBuilderError(TransitionBuilderError::DuplicateEventId(Event::from("turn.on")?)))
+            Err(ParserError::TransitionBuilderError(
+                TransitionBuilderError::DuplicateEventId(Event::from("turn.on")?)
+            ))
         );
 
         Ok(())
@@ -772,7 +797,10 @@ mod tests {
 
         // Parse microwave example scxml doc
         let mut statechart = parser.parse()?;
-        eprintln!("*** Initial Active State(s):\n{:#?}", statechart.active_state_ids());
+        eprintln!(
+            "*** Initial Active State(s):\n{:#?}",
+            statechart.active_state_ids()
+        );
         eprintln!("*** Initial Data Model:\n{:#?}", statechart.sys_vars);
 
         // Send turn-on event
@@ -813,7 +841,10 @@ mod tests {
         for _ in 0..5 {
             eprintln!("*** Sending 'time' Event...");
             statechart.process_external_event(&time)?;
-            eprintln!("*** Current Active State(s):\n{:#?}", statechart.active_state_ids());
+            eprintln!(
+                "*** Current Active State(s):\n{:#?}",
+                statechart.active_state_ids()
+            );
         }
         eprintln!("*** Current Data Model:\n{:#?}", statechart.sys_vars);
 
