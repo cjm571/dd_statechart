@@ -3,8 +3,12 @@ name = "dd_statechart"
 version = "0.3.2"
 authors = ["CJ McAllister <cjm571@gmail.com>"]
 edition = "2018"
+license = "GPL-3.0-only"
+description = "A Data-Driven implementation of Harel Statecharts designed for high-reliability systems."
+repository = "https://github.com/cjm571/dd_statechart"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+keywords = ["scxml", "harel", "statechart", "state", "machine"]
+categories = ["data-structures", "game-development", "parsing"]
 
 [dependencies]
 roxmltree = "0.14"
