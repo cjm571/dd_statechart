@@ -132,65 +132,68 @@ mod tests {
 
     type TestResult = Result<(), Box<dyn Error>>;
 
+    mod assign {
+        use super::*;
 
-    #[test]
-    fn basic_assignment() -> TestResult {
-        let location = "loc".to_string();
-        let initial_val = EcmaScriptValue::Boolean(false);
-        let expr = "true".to_string();
+        #[test]
+        fn basic_assignment() -> TestResult {
+            let location = "loc".to_string();
+            let initial_val = EcmaScriptValue::Boolean(false);
+            let expr = "true".to_string();
 
-        // Create a basic assignment statement and valid data model for it to act on
-        let assignment = ExecutableContent::Assign(location.clone(), expr.clone());
-        let mut sys_vars = SystemVariables::default();
-        sys_vars.set_data_member(&location, initial_val);
+            // Create a basic assignment statement and valid data model for it to act on
+            let assignment = ExecutableContent::Assign(location.clone(), expr.clone());
+            let mut sys_vars = SystemVariables::default();
+            sys_vars.set_data_member(&location, initial_val);
 
-        // Display initial conditions
-        eprintln!("=== Initial Data Model:\n{:?}", sys_vars._x());
+            // Display initial conditions
+            eprintln!("=== Initial Data Model:\n{:?}", sys_vars._x());
 
-        // Execute the assignment
-        assignment.execute(&mut sys_vars)?;
-
-        // Display final conditions
-        eprintln!("=== Final Data Model:\n{:?}", sys_vars._x());
-
-        // Verify successful assignment
-        assert_eq!(
-            sys_vars.get_data_member(&location),
-            Some(&EcmaScriptValue::Boolean(true))
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn meta_assignment() -> TestResult {
-        let location = "loc".to_string();
-        let initial_val = EcmaScriptValue::Number(0.0);
-        let expr = "loc + 1".to_string();
-
-        // Create a meta assignment statement and valid data model for it to act on
-        let assignment = ExecutableContent::Assign(location.clone(), expr.clone());
-        let mut sys_vars = SystemVariables::default();
-        sys_vars.set_data_member(&location, initial_val.clone());
-
-        // Display initial conditions
-        eprintln!("=== Initial Data Model:\n{:?}", sys_vars._x());
-
-        // Execute the assignment several times
-        let executions = 4;
-        for _ in 0..executions {
+            // Execute the assignment
             assignment.execute(&mut sys_vars)?;
+
+            // Display final conditions
+            eprintln!("=== Final Data Model:\n{:?}", sys_vars._x());
+
+            // Verify successful assignment
+            assert_eq!(
+                sys_vars.get_data_member(&location),
+                Some(&EcmaScriptValue::Boolean(true))
+            );
+
+            Ok(())
         }
 
-        // Display final conditions
-        eprintln!("=== Final Data Model:\n{:?}", sys_vars._x());
+        #[test]
+        fn meta_assignment() -> TestResult {
+            let location = "loc".to_string();
+            let initial_val = EcmaScriptValue::Number(0.0);
+            let expr = "loc + 1".to_string();
 
-        // Verify successful assignment
-        assert_eq!(
-            sys_vars.get_data_member(&location),
-            Some(&(initial_val + EcmaScriptValue::Number(executions as f64)))
-        );
+            // Create a meta assignment statement and valid data model for it to act on
+            let assignment = ExecutableContent::Assign(location.clone(), expr.clone());
+            let mut sys_vars = SystemVariables::default();
+            sys_vars.set_data_member(&location, initial_val.clone());
 
-        Ok(())
+            // Display initial conditions
+            eprintln!("=== Initial Data Model:\n{:?}", sys_vars._x());
+
+            // Execute the assignment several times
+            let executions = 4;
+            for _ in 0..executions {
+                assignment.execute(&mut sys_vars)?;
+            }
+
+            // Display final conditions
+            eprintln!("=== Final Data Model:\n{:?}", sys_vars._x());
+
+            // Verify successful assignment
+            assert_eq!(
+                sys_vars.get_data_member(&location),
+                Some(&(initial_val + EcmaScriptValue::Number(executions as f64)))
+            );
+
+            Ok(())
+        }
     }
 }
