@@ -269,7 +269,6 @@ mod tests {
 
             // Capture output and verify
             let output = String::from_utf8(buffer)?;
-
             assert_eq!(
                 output,
                 format!(
@@ -291,6 +290,28 @@ mod tests {
             let mut buffer = Vec::new();
 
             // Create a log action and a valid data model
+            let log_action = ExecutableContent::Log(label, expr);
+            let mut sys_vars = SystemVariables::default();
+
+            // Execute the log action
+            log_action.execute(&mut sys_vars, &mut buffer)?;
+
+            // Capture output and verify
+            let output = String::from_utf8(buffer)?;
+            assert_eq!(output, String::default());
+
+            Ok(())
+        }
+
+        #[test]
+        fn parsed_logging() -> TestResult {
+            let label = "RESULT".to_string();
+            let expr = "5.5 + 3".to_string();
+
+            // Create a buffer to capture the log output
+            let mut buffer = Vec::new();
+
+            // Create a log action and a valid data model
             let log_action = ExecutableContent::Log(label.clone(), expr.clone());
             let mut sys_vars = SystemVariables::default();
 
@@ -299,8 +320,14 @@ mod tests {
 
             // Capture output and verify
             let output = String::from_utf8(buffer)?;
-
-            assert_eq!(output, String::default());
+            assert_eq!(
+                output,
+                format!(
+                    "{}: {}\n",
+                    label,
+                    Interpreter::new(&expr).interpret(&sys_vars)?
+                )
+            );
 
             Ok(())
         }
