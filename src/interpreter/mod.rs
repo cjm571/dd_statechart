@@ -190,6 +190,11 @@ impl<'s> Interpreter<'s> {
         // Scan input string for tokens
         let tokens = Lexer::new(self.expr_str).scan()?;
 
+        // If no tokens were found, we have an empty string, so just return that
+        if tokens.is_empty() {
+            return Ok(EcmaScriptValue::String(String::default()));
+        }
+
         // Parse tokens for expression
         let expr = Parser::new(&tokens).parse()?;
 

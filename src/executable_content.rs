@@ -281,5 +281,28 @@ mod tests {
 
             Ok(())
         }
+
+        #[test]
+        fn empty_logging() -> TestResult {
+            let label = "".to_string();
+            let expr = "".to_string();
+
+            // Create a buffer to capture the log output
+            let mut buffer = Vec::new();
+
+            // Create a log action and a valid data model
+            let log_action = ExecutableContent::Log(label.clone(), expr.clone());
+            let mut sys_vars = SystemVariables::default();
+
+            // Execute the log action
+            log_action.execute(&mut sys_vars, &mut buffer)?;
+
+            // Capture output and verify
+            let output = String::from_utf8(buffer)?;
+
+            assert_eq!(output, String::default());
+
+            Ok(())
+        }
     }
 }
