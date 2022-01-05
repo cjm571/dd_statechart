@@ -22,7 +22,7 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-use std::io::Write;
+use std::io::{self, Write};
 use std::{error::Error, fmt};
 
 use crate::{
@@ -59,6 +59,7 @@ pub enum ExecutableContent {
 pub enum ExecutableContentError {
     // Wrappers
     InterpreterError(InterpreterError),
+    IoError(io::ErrorKind),
 }
 
 
@@ -93,20 +94,19 @@ impl ExecutableContent {
                 let interpreter = Interpreter::new(expr);
                 let value = interpreter.interpret(sys_vars)?;
 
-                //FIXME: Replace expects with ?s
                 // Output the components of a log message if they exist
                 if !label.is_empty() {
-                    write!(&mut writer, "{}: ", label).expect("Unable to write");
+                    write!(&mut writer, "{}: ", label)?;
                     has_content = true;
                 }
                 if !expr.is_empty() {
-                    write!(&mut writer, "{}", value).expect("Unable to write");
+                    write!(&mut writer, "{}", value)?;
                     has_content = true;
                 }
 
                 // Output a newline if anything was output
                 if has_content {
-                    writeln!(&mut writer).expect("Unable to write");
+                    writeln!(&mut writer)?;
                 }
 
                 Ok(())
@@ -141,6 +141,13 @@ impl fmt::Display for ExecutableContentError {
                     interp_err
                 )
             }
+            Self::IoError(io_err) => {
+                write!(
+                    f,
+                    "IO Error '{:?}' encountered within Executable Content",
+                    io_err
+                )
+            }
         }
     }
 }
@@ -148,6 +155,12 @@ impl fmt::Display for ExecutableContentError {
 impl From<InterpreterError> for ExecutableContentError {
     fn from(src: InterpreterError) -> Self {
         Self::InterpreterError(src)
+    }
+}
+
+impl From<std::io::Error> for ExecutableContentError {
+    fn from(src: std::io::Error) -> Self {
+        Self::IoError(src.kind())
     }
 }
 
