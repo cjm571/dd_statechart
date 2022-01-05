@@ -22,6 +22,7 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+use std::io::Write;
 use std::{error::Error, fmt};
 
 use crate::{
@@ -38,17 +39,20 @@ use crate::{
 pub enum ExecutableContent {
     Assign(
         String, /* Identifier ('location' in SCXML parlance) */
-        String, /* Value expression string */
+        String, /* Value expression string */ //TODO: Should be Option<String>, this field is not required by the spec
     ),
     Cancel,  /* FEAT: <cancel> */
     ElseIf,  /* FEAT: <elseif> */
     Else,    /* FEAT: <else> */
     ForEach, /* FEAT: <foreach> */
     If,      /* FEAT: <if> */
-    Log,     /* FEAT: <log> */
-    Raise,   /* FEAT: <raise> */
-    Script,  /* FEAT: <script> */
-    Send,    /* FEAT: <send> */
+    Log(
+        String, /* Label */
+        String, /* Value expression string */
+    ),
+    Raise,  /* FEAT: <raise> */
+    Script, /* FEAT: <script> */
+    Send,   /* FEAT: <send> */
 }
 
 #[derive(Debug, PartialEq)]
@@ -63,7 +67,14 @@ pub enum ExecutableContentError {
 ///////////////////////////////////////////////////////////////////////////////
 
 impl ExecutableContent {
-    pub fn execute(&self, sys_vars: &mut SystemVariables) -> Result<(), ExecutableContentError> {
+    pub fn execute<W>(
+        &self,
+        sys_vars: &mut SystemVariables,
+        mut writer: W,
+    ) -> Result<(), ExecutableContentError>
+    where
+        W: Write,
+    {
         match self {
             Self::Assign(location, expr) => {
                 // Interpret the expression to get the value to associate with the identifier
@@ -72,6 +83,31 @@ impl ExecutableContent {
 
                 // Set the value in the data model
                 sys_vars.set_data_member(location, value);
+
+                Ok(())
+            }
+            Self::Log(label, expr) => {
+                let mut has_content = false;
+
+                // Interpret the expression to get the result to be logged
+                let interpreter = Interpreter::new(expr);
+                let value = interpreter.interpret(sys_vars)?;
+
+                //FIXME: Replace expects with ?s
+                // Output the components of a log message if they exist
+                if !label.is_empty() {
+                    write!(&mut writer, "{}: ", label).expect("Unable to write");
+                    has_content = true;
+                }
+                if !expr.is_empty() {
+                    write!(&mut writer, "{}", value).expect("Unable to write");
+                    has_content = true;
+                }
+
+                // Output a newline if anything was output
+                if has_content {
+                    writeln!(&mut writer).expect("Unable to write");
+                }
 
                 Ok(())
             }
@@ -123,6 +159,7 @@ impl From<InterpreterError> for ExecutableContentError {
 #[cfg(test)]
 mod tests {
     use std::error::Error;
+    use std::io;
 
     use crate::{
         datamodel::SystemVariables, executable_content::ExecutableContent,
@@ -150,7 +187,7 @@ mod tests {
             eprintln!("=== Initial Data Model:\n{:?}", sys_vars._x());
 
             // Execute the assignment
-            assignment.execute(&mut sys_vars)?;
+            assignment.execute(&mut sys_vars, io::stdout())?;
 
             // Display final conditions
             eprintln!("=== Final Data Model:\n{:?}", sys_vars._x());
@@ -181,7 +218,7 @@ mod tests {
             // Execute the assignment several times
             let executions = 4;
             for _ in 0..executions {
-                assignment.execute(&mut sys_vars)?;
+                assignment.execute(&mut sys_vars, io::stdout())?;
             }
 
             // Display final conditions
@@ -191,6 +228,42 @@ mod tests {
             assert_eq!(
                 sys_vars.get_data_member(&location),
                 Some(&(initial_val + EcmaScriptValue::Number(executions as f64)))
+            );
+
+            Ok(())
+        }
+    }
+
+    mod log {
+        use super::*;
+
+        use crate::interpreter::Interpreter;
+
+        #[test]
+        fn basic_logging() -> TestResult {
+            let label = "LABEL".to_string();
+            let expr = "\'This is a log message.\'".to_string();
+
+            // Create a buffer to capture the log output
+            let mut buffer = Vec::new();
+
+            // Create a log action and a valid data model
+            let log_action = ExecutableContent::Log(label.clone(), expr.clone());
+            let mut sys_vars = SystemVariables::default();
+
+            // Execute the log action
+            log_action.execute(&mut sys_vars, &mut buffer)?;
+
+            // Capture output and verify
+            let output = String::from_utf8(buffer)?;
+
+            assert_eq!(
+                output,
+                format!(
+                    "{}: {}\n",
+                    label,
+                    Interpreter::new(&expr).interpret(&sys_vars)?
+                )
             );
 
             Ok(())

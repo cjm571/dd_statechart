@@ -275,7 +275,8 @@ impl StateChart {
         for transition_fingerprint in &enabled_transition_fingerprints {
             let cur_transition = self.registry.get_transition(transition_fingerprint)?;
             for exec_content in cur_transition.executable_content() {
-                exec_content.execute(&mut self.sys_vars)?;
+                //FIXME: implement real writer
+                exec_content.execute(&mut self.sys_vars, std::io::stdout())?;
             }
         }
 

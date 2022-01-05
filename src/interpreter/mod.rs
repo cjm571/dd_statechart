@@ -394,6 +394,25 @@ impl fmt::Display for ArithmeticOperator {
  *   EcmaScriptValue  *
 \*  *  *  *  *  *  *  */
 
+impl fmt::Display for EcmaScriptValue {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::String(val) => {
+                write!(f, "{}", val)
+            }
+            Self::Number(val) => {
+                write!(f, "{}", val)
+            }
+            Self::Boolean(val) => {
+                write!(f, "{}", val)
+            }
+            Self::Null => {
+                write!(f, "null")
+            }
+        }
+    }
+}
+
 impl PartialEq for EcmaScriptValue {
     fn eq(&self, other: &Self) -> bool {
         match self {
