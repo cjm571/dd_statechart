@@ -65,8 +65,8 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-use std::{collections::VecDeque, error::Error, fmt};
 use std::io::Write;
+use std::{collections::VecDeque, error::Error, fmt};
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -607,9 +607,9 @@ mod tests {
         // Verify that adding the duplicate ID results in an error
         assert_eq!(
             statechart_builder.state(duplicate_b).unwrap_err(),
-            StateChartBuilderError::RegistryError(
-                RegistryError::StateAlreadyRegistered(duplicate_id)
-            ),
+            StateChartBuilderError::RegistryError(RegistryError::StateAlreadyRegistered(
+                duplicate_id
+            )),
             "Failed to detect duplicate State ID error."
         );
 
@@ -685,7 +685,8 @@ mod tests {
     #[test]
     fn end_to_end_scxml() -> TestResult {
         // Parse a StateChart from the microwave SCXML sample
-        let mut statechart = StateChart::<io::Stdout>::from("res/examples/01_microwave.scxml", io::stdout())?;
+        let mut statechart =
+            StateChart::<io::Stdout>::from("res/examples/01_microwave.scxml", io::stdout())?;
 
         // Create events to be sent (already registered by parsing process)
         let turn_on = Event::from("turn.on")?;
@@ -734,9 +735,7 @@ mod builder_tests {
 
         assert_eq!(
             invalid_builder.build().unwrap_err(),
-            StateChartBuilderError::InitialStateNotRegistered(
-                unregistered.id().to_string()
-            ),
+            StateChartBuilderError::InitialStateNotRegistered(unregistered.id().to_string()),
             "Failed to detect unregistered ID in the initial vector"
         );
 
