@@ -190,6 +190,11 @@ impl<'s> Interpreter<'s> {
         // Scan input string for tokens
         let tokens = Lexer::new(self.expr_str).scan()?;
 
+        // If no tokens were found, we have an empty string, so just return that
+        if tokens.is_empty() {
+            return Ok(EcmaScriptValue::String(String::default()));
+        }
+
         // Parse tokens for expression
         let expr = Parser::new(&tokens).parse()?;
 
@@ -393,6 +398,25 @@ impl fmt::Display for ArithmeticOperator {
 /*  *  *  *  *  *  *  *\
  *   EcmaScriptValue  *
 \*  *  *  *  *  *  *  */
+
+impl fmt::Display for EcmaScriptValue {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::String(val) => {
+                write!(f, "{}", val)
+            }
+            Self::Number(val) => {
+                write!(f, "{}", val)
+            }
+            Self::Boolean(val) => {
+                write!(f, "{}", val)
+            }
+            Self::Null => {
+                write!(f, "null")
+            }
+        }
+    }
+}
 
 impl PartialEq for EcmaScriptValue {
     fn eq(&self, other: &Self) -> bool {

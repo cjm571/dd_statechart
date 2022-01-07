@@ -480,6 +480,7 @@ impl fmt::Display for StateBuilderError {
 mod tests {
 
     use std::error::Error;
+    use std::io;
 
     use crate::{
         event::Event,
@@ -514,7 +515,7 @@ mod tests {
         let terminal = StateBuilder::new(terminal_state_id).build()?;
 
         // Build the StateChart and process the Event
-        let mut statechart = StateChartBuilder::default()
+        let mut statechart = StateChartBuilder::new(io::stdout())
             .initial(initial.id().to_string())
             .state(initial)?
             .state(terminal)?
@@ -553,7 +554,7 @@ mod tests {
             .build()?;
 
         // Build the StateChart and process the Event
-        let mut statechart = StateChartBuilder::default()
+        let mut statechart = StateChartBuilder::new(io::stdout())
             .initial(initial.id().to_string())
             .state(initial)?
             .state(terminal)?
