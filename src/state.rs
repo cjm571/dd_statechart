@@ -515,7 +515,8 @@ mod tests {
         let terminal = StateBuilder::new(terminal_state_id).build()?;
 
         // Build the StateChart and process the Event
-        let mut statechart = StateChartBuilder::new(io::stdout())
+        let mut dev_null = io::sink();
+        let mut statechart = StateChartBuilder::new(&mut dev_null)
             .initial(initial.id().to_string())
             .state(initial)?
             .state(terminal)?
@@ -554,7 +555,8 @@ mod tests {
             .build()?;
 
         // Build the StateChart and process the Event
-        let mut statechart = StateChartBuilder::new(io::stdout())
+        let mut dev_null = io::sink();
+        let mut statechart = StateChartBuilder::new(&mut dev_null)
             .initial(initial.id().to_string())
             .state(initial)?
             .state(terminal)?
