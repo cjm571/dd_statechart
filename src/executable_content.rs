@@ -39,7 +39,7 @@ use crate::{
 pub enum ExecutableContent {
     Assign(
         String, /* Identifier ('location' in SCXML parlance) */
-        String, /* Value expression string */ //TODO: Should be Option<String>, this field is not required by the spec
+        String, /* Value expression string */
     ),
     Cancel,  /* FEAT: <cancel> */
     ElseIf,  /* FEAT: <elseif> */
@@ -71,7 +71,7 @@ impl ExecutableContent {
     pub fn execute<W>(
         &self,
         sys_vars: &mut SystemVariables,
-        mut writer: W,
+        writer: &mut W,
     ) -> Result<(), ExecutableContentError>
     where
         W: Write,
@@ -96,17 +96,17 @@ impl ExecutableContent {
 
                 // Output the components of a log message if they exist
                 if !label.is_empty() {
-                    write!(&mut writer, "{}: ", label)?;
+                    write!(writer, "{}: ", label)?;
                     has_content = true;
                 }
                 if !expr.is_empty() {
-                    write!(&mut writer, "{}", value)?;
+                    write!(writer, "{}", value)?;
                     has_content = true;
                 }
 
                 // Output a newline if anything was output
                 if has_content {
-                    writeln!(&mut writer)?;
+                    writeln!(writer)?;
                 }
 
                 Ok(())
@@ -200,7 +200,7 @@ mod tests {
             eprintln!("=== Initial Data Model:\n{:?}", sys_vars._x());
 
             // Execute the assignment
-            assignment.execute(&mut sys_vars, io::stdout())?;
+            assignment.execute(&mut sys_vars, &mut io::stdout())?;
 
             // Display final conditions
             eprintln!("=== Final Data Model:\n{:?}", sys_vars._x());
@@ -231,7 +231,7 @@ mod tests {
             // Execute the assignment several times
             let executions = 4;
             for _ in 0..executions {
-                assignment.execute(&mut sys_vars, io::stdout())?;
+                assignment.execute(&mut sys_vars, &mut io::stdout())?;
             }
 
             // Display final conditions

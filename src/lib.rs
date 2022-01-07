@@ -66,6 +66,7 @@ Purpose:
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 use std::{collections::VecDeque, error::Error, fmt};
+use std::io::Write;
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -101,11 +102,12 @@ use crate::{
 ///
 /// Contains a list of all nodes and events that make up the statechart.
 #[derive(PartialEq)]
-pub struct StateChart {
+pub struct StateChart<W: Write> {
     initial: Option<StateId>,
     internal_queue: VecDeque<Event>,
     registry: Registry,
     sys_vars: SystemVariables,
+    writer: W,
 }
 
 pub type StateChartId = String;
@@ -121,11 +123,12 @@ pub enum StateChartError {
     StateError(StateError),
 }
 
-#[derive(Debug, Default, PartialEq)]
-pub struct StateChartBuilder {
+#[derive(Debug, PartialEq)]
+pub struct StateChartBuilder<W: Write> {
     initial: Option<StateId>,
     registry: Registry,
     sys_vars: SystemVariables,
+    writer: W,
 }
 
 #[derive(Debug, PartialEq)]
@@ -143,10 +146,10 @@ pub enum StateChartBuilderError {
 //  Object Implementations
 ///////////////////////////////////////////////////////////////////////////////
 
-impl StateChart {
-    pub fn from(path: &str) -> Result<Self, StateChartError> {
+impl<W: Write> StateChart<W> {
+    pub fn from(path: &str, writer: W) -> Result<Self, StateChartError> {
         // Parse the SCXML doc at the given path
-        Parser::new(path)
+        Parser::new(path, writer)
             .map_err(StateChartError::ParserError)?
             .parse()
             .map_err(StateChartError::ParserError)
@@ -275,8 +278,7 @@ impl StateChart {
         for transition_fingerprint in &enabled_transition_fingerprints {
             let cur_transition = self.registry.get_transition(transition_fingerprint)?;
             for exec_content in cur_transition.executable_content() {
-                //FIXME: implement real writer
-                exec_content.execute(&mut self.sys_vars, std::io::stdout())?;
+                exec_content.execute(&mut self.sys_vars, &mut self.writer)?;
             }
         }
 
@@ -299,13 +301,21 @@ impl StateChart {
 }
 
 
-impl StateChartBuilder {
+impl<W: Write> StateChartBuilder<W> {
+    pub fn new(writer: W) -> Self {
+        Self {
+            initial: Option::default(),
+            registry: Registry::default(),
+            sys_vars: SystemVariables::default(),
+            writer,
+        }
+    }
+
     /*  *  *  *  *  *  *  *\
      *  Builder Methods   *
     \*  *  *  *  *  *  *  */
 
-    //OPT: *DESIGN* Can this be converted to a mut self to avoid clones?
-    pub fn build(&mut self) -> Result<StateChart, StateChartBuilderError> {
+    pub fn build(mut self) -> Result<StateChart<W>, StateChartBuilderError> {
         // Ensure at least one State has been registered
         if let Some(first_state) = self.registry.get_all_states().first() {
             // If no initial State ID was provided, set to first doc-order child
@@ -332,33 +342,34 @@ impl StateChartBuilder {
         }
 
         Ok(StateChart {
-            sys_vars: self.sys_vars.clone(),
-            initial: self.initial.clone(),
-            registry: self.registry.clone(),
+            sys_vars: self.sys_vars,
+            initial: self.initial,
+            registry: self.registry,
             internal_queue: VecDeque::new(),
+            writer: self.writer,
         })
     }
 
-    pub fn name(&mut self, name: &str) -> &mut Self {
+    pub fn name(mut self, name: &str) -> Self {
         self.sys_vars.set_name(String::from(name));
 
         self
     }
 
-    pub fn state(&mut self, state: State) -> Result<&mut Self, StateChartBuilderError> {
+    pub fn state(mut self, state: State) -> Result<Self, StateChartBuilderError> {
         // Register the State
         self.registry.register_state(state)?;
 
         Ok(self)
     }
 
-    pub fn initial(&mut self, initial: StateId) -> &mut Self {
+    pub fn initial(mut self, initial: StateId) -> Self {
         self.initial = Some(initial);
 
         self
     }
 
-    pub fn data_member(&mut self, id: &str, value: EcmaScriptValue) -> &mut Self {
+    pub fn data_member(mut self, id: &str, value: EcmaScriptValue) -> Self {
         self.sys_vars.set_data_member(id, value);
 
         self
@@ -374,13 +385,14 @@ impl StateChartBuilder {
  *     StateChart     *
 \*  *  *  *  *  *  *  */
 
-impl fmt::Debug for StateChart {
+impl<W: Write> fmt::Debug for StateChart<W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("StateChart")
             .field("sys_vars", &self.sys_vars)
             .field("initial", &self.initial)
             .field("registry", &self.registry)
             .field("internal_queue", &self.internal_queue)
+            .field("writer", &String::from(std::any::type_name::<W>()))
             .finish()
     }
 }
@@ -506,7 +518,7 @@ impl From<RegistryError> for StateChartBuilderError {
 
 #[cfg(test)]
 mod tests {
-    use std::{error::Error, fmt};
+    use std::{error::Error, fmt, io};
 
     use crate::{
         event::Event, registry::RegistryError, state::StateBuilder, transition::TransitionBuilder,
@@ -553,7 +565,7 @@ mod tests {
         let imaging = StateBuilder::new(imaging_id).build()?;
 
         // Build statechart
-        let mut statechart = StateChartBuilder::default()
+        let mut statechart = StateChartBuilder::new(io::stdout())
             .name("theia")
             .initial(idle.id().to_string())
             .state(idle)?
@@ -589,15 +601,15 @@ mod tests {
         let duplicate_b = StateBuilder::new(duplicate_id.clone()).build()?;
 
         // Create the statechart object and add states to it
-        let mut statechart_builder = StateChartBuilder::default();
-        statechart_builder.state(duplicate_a)?;
+        let mut statechart_builder = StateChartBuilder::new(io::stdout());
+        statechart_builder = statechart_builder.state(duplicate_a)?;
 
         // Verify that adding the duplicate ID results in an error
         assert_eq!(
-            statechart_builder.state(duplicate_b),
-            Err(StateChartBuilderError::RegistryError(
+            statechart_builder.state(duplicate_b).unwrap_err(),
+            StateChartBuilderError::RegistryError(
                 RegistryError::StateAlreadyRegistered(duplicate_id)
-            )),
+            ),
             "Failed to detect duplicate State ID error."
         );
 
@@ -611,7 +623,7 @@ mod tests {
 
         let state = StateBuilder::new(String::from("state")).build()?;
 
-        let mut statechart = StateChartBuilder::default().state(state)?.build()?;
+        let mut statechart = StateChartBuilder::new(io::stdout()).state(state)?.build()?;
 
         // Verify the unregistered event is rejected
         assert_eq!(
@@ -653,7 +665,7 @@ mod tests {
         let end = StateBuilder::new(end_id.clone()).build()?;
 
         // Create a StateChart containing all of the above
-        let mut statechart = StateChartBuilder::default()
+        let mut statechart = StateChartBuilder::new(io::stdout())
             .state(start)?
             .state(end)?
             .build()?;
@@ -673,7 +685,7 @@ mod tests {
     #[test]
     fn end_to_end_scxml() -> TestResult {
         // Parse a StateChart from the microwave SCXML sample
-        let mut statechart = StateChart::from("res/examples/01_microwave.scxml")?;
+        let mut statechart = StateChart::<io::Stdout>::from("res/examples/01_microwave.scxml", io::stdout())?;
 
         // Create events to be sent (already registered by parsing process)
         let turn_on = Event::from("turn.on")?;
@@ -700,7 +712,7 @@ mod tests {
 #[cfg(test)]
 mod builder_tests {
 
-    use std::error::Error;
+    use std::{error::Error, io};
 
     use crate::{state::StateBuilder, StateChartBuilder, StateChartBuilderError};
 
@@ -715,16 +727,16 @@ mod builder_tests {
         let registered = StateBuilder::new(String::from("registered")).build()?;
 
         // Attempt to build a StateChart with an unregistered initial ID
-        let mut invalid_builder = StateChartBuilder::default();
-        invalid_builder
+        let mut invalid_builder = StateChartBuilder::new(io::stdout());
+        invalid_builder = invalid_builder
             .state(registered)?
             .initial(unregistered.id().to_string());
 
         assert_eq!(
-            invalid_builder.build(),
-            Err(StateChartBuilderError::InitialStateNotRegistered(
+            invalid_builder.build().unwrap_err(),
+            StateChartBuilderError::InitialStateNotRegistered(
                 unregistered.id().to_string()
-            )),
+            ),
             "Failed to detect unregistered ID in the initial vector"
         );
 
@@ -734,8 +746,8 @@ mod builder_tests {
     #[test]
     fn no_states_registered() -> TestResult {
         assert_eq!(
-            StateChartBuilder::default().build(),
-            Err(StateChartBuilderError::NoStatesRegistered),
+            StateChartBuilder::new(io::stdout()).build().unwrap_err(),
+            StateChartBuilderError::NoStatesRegistered,
             "Failed to catch that no states were registered"
         );
 
