@@ -719,7 +719,7 @@ mod tests {
     fn logging_microwave() -> TestResult {
         // Establish verification buffer
         let verf_buffer = String::from(
-"EVENT: Powering on
+            "EVENT: Powering on
 COND: Cooking
 EVENT: Door Opened
 Door Closed Status: false
@@ -730,7 +730,7 @@ EVENT: Tick: 2
 EVENT: Tick: 3
 EVENT: Tick: 4
 EVENT: Tick: 5
-COND: Powering off\n"
+COND: Powering off\n",
         );
 
         // Create a buffer for log verification
