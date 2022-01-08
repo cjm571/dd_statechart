@@ -102,12 +102,12 @@ use crate::{
 ///
 /// Contains a list of all nodes and events that make up the statechart.
 #[derive(PartialEq)]
-pub struct StateChart<W: Write> {
+pub struct StateChart<'w, W: 'w + Write> {
     initial: Option<StateId>,
     internal_queue: VecDeque<Event>,
     registry: Registry,
     sys_vars: SystemVariables,
-    writer: W,
+    writer: &'w mut W,
 }
 
 pub type StateChartId = String;
@@ -124,11 +124,11 @@ pub enum StateChartError {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct StateChartBuilder<W: Write> {
+pub struct StateChartBuilder<'w, W: 'w + Write> {
     initial: Option<StateId>,
     registry: Registry,
     sys_vars: SystemVariables,
-    writer: W,
+    writer: &'w mut W,
 }
 
 #[derive(Debug, PartialEq)]
@@ -146,8 +146,8 @@ pub enum StateChartBuilderError {
 //  Object Implementations
 ///////////////////////////////////////////////////////////////////////////////
 
-impl<W: Write> StateChart<W> {
-    pub fn from(path: &str, writer: W) -> Result<Self, StateChartError> {
+impl<'w, W: 'w + Write> StateChart<'w, W> {
+    pub fn from(path: &str, writer: &'w mut W) -> Result<Self, StateChartError> {
         // Parse the SCXML doc at the given path
         Parser::new(path, writer)
             .map_err(StateChartError::ParserError)?
@@ -301,8 +301,8 @@ impl<W: Write> StateChart<W> {
 }
 
 
-impl<W: Write> StateChartBuilder<W> {
-    pub fn new(writer: W) -> Self {
+impl<'w, W: 'w + Write> StateChartBuilder<'w, W> {
+    pub fn new(writer: &'w mut W) -> Self {
         Self {
             initial: Option::default(),
             registry: Registry::default(),
@@ -315,7 +315,7 @@ impl<W: Write> StateChartBuilder<W> {
      *  Builder Methods   *
     \*  *  *  *  *  *  *  */
 
-    pub fn build(mut self) -> Result<StateChart<W>, StateChartBuilderError> {
+    pub fn build(mut self) -> Result<StateChart<'w, W>, StateChartBuilderError> {
         // Ensure at least one State has been registered
         if let Some(first_state) = self.registry.get_all_states().first() {
             // If no initial State ID was provided, set to first doc-order child
@@ -385,7 +385,7 @@ impl<W: Write> StateChartBuilder<W> {
  *     StateChart     *
 \*  *  *  *  *  *  *  */
 
-impl<W: Write> fmt::Debug for StateChart<W> {
+impl<'w, W: 'w + Write> fmt::Debug for StateChart<'w, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("StateChart")
             .field("sys_vars", &self.sys_vars)
@@ -565,7 +565,8 @@ mod tests {
         let imaging = StateBuilder::new(imaging_id).build()?;
 
         // Build statechart
-        let mut statechart = StateChartBuilder::new(io::stdout())
+        let mut dev_null = io::sink();
+        let mut statechart = StateChartBuilder::new(&mut dev_null)
             .name("theia")
             .initial(idle.id().to_string())
             .state(idle)?
@@ -601,7 +602,8 @@ mod tests {
         let duplicate_b = StateBuilder::new(duplicate_id.clone()).build()?;
 
         // Create the statechart object and add states to it
-        let mut statechart_builder = StateChartBuilder::new(io::stdout());
+        let mut dev_null = io::sink();
+        let mut statechart_builder = StateChartBuilder::new(&mut dev_null);
         statechart_builder = statechart_builder.state(duplicate_a)?;
 
         // Verify that adding the duplicate ID results in an error
@@ -623,7 +625,10 @@ mod tests {
 
         let state = StateBuilder::new(String::from("state")).build()?;
 
-        let mut statechart = StateChartBuilder::new(io::stdout()).state(state)?.build()?;
+        let mut dev_null = io::sink();
+        let mut statechart = StateChartBuilder::new(&mut dev_null)
+            .state(state)?
+            .build()?;
 
         // Verify the unregistered event is rejected
         assert_eq!(
@@ -665,7 +670,8 @@ mod tests {
         let end = StateBuilder::new(end_id.clone()).build()?;
 
         // Create a StateChart containing all of the above
-        let mut statechart = StateChartBuilder::new(io::stdout())
+        let mut dev_null = io::sink();
+        let mut statechart = StateChartBuilder::new(&mut dev_null)
             .state(start)?
             .state(end)?
             .build()?;
@@ -684,9 +690,10 @@ mod tests {
 
     #[test]
     fn end_to_end_scxml() -> TestResult {
+        let mut dev_null = io::sink();
         // Parse a StateChart from the microwave SCXML sample
         let mut statechart =
-            StateChart::<io::Stdout>::from("res/examples/01_microwave.scxml", io::stdout())?;
+            StateChart::<io::Sink>::from("res/examples/01_microwave.scxml", &mut dev_null)?;
 
         // Create events to be sent (already registered by parsing process)
         let turn_on = Event::from("turn.on")?;
@@ -704,6 +711,50 @@ mod tests {
 
         eprintln!("*** Active State(s):\n{:#?}", statechart.active_state_ids());
         assert_eq!(statechart.active_state_ids(), vec!["off".to_string()]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn logging_microwave() -> TestResult {
+        // Establish verification buffer
+        let verf_buffer = String::from(
+            "EVENT: Powering on
+COND: Cooking
+EVENT: Door Opened
+Door Closed Status: false
+EVENT: Door Closed
+Door Closed Status: true
+EVENT: Tick: 1
+EVENT: Tick: 2
+EVENT: Tick: 3
+EVENT: Tick: 4
+EVENT: Tick: 5
+COND: Powering off\n",
+        );
+
+        // Create a buffer for log verification
+        let mut buffer = Vec::new();
+
+        // Parse a StateChart from the modified microwave SCXML example to include some contrived logging
+        let mut statechart =
+            StateChart::<Vec<u8>>::from("res/test_cases/logging_microwave.scxml", &mut buffer)?;
+
+        // Create events to be sent (already registered by parsing process)
+        let turn_on = Event::from("turn.on")?;
+        let door_open = Event::from("door.open")?;
+        let door_close = Event::from("door.close")?;
+        let time = Event::from("time")?;
+
+        // Process the events
+        statechart.process_external_event(&turn_on)?;
+        statechart.process_external_event(&door_open)?;
+        statechart.process_external_event(&door_close)?;
+        for _ in 0..5 {
+            statechart.process_external_event(&time)?;
+        }
+
+        assert_eq!(String::from_utf8(buffer)?, verf_buffer);
 
         Ok(())
     }
@@ -728,7 +779,8 @@ mod builder_tests {
         let registered = StateBuilder::new(String::from("registered")).build()?;
 
         // Attempt to build a StateChart with an unregistered initial ID
-        let mut invalid_builder = StateChartBuilder::new(io::stdout());
+        let mut dev_null = io::sink();
+        let mut invalid_builder = StateChartBuilder::new(&mut dev_null);
         invalid_builder = invalid_builder
             .state(registered)?
             .initial(unregistered.id().to_string());
@@ -745,7 +797,7 @@ mod builder_tests {
     #[test]
     fn no_states_registered() -> TestResult {
         assert_eq!(
-            StateChartBuilder::new(io::stdout()).build().unwrap_err(),
+            StateChartBuilder::new(&mut io::sink()).build().unwrap_err(),
             StateChartBuilderError::NoStatesRegistered,
             "Failed to catch that no states were registered"
         );

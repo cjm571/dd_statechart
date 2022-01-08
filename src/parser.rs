@@ -54,10 +54,10 @@ const VALID_DATAMODEL: &str = "ecmascript";
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, PartialEq)]
-pub struct Parser<W: Write> {
+pub struct Parser<'w, W: 'w + Write> {
     path: String,
     content: String,
-    statechart_builder: StateChartBuilder<W>,
+    statechart_builder: StateChartBuilder<'w, W>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -95,9 +95,9 @@ pub enum ValidElementClass {
 //  Object Implementation
 ///////////////////////////////////////////////////////////////////////////////
 
-impl<W: Write> Parser<W> {
+impl<'w, W: 'w + Write> Parser<'w, W> {
     /// Creates a new Parser object for the SCXML file at the given path.
-    pub fn new(path: &str, writer: W) -> Result<Self, ParserError> {
+    pub fn new(path: &str, writer: &'w mut W) -> Result<Self, ParserError> {
         // Attempt to open the file at the given path
         let mut file = fs::File::open(path)?;
         let mut file_contents = String::new();
@@ -110,7 +110,7 @@ impl<W: Write> Parser<W> {
         })
     }
 
-    pub fn parse(mut self) -> Result<StateChart<W>, ParserError> {
+    pub fn parse(mut self) -> Result<StateChart<'w, W>, ParserError> {
         // Parse contents of the SCXML file into an roxmltree::Document
         let parsed_content = roxmltree::Document::parse(self.content.as_str())?;
 
@@ -342,6 +342,23 @@ impl<W: Write> Parser<W> {
                     return Err(ParserError::AssignWithoutLocation(format!("{:?}", child)));
                 }
             }
+            //Handle <log>
+            else if child.tag_name().name() == "log" {
+                let mut label = String::new();
+                let mut expr = String::new();
+
+                // <log> can contain a label, expression, both or neither
+                if let Some(label_str) = child.attribute("label") {
+                    label.push_str(label_str);
+                }
+                if let Some(expr_str) = child.attribute("expr") {
+                    expr.push_str(expr_str);
+                }
+
+                // Create the Executable Content and add it to the Transition builder
+                let log = ExecutableContent::Log(label, expr);
+                transition_builder = transition_builder.executable_content(log);
+            }
 
             //FEAT: Handle other executable content
         }
@@ -561,8 +578,12 @@ mod tests {
 
     #[test]
     fn assign_without_location() -> TestResult {
+        let mut dev_null = io::sink();
         let assign_string = "Element { tag_name: {http://www.w3.org/2005/07/scxml}assign, attributes: [Attribute { name: expr, value: \"true\" }], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }".to_string();
-        let parser = Parser::new("res/test_cases/assign_without_location.scxml", io::stdout())?;
+        let parser = Parser::new(
+            "res/test_cases/assign_without_location.scxml",
+            &mut dev_null,
+        )?;
 
         assert_eq!(
             parser.parse().unwrap_err(),
@@ -574,8 +595,9 @@ mod tests {
 
     #[test]
     fn assign_without_expr() -> TestResult {
+        let mut dev_null = io::sink();
         let assign_string = "Element { tag_name: {http://www.w3.org/2005/07/scxml}assign, attributes: [Attribute { name: location, value: \"door_closed\" }], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }".to_string();
-        let parser = Parser::new("res/test_cases/assign_without_expr.scxml", io::stdout())?;
+        let parser = Parser::new("res/test_cases/assign_without_expr.scxml", &mut dev_null)?;
 
         assert_eq!(
             parser.parse().unwrap_err(),
@@ -587,13 +609,17 @@ mod tests {
 
     #[test]
     fn initial_node_errors() -> TestResult {
+        let mut dev_null_a = io::sink();
+        let mut dev_null_b = io::sink();
         let state_string = "Element { tag_name: {http://www.w3.org/2005/07/scxml}state, attributes: [Attribute { name: id, value: \"on\" }], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }".to_string();
 
-        let parser_childless =
-            Parser::new("res/test_cases/initial_node_childless.scxml", io::stdout())?;
+        let parser_childless = Parser::new(
+            "res/test_cases/initial_node_childless.scxml",
+            &mut dev_null_a,
+        )?;
         let parser_targetless = Parser::new(
             "res/test_cases/initial_transition_targetless.scxml",
-            io::stdout(),
+            &mut dev_null_b,
         )?;
 
         assert_eq!(
@@ -611,7 +637,8 @@ mod tests {
 
     #[test]
     fn invalid_scxml_child() -> TestResult {
-        let parser = Parser::new("res/test_cases/invalid_scxml_child.scxml", io::stdout())?;
+        let mut dev_null = io::sink();
+        let parser = Parser::new("res/test_cases/invalid_scxml_child.scxml", &mut dev_null)?;
 
         // Verify that the invalid child element is caught
         assert_eq!(
@@ -624,13 +651,15 @@ mod tests {
 
     #[test]
     fn namespace() -> TestResult {
+        let mut dev_null_a = io::sink();
+        let mut dev_null_b = io::sink();
         let parser_a = Parser::new(
             "res/test_cases/invalid_scxml_namespace_empty.scxml",
-            io::stdout(),
+            &mut dev_null_a,
         )?;
         let parser_b = Parser::new(
             "res/test_cases/invalid_scxml_namespace_invalid.scxml",
-            io::stdout(),
+            &mut dev_null_b,
         )?;
         // Verify that the empty namespace is caught
         assert_eq!(
@@ -649,13 +678,15 @@ mod tests {
 
     #[test]
     fn version() -> TestResult {
+        let mut dev_null_a = io::sink();
+        let mut dev_null_b = io::sink();
         let parser_a = Parser::new(
             "res/test_cases/invalid_scxml_version_empty.scxml",
-            io::stdout(),
+            &mut dev_null_a,
         )?;
         let parser_b = Parser::new(
             "res/test_cases/invalid_scxml_version_invalid.scxml",
-            io::stdout(),
+            &mut dev_null_b,
         )?;
 
         // Verify that the empty version is caught
@@ -675,8 +706,10 @@ mod tests {
 
     #[test]
     fn datamodel() -> TestResult {
-        let parser_a = Parser::new("res/test_cases/datamodel_empty.scxml", io::stdout())?;
-        let parser_b = Parser::new("res/test_cases/datamodel_invalid.scxml", io::stdout())?;
+        let mut dev_null_a = io::sink();
+        let mut dev_null_b = io::sink();
+        let parser_a = Parser::new("res/test_cases/datamodel_empty.scxml", &mut dev_null_a)?;
+        let parser_b = Parser::new("res/test_cases/datamodel_invalid.scxml", &mut dev_null_b)?;
 
         // Verify that the empty datamodel is allowed
         assert_eq!(parser_a.parse().is_ok(), true);
@@ -692,8 +725,9 @@ mod tests {
 
     #[test]
     fn data_item_invalid() -> TestResult {
+        let mut dev_null = io::sink();
         let state_string = "Element { tag_name: {http://www.w3.org/2005/07/scxml}datamodel, attributes: [], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }".to_string();
-        let parser = Parser::new("res/test_cases/data_item_invalid.scxml", io::stdout())?;
+        let parser = Parser::new("res/test_cases/data_item_invalid.scxml", &mut dev_null)?;
 
         assert_eq!(
             parser.parse().unwrap_err(),
@@ -705,8 +739,9 @@ mod tests {
 
     #[test]
     fn no_id_state() -> TestResult {
+        let mut dev_null = io::sink();
         let state_string = "Element { tag_name: {http://www.w3.org/2005/07/scxml}state, attributes: [], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }".to_string();
-        let parser = Parser::new("res/test_cases/state_no_id.scxml", io::stdout())?;
+        let parser = Parser::new("res/test_cases/state_no_id.scxml", &mut dev_null)?;
 
         assert_eq!(
             parser.parse().unwrap_err(),
@@ -718,7 +753,8 @@ mod tests {
 
     #[test]
     fn event_error() -> TestResult {
-        let parser = Parser::new("res/test_cases/event_invalid_id.scxml", io::stdout())?;
+        let mut dev_null = io::sink();
+        let parser = Parser::new("res/test_cases/event_invalid_id.scxml", &mut dev_null)?;
 
         assert_eq!(
             parser.parse().unwrap_err(),
@@ -732,7 +768,7 @@ mod tests {
     fn io_error() -> TestResult {
         // Attempt to create a parser for a file that does not exist
         assert_eq!(
-            Parser::new("does_not_exist.scxml", io::stdout()).unwrap_err(),
+            Parser::new("does_not_exist.scxml", &mut io::sink()).unwrap_err(),
             ParserError::IoError(std::io::ErrorKind::NotFound)
         );
 
@@ -741,9 +777,10 @@ mod tests {
 
     #[test]
     fn registry_error() -> TestResult {
+        let mut dev_null = io::sink();
         let parser = Parser::new(
             "res/test_cases/registry_invalid_dup_state.scxml",
-            io::stdout(),
+            &mut dev_null,
         )?;
 
         assert_eq!(
@@ -758,7 +795,8 @@ mod tests {
 
     #[test]
     fn roxmltree_error() -> TestResult {
-        let parser = Parser::new("res/test_cases/completely_empty.scxml", io::stdout())?;
+        let mut dev_null = io::sink();
+        let parser = Parser::new("res/test_cases/completely_empty.scxml", &mut dev_null)?;
 
         assert_eq!(
             parser.parse().unwrap_err(),
@@ -770,7 +808,8 @@ mod tests {
 
     #[test]
     fn state_builder_error() -> TestResult {
-        let parser = Parser::new("res/test_cases/state_invalid_initial.scxml", io::stdout())?;
+        let mut dev_null = io::sink();
+        let parser = Parser::new("res/test_cases/state_invalid_initial.scxml", &mut dev_null)?;
 
         assert_eq!(
             parser.parse().unwrap_err(),
@@ -784,9 +823,10 @@ mod tests {
 
     #[test]
     fn statechart_builder_error() -> TestResult {
+        let mut dev_null = io::sink();
         let parser = Parser::new(
             "res/test_cases/statechart_invalid_no_states.scxml",
-            io::stdout(),
+            &mut dev_null,
         )?;
 
         assert_eq!(
@@ -799,9 +839,10 @@ mod tests {
 
     #[test]
     fn transition_builder_error() -> TestResult {
+        let mut dev_null = io::sink();
         let parser = Parser::new(
             "res/test_cases/transition_invalid_dup_event.scxml",
-            io::stdout(),
+            &mut dev_null,
         )?;
 
         assert_eq!(
@@ -816,7 +857,8 @@ mod tests {
 
     #[test]
     fn microwave() -> TestResult {
-        let parser = Parser::new("res/examples/01_microwave.scxml", io::stdout())?;
+        let mut dev_null = io::sink();
+        let parser = Parser::new("res/examples/01_microwave.scxml", &mut dev_null)?;
 
         // Parse microwave example scxml doc
         let mut statechart = parser.parse()?;
