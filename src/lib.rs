@@ -518,9 +518,7 @@ impl From<RegistryError> for StateChartBuilderError {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::File;
-    use std::io::{self, Read};
-    use std::{error::Error, fmt};
+    use std::{error::Error, fmt, io};
 
     use crate::{
         event::Event, registry::RegistryError, state::StateBuilder, transition::TransitionBuilder,
@@ -719,6 +717,22 @@ mod tests {
 
     #[test]
     fn logging_microwave() -> TestResult {
+        // Establish verification buffer
+        let verf_buffer = String::from(
+"EVENT: Powering on
+COND: Cooking
+EVENT: Door Opened
+Door Closed Status: false
+EVENT: Door Closed
+Door Closed Status: true
+EVENT: Tick: 1
+EVENT: Tick: 2
+EVENT: Tick: 3
+EVENT: Tick: 4
+EVENT: Tick: 5
+COND: Powering off\n"
+        );
+
         // Create a buffer for log verification
         let mut buffer = Vec::new();
 
@@ -740,12 +754,7 @@ mod tests {
             statechart.process_external_event(&time)?;
         }
 
-        // Read in verification file and compare to output
-        let mut file = File::open("res/verification/logging_microwave.log")?;
-        let mut verf_buffer = Vec::new();
-        file.read_to_end(&mut verf_buffer)?;
-
-        assert_eq!(buffer, verf_buffer);
+        assert_eq!(String::from_utf8(buffer)?, verf_buffer);
 
         Ok(())
     }
