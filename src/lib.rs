@@ -518,9 +518,9 @@ impl From<RegistryError> for StateChartBuilderError {
 
 #[cfg(test)]
 mod tests {
-    use std::{error::Error, fmt};
-    use std::io::{self, Read};
     use std::fs::File;
+    use std::io::{self, Read};
+    use std::{error::Error, fmt};
 
     use crate::{
         event::Event, registry::RegistryError, state::StateBuilder, transition::TransitionBuilder,
@@ -745,10 +745,7 @@ mod tests {
         let mut verf_buffer = Vec::new();
         file.read_to_end(&mut verf_buffer)?;
 
-        assert_eq!(
-            String::from_utf8(buffer),
-            String::from_utf8(verf_buffer)
-        );
+        assert_eq!(buffer, verf_buffer);
 
         Ok(())
     }
