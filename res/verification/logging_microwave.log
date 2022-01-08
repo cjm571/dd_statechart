@@ -1,0 +1,12 @@
+EVENT: Powering on
+COND: Cooking
+EVENT: Door Opened
+Door Closed Status: false
+EVENT: Door Closed
+Door Closed Status: true
+EVENT: Tick: 1
+EVENT: Tick: 2
+EVENT: Tick: 3
+EVENT: Tick: 4
+EVENT: Tick: 5
+COND: Powering off

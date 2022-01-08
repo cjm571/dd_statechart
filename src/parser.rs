@@ -342,12 +342,11 @@ impl<'w, W: 'w + Write> Parser<'w, W> {
                     return Err(ParserError::AssignWithoutLocation(format!("{:?}", child)));
                 }
             }
-
             //Handle <log>
             else if child.tag_name().name() == "log" {
                 let mut label = String::new();
                 let mut expr = String::new();
-                
+
                 // <log> can contain a label, expression, both or neither
                 if let Some(label_str) = child.attribute("label") {
                     label.push_str(label_str);
@@ -581,7 +580,10 @@ mod tests {
     fn assign_without_location() -> TestResult {
         let mut dev_null = io::sink();
         let assign_string = "Element { tag_name: {http://www.w3.org/2005/07/scxml}assign, attributes: [Attribute { name: expr, value: \"true\" }], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }".to_string();
-        let parser = Parser::new("res/test_cases/assign_without_location.scxml", &mut dev_null)?;
+        let parser = Parser::new(
+            "res/test_cases/assign_without_location.scxml",
+            &mut dev_null,
+        )?;
 
         assert_eq!(
             parser.parse().unwrap_err(),
@@ -611,8 +613,10 @@ mod tests {
         let mut dev_null_b = io::sink();
         let state_string = "Element { tag_name: {http://www.w3.org/2005/07/scxml}state, attributes: [Attribute { name: id, value: \"on\" }], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }".to_string();
 
-        let parser_childless =
-            Parser::new("res/test_cases/initial_node_childless.scxml", &mut dev_null_a)?;
+        let parser_childless = Parser::new(
+            "res/test_cases/initial_node_childless.scxml",
+            &mut dev_null_a,
+        )?;
         let parser_targetless = Parser::new(
             "res/test_cases/initial_transition_targetless.scxml",
             &mut dev_null_b,

@@ -15,7 +15,7 @@
   <state id="off">
     <!-- off state -->
     <transition event="turn.on" target="on">
-      <log label="USER" expr="'Powering on...'"/>
+      <log label="EVENT" expr="'Powering on'"/>
     </transition>
   </state>
 
@@ -28,22 +28,20 @@
     <!-- on/pause state -->
 
     <transition event="turn.off" target="off">
-      <log label="USER" expr="'Powering off...'"/>
+      <log label="EVENT" expr="'Powering off'"/>
     </transition>
     <transition cond="timer >= cook_time" target="off">
-      <log label="AUTO" expr="'Powering off...'"/>
+      <log label="COND" expr="'Powering off'"/>
     </transition>
 
     <state id="idle">
       <!-- default immediate transition if door is shut -->
       <transition cond="door_closed" target="cooking">
-          <log expr="'cooking'"/>
+          <log label="COND" expr="'Cooking'"/>
         </transition>
       <transition event="door.close" target="cooking">
-        <log expr="'Door Closed Status: ' + door_closed"/>
-        <log expr="'Closing door...'"/>
         <assign location="door_closed" expr="true"/>
-        <log expr="'Closed!'"/>
+        <log label="EVENT" expr="'Door Closed'"/>
         <log expr="'Door Closed Status: ' + door_closed"/>
         <!-- start cooking -->
       </transition>
@@ -52,11 +50,14 @@
     <state id="cooking">
       <transition event="door.open" target="idle">
         <assign location="door_closed" expr="false"/>
+        <log label="EVENT" expr="'Door Opened'"/>
+        <log expr="'Door Closed Status: ' + door_closed"/>
       </transition>
 
       <!-- a 'time' event is seen once a second -->
       <transition event="time">
         <assign location="timer" expr="timer + 1"/>
+        <log label="EVENT" expr="'Tick: ' + timer"/>
       </transition>
     </state>
 

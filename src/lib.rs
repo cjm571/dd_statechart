@@ -518,7 +518,9 @@ impl From<RegistryError> for StateChartBuilderError {
 
 #[cfg(test)]
 mod tests {
-    use std::{error::Error, fmt, io};
+    use std::{error::Error, fmt};
+    use std::io::{self, Read};
+    use std::fs::File;
 
     use crate::{
         event::Event, registry::RegistryError, state::StateBuilder, transition::TransitionBuilder,
@@ -626,7 +628,9 @@ mod tests {
         let state = StateBuilder::new(String::from("state")).build()?;
 
         let mut dev_null = io::sink();
-        let mut statechart = StateChartBuilder::new(&mut dev_null).state(state)?.build()?;
+        let mut statechart = StateChartBuilder::new(&mut dev_null)
+            .state(state)?
+            .build()?;
 
         // Verify the unregistered event is rejected
         assert_eq!(
@@ -714,12 +718,13 @@ mod tests {
     }
 
     #[test]
-    fn log_verification() -> TestResult {
+    fn logging_microwave() -> TestResult {
         // Create a buffer for log verification
         let mut buffer = Vec::new();
 
         // Parse a StateChart from the modified microwave SCXML example to include some contrived logging
-        let mut statechart = StateChart::<Vec<u8>>::from("res/test_cases/logging_microwave.scxml", &mut buffer)?;
+        let mut statechart =
+            StateChart::<Vec<u8>>::from("res/test_cases/logging_microwave.scxml", &mut buffer)?;
 
         // Create events to be sent (already registered by parsing process)
         let turn_on = Event::from("turn.on")?;
@@ -735,8 +740,15 @@ mod tests {
             statechart.process_external_event(&time)?;
         }
 
-        eprintln!("*** LOG ***");
-        eprintln!("{}", String::from_utf8(buffer)?);
+        // Read in verification file and compare to output
+        let mut file = File::open("res/verification/logging_microwave.log")?;
+        let mut verf_buffer = Vec::new();
+        file.read_to_end(&mut verf_buffer)?;
+
+        assert_eq!(
+            String::from_utf8(buffer),
+            String::from_utf8(verf_buffer)
+        );
 
         Ok(())
     }
