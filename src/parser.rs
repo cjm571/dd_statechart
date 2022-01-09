@@ -37,6 +37,8 @@ use crate::{
     StateChart, StateChartBuilder, StateChartBuilderError,
 };
 
+use roxmltree::Node;
+
 use uuid::Uuid;
 
 
@@ -320,44 +322,16 @@ impl<'w, W: 'w + Write> Parser<'w, W> {
         for child in element.children().filter(|v| v.is_element()) {
             // Handle <assign>
             if child.tag_name().name() == "assign" {
-                if let Some(location) = child.attribute("location") {
-                    // 'expr' may be either an attribute of 'assign', or its child(ren)
-                    if let Some(expr) = child.attribute("expr") {
-                        let assignment =
-                            ExecutableContent::Assign(location.to_string(), expr.to_string());
-                        transition_builder = transition_builder.executable_content(assignment);
-                    } else if child.has_children() {
-                        // When the 'expr' is not specified as part of the assign tag, it can be one
-                        // or more child nodes. This constitutes a multi-line expression, which
-                        // is not yet supported by the ECMAScript Interpreter
-                        unimplemented!("Multi-line ECMAScript expression are not yet supported");
-                    }
-                    // 'expr' was not specified, this is an error
-                    else {
-                        return Err(ParserError::AssignWithoutExpr(format!("{:?}", child)));
-                    }
-                }
-                // 'location' was not specified, this is an error
-                else {
-                    return Err(ParserError::AssignWithoutLocation(format!("{:?}", child)));
-                }
+                transition_builder =
+                    transition_builder.executable_content(Self::parse_assign(child)?);
             }
-            //Handle <log>
+            // Handle <if>
+            if child.tag_name().name() == "if" {
+                todo!()
+            }
+            // Handle <log>
             else if child.tag_name().name() == "log" {
-                let mut label = String::new();
-                let mut expr = String::new();
-
-                // <log> can contain a label, expression, both or neither
-                if let Some(label_str) = child.attribute("label") {
-                    label.push_str(label_str);
-                }
-                if let Some(expr_str) = child.attribute("expr") {
-                    expr.push_str(expr_str);
-                }
-
-                // Create the Executable Content and add it to the Transition builder
-                let log = ExecutableContent::Log(label, expr);
-                transition_builder = transition_builder.executable_content(log);
+                transition_builder = transition_builder.executable_content(Self::parse_log(child));
             }
 
             //FEAT: Handle other executable content
@@ -366,6 +340,48 @@ impl<'w, W: 'w + Write> Parser<'w, W> {
         transition_builder
             .build()
             .map_err(ParserError::TransitionBuilderError)
+    }
+
+    fn parse_assign(node: Node) -> Result<ExecutableContent, ParserError> {
+        if let Some(location) = node.attribute("location") {
+            // 'expr' may be either an attribute of 'assign', or its child(ren)
+            if let Some(expr) = node.attribute("expr") {
+                // 'expr' was in-line, create it and return
+                Ok(ExecutableContent::Assign(
+                    location.to_string(),
+                    expr.to_string(),
+                ))
+            } else if node.has_children() {
+                // When the 'expr' is not specified as part of the assign tag, it can be one
+                // or more child nodes. This constitutes a multi-line expression, which
+                // is not yet supported by the ECMAScript Interpreter
+                unimplemented!("Multi-line ECMAScript expression are not yet supported");
+            }
+            // 'expr' was not specified, this is an error
+            else {
+                Err(ParserError::AssignWithoutExpr(format!("{:?}", node)))
+            }
+        }
+        // 'location' was not specified, this is an error
+        else {
+            Err(ParserError::AssignWithoutLocation(format!("{:?}", node)))
+        }
+    }
+
+    fn parse_log(node: Node) -> ExecutableContent {
+        let mut label = String::new();
+        let mut expr = String::new();
+
+        // <log> can contain a label, expression, both or neither
+        if let Some(label_str) = node.attribute("label") {
+            label.push_str(label_str);
+        }
+        if let Some(expr_str) = node.attribute("expr") {
+            expr.push_str(expr_str);
+        }
+
+        // Create the Executable Content and return it
+        ExecutableContent::Log(label, expr)
     }
 }
 

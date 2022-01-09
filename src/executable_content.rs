@@ -41,11 +41,11 @@ pub enum ExecutableContent {
         String, /* Identifier ('location' in SCXML parlance) */
         String, /* Value expression string */
     ),
-    Cancel,  /* FEAT: <cancel> */
-    ElseIf,  /* FEAT: <elseif> */
-    Else,    /* FEAT: <else> */
+    Cancel, /* FEAT: <cancel> */
+    ElseIf,
+    Else,
     ForEach, /* FEAT: <foreach> */
-    If,      /* FEAT: <if> */
+    If,
     Log(
         String, /* Label */
         String, /* Value expression string */
