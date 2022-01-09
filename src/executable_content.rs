@@ -45,7 +45,10 @@ pub enum ExecutableContent {
     ElseIf,
     Else,
     ForEach, /* FEAT: <foreach> */
-    If,
+    If(
+        String,    /* Conditional expression string */
+        Vec<Self>, /* Executable Content children */
+    ),
     Log(
         String, /* Label */
         String, /* Value expression string */
@@ -77,45 +80,79 @@ impl ExecutableContent {
         W: Write,
     {
         match self {
-            Self::Assign(location, expr) => {
-                // Interpret the expression to get the value to associate with the identifier
-                let interpreter = Interpreter::new(expr);
-                let value = interpreter.interpret(sys_vars)?;
-
-                // Set the value in the data model
-                sys_vars.set_data_member(location, value);
-
-                Ok(())
-            }
-            Self::Log(label, expr) => {
-                let mut has_content = false;
-
-                // Interpret the expression to get the result to be logged
-                let interpreter = Interpreter::new(expr);
-                let value = interpreter.interpret(sys_vars)?;
-
-                // Output the components of a log message if they exist
-                if !label.is_empty() {
-                    write!(writer, "{}: ", label)?;
-                    has_content = true;
-                }
-                if !expr.is_empty() {
-                    write!(writer, "{}", value)?;
-                    has_content = true;
-                }
-
-                // Output a newline if anything was output
-                if has_content {
-                    writeln!(writer)?;
-                }
-
-                Ok(())
-            }
+            Self::Assign(location, expr) => Self::execute_assign(location, expr, sys_vars),
+            Self::If(cond, children) => Self::execute_if(cond, children, sys_vars, writer),
+            Self::Log(label, expr) => Self::execute_log(label, expr, sys_vars, writer),
             _ => todo!(
                 "Attempted to execute unimplemented ExecutableContent '{:?}'",
                 self
             ),
         }
+    }
+
+
+    /*  *  *  *  *  *  *  *\
+     *   Helper Methods   *
+    \*  *  *  *  *  *  *  */
+
+    fn execute_assign(
+        location: &String,
+        expr: &String,
+        sys_vars: &mut SystemVariables,
+    ) -> Result<(), ExecutableContentError> {
+        // Interpret the expression to get the value to associate with the identifier
+        let interpreter = Interpreter::new(expr);
+        let value = interpreter.interpret(sys_vars)?;
+
+        // Set the value in the data model
+        sys_vars.set_data_member(location, value);
+
+        Ok(())
+    }
+
+    fn execute_if<W>(
+        cond: &String,
+        children: &Vec<Self>,
+        sys_vars: &mut SystemVariables,
+        writer: &mut W,
+    ) -> Result<(), ExecutableContentError>
+    where
+        W: Write,
+    {
+        todo!()
+    }
+
+    fn execute_log<W>(
+        label: &String,
+        expr: &String,
+        sys_vars: &mut SystemVariables,
+        writer: &mut W,
+    ) -> Result<(), ExecutableContentError>
+    where
+        W: Write,
+    {
+        let mut has_content = false;
+
+        // Interpret the expression to get the result to be logged
+        let interpreter = Interpreter::new(expr);
+        let value = interpreter.interpret(sys_vars)?;
+
+        // Output the components of a log message if they exist
+        if !label.is_empty() {
+            write!(writer, "{}: ", label)?;
+            has_content = true;
+        }
+        if !expr.is_empty() {
+            write!(writer, "{}", value)?;
+            has_content = true;
+        }
+
+        // Output a newline if anything was output
+        if has_content {
+            writeln!(writer)?;
+        }
+
+        Ok(())
     }
 }
 

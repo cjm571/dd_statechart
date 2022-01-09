@@ -66,6 +66,7 @@ pub struct Parser<'w, W: 'w + Write> {
 pub enum ParserError {
     AssignWithoutLocation(String /* Stringified XML Tree Node */),
     AssignWithoutExpr(String /* Stringified XML Tree Node */),
+    IfWithoutCond(String /* Stringified XML Tree Node */),
     InitialNodeChildless(String /* Stringified XML Tree Node */),
     InitialTransitionTargetless(String /* Stringified XML Tree Node */),
     InvalidScxmlChild(String /* Name of child element */),
@@ -171,7 +172,7 @@ impl<'w, W: 'w + Write> Parser<'w, W> {
 
 
     /*  *  *  *  *  *  *  *\
-     *  Helper Methods    *
+     *   Helper Methods   *
     \*  *  *  *  *  *  *  */
 
     fn validate_structure(document: &roxmltree::Document) -> Result<(), ParserError> {
@@ -320,21 +321,8 @@ impl<'w, W: 'w + Write> Parser<'w, W> {
 
         // Check for Executable Content children, skipping comments and text
         for child in element.children().filter(|v| v.is_element()) {
-            // Handle <assign>
-            if child.tag_name().name() == "assign" {
-                transition_builder =
-                    transition_builder.executable_content(Self::parse_assign(child)?);
-            }
-            // Handle <if>
-            if child.tag_name().name() == "if" {
-                todo!()
-            }
-            // Handle <log>
-            else if child.tag_name().name() == "log" {
-                transition_builder = transition_builder.executable_content(Self::parse_log(child));
-            }
-
-            //FEAT: Handle other executable content
+            transition_builder =
+                transition_builder.executable_content(Self::parse_for_executable_content(child)?);
         }
 
         transition_builder
@@ -342,41 +330,80 @@ impl<'w, W: 'w + Write> Parser<'w, W> {
             .map_err(ParserError::TransitionBuilderError)
     }
 
-    fn parse_assign(node: Node) -> Result<ExecutableContent, ParserError> {
-        if let Some(location) = node.attribute("location") {
+    fn parse_for_executable_content(element: Node) -> Result<ExecutableContent, ParserError> {
+        // Handle <assign>
+        if element.tag_name().name() == "assign" {
+            return Self::parse_assign(element);
+        }
+        // Handle <if>
+        if element.tag_name().name() == "if" {
+            return Self::parse_if(element);
+        }
+        // Handle <log>
+        if element.tag_name().name() == "log" {
+            return Ok(Self::parse_log(element));
+        } else {
+            unimplemented!(
+                "Parsing of this Executable Content element '{}' is not yet supported",
+                element.tag_name().name()
+            )
+        }
+
+        //FEAT: Handle other executable content
+    }
+
+    fn parse_assign(element: Node) -> Result<ExecutableContent, ParserError> {
+        if let Some(location) = element.attribute("location") {
             // 'expr' may be either an attribute of 'assign', or its child(ren)
-            if let Some(expr) = node.attribute("expr") {
+            if let Some(expr) = element.attribute("expr") {
                 // 'expr' was in-line, create it and return
                 Ok(ExecutableContent::Assign(
                     location.to_string(),
                     expr.to_string(),
                 ))
-            } else if node.has_children() {
+            } else if element.has_children() {
                 // When the 'expr' is not specified as part of the assign tag, it can be one
-                // or more child nodes. This constitutes a multi-line expression, which
+                // or more child elements. This constitutes a multi-line expression, which
                 // is not yet supported by the ECMAScript Interpreter
                 unimplemented!("Multi-line ECMAScript expression are not yet supported");
             }
             // 'expr' was not specified, this is an error
             else {
-                Err(ParserError::AssignWithoutExpr(format!("{:?}", node)))
+                Err(ParserError::AssignWithoutExpr(format!("{:?}", element)))
             }
         }
         // 'location' was not specified, this is an error
         else {
-            Err(ParserError::AssignWithoutLocation(format!("{:?}", node)))
+            Err(ParserError::AssignWithoutLocation(format!("{:?}", element)))
         }
     }
 
-    fn parse_log(node: Node) -> ExecutableContent {
+    fn parse_if(element: Node) -> Result<ExecutableContent, ParserError> {
+        if let Some(cond) = element.attribute("cond") {
+            // Create vector to hold children. Note that there may not be any
+            let mut children = Vec::new();
+
+            for child in element.children().filter(|v| v.is_element()) {
+                children.push(Self::parse_for_executable_content(child)?);
+            }
+
+            Ok(ExecutableContent::If(cond.to_string(), children))
+        }
+        // 'cond' not specified, this is an error
+        else {
+            Err(ParserError::IfWithoutCond(format!("{:?}", element)))
+        }
+    }
+
+    fn parse_log(element: Node) -> ExecutableContent {
         let mut label = String::new();
         let mut expr = String::new();
 
         // <log> can contain a label, expression, both or neither
-        if let Some(label_str) = node.attribute("label") {
+        if let Some(label_str) = element.attribute("label") {
             label.push_str(label_str);
         }
-        if let Some(expr_str) = node.attribute("expr") {
+        if let Some(expr_str) = element.attribute("expr") {
             expr.push_str(expr_str);
         }
 
@@ -404,6 +431,9 @@ impl fmt::Display for ParserError {
             }
             Self::AssignWithoutExpr(parent_assign) => {
                 write!(f, "Assignment '{}' is missing an 'expr'", parent_assign)
+            }
+            Self::IfWithoutCond(parent_if) => {
+                write!(f, "If '{}' is missing a 'cond'", parent_if)
             }
             Self::InitialNodeChildless(parent_state) => {
                 write!(
