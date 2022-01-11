@@ -654,6 +654,11 @@ mod tests {
     }
 
     #[test]
+    fn if_without_cond() -> TestResult {
+        todo!()
+    }
+
+    #[test]
     fn initial_node_errors() -> TestResult {
         let mut dev_null_a = io::sink();
         let mut dev_null_b = io::sink();

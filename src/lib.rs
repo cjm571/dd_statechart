@@ -716,6 +716,24 @@ mod tests {
     }
 
     #[test]
+    fn if_deeply_nested() -> TestResult {
+        let mut stdout = io::stdout();
+        // Parse a StateChart with deeply-nested <if>s
+        let mut statechart =
+            StateChart::<io::Stdout>::from("res/test_cases/if_deeply_nested.scxml", &mut stdout)?;
+
+        // Create events to be sent (already registered by parsing process)
+        let turn_on = Event::from("turn.on")?;
+
+        // Process the events
+        statechart.process_external_event(&turn_on)?;
+
+        // eprintln!("***STATECHART***\n{:#?}", statechart);
+
+        Ok(())
+    }
+
+    #[test]
     fn logging_microwave() -> TestResult {
         // Establish verification buffer
         let verf_buffer = String::from(
