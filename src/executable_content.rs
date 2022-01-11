@@ -42,12 +42,9 @@ pub enum ExecutableContent {
         String, /* Value expression string */
     ),
     Cancel, /* FEAT: <cancel> */
-    ElseIf,
-    Else,
     ForEach, /* FEAT: <foreach> */
-    If(
-        String,    /* Conditional expression string */
-        Vec<Self>, /* Executable Content children */
+    BranchTable(
+        Vec<BranchTableEntry>, /* Table of if-elseif-else branches */
     ),
     Log(
         String, /* Label */
@@ -56,6 +53,12 @@ pub enum ExecutableContent {
     Raise,  /* FEAT: <raise> */
     Script, /* FEAT: <script> */
     Send,   /* FEAT: <send> */
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BranchTableEntry {
+    cond: String, /* Conditional expression string */
+    exec: Vec<ExecutableContent> /* Sub-Executable Content */
 }
 
 #[derive(Debug, PartialEq)]
@@ -81,7 +84,7 @@ impl ExecutableContent {
     {
         match self {
             Self::Assign(location, expr) => Self::execute_assign(location, expr, sys_vars),
-            Self::If(cond, children) => Self::execute_if(cond, children, sys_vars, writer),
+            Self::BranchTable(branch_table) => Self::execute_if(branch_table, sys_vars, writer),
             Self::Log(label, expr) => Self::execute_log(label, expr, sys_vars, writer),
             _ => todo!(
                 "Attempted to execute unimplemented ExecutableContent '{:?}'",
@@ -111,8 +114,7 @@ impl ExecutableContent {
     }
 
     fn execute_if<W>(
-        cond: &String,
-        children: &Vec<Self>,
+        branch_table: &Vec<BranchTableEntry>,
         sys_vars: &mut SystemVariables,
         writer: &mut W,
     ) -> Result<(), ExecutableContentError>
@@ -156,6 +158,27 @@ impl ExecutableContent {
     }
 }
 
+
+impl BranchTableEntry {
+    pub fn new(cond: String, exec: Vec<ExecutableContent>) -> Self {
+        Self {
+            cond,
+            exec,
+        }
+    }
+
+    /*  *  *  *  *  *  *  *\
+     *  Mutator Methods   *
+    \*  *  *  *  *  *  *  */
+
+    pub fn set_cond(&mut self, cond: String) {
+        self.cond = cond;
+    }
+
+    pub fn push_exec_content(&mut self, exec: ExecutableContent) {
+        self.exec.push(exec);
+    }
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 //  Trait Implementations

@@ -29,7 +29,7 @@ use std::{error::Error, fmt, fs};
 use crate::{
     datamodel::{DataModelError, SystemVariables},
     event::{Event, EventError},
-    executable_content::ExecutableContent,
+    executable_content::{ExecutableContent, BranchTableEntry},
     interpreter::{Interpreter, InterpreterError},
     registry::RegistryError,
     state::{State, StateBuilder, StateBuilderError},
@@ -66,6 +66,7 @@ pub struct Parser<'w, W: 'w + Write> {
 pub enum ParserError {
     AssignWithoutLocation(String /* Stringified XML Tree Node */),
     AssignWithoutExpr(String /* Stringified XML Tree Node */),
+    ElseIfWithoutCond(String /* Stringified XML Tree Node */),
     IfWithoutCond(String /* Stringified XML Tree Node */),
     InitialNodeChildless(String /* Stringified XML Tree Node */),
     InitialTransitionTargetless(String /* Stringified XML Tree Node */),
@@ -381,13 +382,44 @@ impl<'w, W: 'w + Write> Parser<'w, W> {
     fn parse_if(element: Node) -> Result<ExecutableContent, ParserError> {
         if let Some(cond) = element.attribute("cond") {
             // Create vector to hold children. Note that there may not be any
-            let mut children = Vec::new();
+            let mut branch_table = Vec::new();
 
+            let mut cur_entry = BranchTableEntry::new(cond.to_string(), Vec::new());
             for child in element.children().filter(|v| v.is_element()) {
-                children.push(Self::parse_for_executable_content(child)?);
+                // Handle <elseif>
+                if child.tag_name().name() == "elseif" {
+                    // Current entry has concluded, push it into the table
+                    branch_table.push(cur_entry);
+
+                    // <elseif>s must contain a "cond" attribute, if they do not it is an error
+                    if let Some(child_cond) = child.attribute("cond") {
+                        // Create a new entry and move on to the next child element
+                        cur_entry = BranchTableEntry::new(child_cond.to_string(), Vec::new());
+                        continue;
+                    } else {
+                        return Err(ParserError::ElseIfWithoutCond(format!("{:?}", child)));
+                    }
+                }
+
+                // Handle <else>
+                if child.tag_name().name() == "else" {
+                    // Current entry has concluded, push it into the table
+                    branch_table.push(cur_entry);
+
+                    // <else>s are effectively <if>s with a cond that always evaluates to 'true'
+                    // Create an always-true entry and move on to the next child element 
+                    cur_entry = BranchTableEntry::new("true".to_string(), Vec::new());
+                    continue;
+                }
+                
+                // Executable Content child, push onto entry's vector
+                cur_entry.push_exec_content(Self::parse_for_executable_content(child)?);
             }
 
-            Ok(ExecutableContent::If(cond.to_string(), children))
+            // Add current (final) entry to the table
+            branch_table.push(cur_entry);
+
+            Ok(ExecutableContent::BranchTable(branch_table))
         }
         // 'cond' not specified, this is an error
         else {
@@ -431,6 +463,9 @@ impl fmt::Display for ParserError {
             }
             Self::AssignWithoutExpr(parent_assign) => {
                 write!(f, "Assignment '{}' is missing an 'expr'", parent_assign)
+            }
+            Self::ElseIfWithoutCond(parent_elseif) => {
+                write!(f, "ElseIf '{}' is missing a 'cond'", parent_elseif)
             }
             Self::IfWithoutCond(parent_if) => {
                 write!(f, "If '{}' is missing a 'cond'", parent_if)
