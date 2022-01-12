@@ -41,7 +41,7 @@ pub enum ExecutableContent {
         String, /* Identifier ('location' in SCXML parlance) */
         String, /* Value expression string */
     ),
-    Cancel, /* FEAT: <cancel> */
+    Cancel,  /* FEAT: <cancel> */
     ForEach, /* FEAT: <foreach> */
     BranchTable(
         Vec<BranchTableEntry>, /* Table of if-elseif-else branches */
@@ -57,8 +57,8 @@ pub enum ExecutableContent {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchTableEntry {
-    cond: String, /* Conditional expression string */
-    exec: Vec<ExecutableContent> /* Sub-Executable Content */
+    cond: String,                 /* Conditional expression string */
+    exec: Vec<ExecutableContent>, /* Sub-Executable Content */
 }
 
 #[derive(Debug, PartialEq)]
@@ -121,7 +121,20 @@ impl ExecutableContent {
     where
         W: Write,
     {
-        todo!()
+        // Iterate through the branch table, which is in document order, and execute the first entry whose
+        // cond evaluates to 'true'
+        for branch in branch_table {
+            if Interpreter::new(branch.cond()).interpret_as_bool(sys_vars)? {
+                // Branch passed, execute its content in order and break loop
+                for exec_content_element in branch.exec_content() {
+                    exec_content_element.execute(sys_vars, writer)?;
+                }
+
+                break;
+            }
+        }
+
+        Ok(())
     }
 
     fn execute_log<W>(
@@ -161,10 +174,19 @@ impl ExecutableContent {
 
 impl BranchTableEntry {
     pub fn new(cond: String, exec: Vec<ExecutableContent>) -> Self {
-        Self {
-            cond,
-            exec,
-        }
+        Self { cond, exec }
+    }
+
+    /*  *  *  *  *  *  *  *\
+     *  Accessor Methods  *
+    \*  *  *  *  *  *  *  */
+
+    pub fn cond(&self) -> &String {
+        &self.cond
+    }
+
+    pub fn exec_content(&self) -> &Vec<ExecutableContent> {
+        &self.exec
     }
 
     /*  *  *  *  *  *  *  *\

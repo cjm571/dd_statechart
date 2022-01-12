@@ -29,7 +29,7 @@ use std::{error::Error, fmt, fs};
 use crate::{
     datamodel::{DataModelError, SystemVariables},
     event::{Event, EventError},
-    executable_content::{ExecutableContent, BranchTableEntry},
+    executable_content::{BranchTableEntry, ExecutableContent},
     interpreter::{Interpreter, InterpreterError},
     registry::RegistryError,
     state::{State, StateBuilder, StateBuilderError},
@@ -407,11 +407,11 @@ impl<'w, W: 'w + Write> Parser<'w, W> {
                     branch_table.push(cur_entry);
 
                     // <else>s are effectively <if>s with a cond that always evaluates to 'true'
-                    // Create an always-true entry and move on to the next child element 
+                    // Create an always-true entry and move on to the next child element
                     cur_entry = BranchTableEntry::new("true".to_string(), Vec::new());
                     continue;
                 }
-                
+
                 // Executable Content child, push onto entry's vector
                 cur_entry.push_exec_content(Self::parse_for_executable_content(child)?);
             }

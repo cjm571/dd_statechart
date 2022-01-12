@@ -724,11 +724,11 @@ mod tests {
 
         // Create events to be sent (already registered by parsing process)
         let turn_on = Event::from("turn.on")?;
+        let turn_off = Event::from("turn.off")?;
 
         // Process the events
         statechart.process_external_event(&turn_on)?;
-
-        // eprintln!("***STATECHART***\n{:#?}", statechart);
+        statechart.process_external_event(&turn_off)?;
 
         Ok(())
     }
