@@ -717,10 +717,10 @@ mod tests {
 
     #[test]
     fn if_deeply_nested() -> TestResult {
-        let mut stdout = io::stdout();
+        let mut dev_null = io::sink();
         // Parse a StateChart with deeply-nested <if>s
         let mut statechart =
-            StateChart::<io::Stdout>::from("res/test_cases/if_deeply_nested.scxml", &mut stdout)?;
+            StateChart::<io::Sink>::from("res/test_cases/if_deeply_nested.scxml", &mut dev_null)?;
 
         // Create events to be sent (already registered by parsing process)
         let turn_on = Event::from("turn.on")?;

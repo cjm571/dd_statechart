@@ -66,6 +66,7 @@ pub struct Parser<'w, W: 'w + Write> {
 pub enum ParserError {
     AssignWithoutLocation(String /* Stringified XML Tree Node */),
     AssignWithoutExpr(String /* Stringified XML Tree Node */),
+    ElseIfAfterElse(String /* Stringified XML Tree Node */),
     ElseIfWithoutCond(String /* Stringified XML Tree Node */),
     IfWithoutCond(String /* Stringified XML Tree Node */),
     InitialNodeChildless(String /* Stringified XML Tree Node */),
@@ -342,7 +343,7 @@ impl<'w, W: 'w + Write> Parser<'w, W> {
         }
         // Handle <log>
         if element.tag_name().name() == "log" {
-            return Ok(Self::parse_log(element));
+            Ok(Self::parse_log(element))
         } else {
             unimplemented!(
                 "Parsing of this Executable Content element '{}' is not yet supported",
@@ -384,10 +385,18 @@ impl<'w, W: 'w + Write> Parser<'w, W> {
             // Create vector to hold children. Note that there may not be any
             let mut branch_table = Vec::new();
 
+            // Used to catch illegal elseif-after-else
+            let mut else_encountered = false;
+
             let mut cur_entry = BranchTableEntry::new(cond.to_string(), Vec::new());
             for child in element.children().filter(|v| v.is_element()) {
                 // Handle <elseif>
                 if child.tag_name().name() == "elseif" {
+                    // If an <else> has already been encountered, the document is non-compliant
+                    if else_encountered {
+                        return Err(ParserError::ElseIfAfterElse(format!("{:?}", child)));
+                    }
+
                     // Current entry has concluded, push it into the table
                     branch_table.push(cur_entry);
 
@@ -403,6 +412,7 @@ impl<'w, W: 'w + Write> Parser<'w, W> {
 
                 // Handle <else>
                 if child.tag_name().name() == "else" {
+                    else_encountered = true;
                     // Current entry has concluded, push it into the table
                     branch_table.push(cur_entry);
 
@@ -463,6 +473,9 @@ impl fmt::Display for ParserError {
             }
             Self::AssignWithoutExpr(parent_assign) => {
                 write!(f, "Assignment '{}' is missing an 'expr'", parent_assign)
+            }
+            Self::ElseIfAfterElse(parent_elseif) => {
+                write!(f, "ElseIf '{}' is exists after Else'", parent_elseif)
             }
             Self::ElseIfWithoutCond(parent_elseif) => {
                 write!(f, "ElseIf '{}' is missing a 'cond'", parent_elseif)
@@ -689,8 +702,45 @@ mod tests {
     }
 
     #[test]
+    fn elseif_without_cond() -> TestResult {
+        let mut dev_null = io::sink();
+        let elseif_string = "Element { tag_name: {http://www.w3.org/2005/07/scxml}elseif, attributes: [], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }".to_string();
+        let parser = Parser::new("res/test_cases/elseif_without_cond.scxml", &mut dev_null)?;
+
+        assert_eq!(
+            parser.parse().unwrap_err(),
+            ParserError::ElseIfWithoutCond(elseif_string)
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn elseif_after_else() -> TestResult {
+        let mut dev_null = io::sink();
+        let elseif_string = "Element { tag_name: {http://www.w3.org/2005/07/scxml}elseif, attributes: [Attribute { name: cond, value: \"true\" }], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }".to_string();
+        let parser = Parser::new("res/test_cases/elseif_after_else.scxml", &mut dev_null)?;
+
+        assert_eq!(
+            parser.parse().unwrap_err(),
+            ParserError::ElseIfAfterElse(elseif_string)
+        );
+
+        Ok(())
+    }
+
+    #[test]
     fn if_without_cond() -> TestResult {
-        todo!()
+        let mut dev_null = io::sink();
+        let if_string = "Element { tag_name: {http://www.w3.org/2005/07/scxml}if, attributes: [], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }".to_string();
+        let parser = Parser::new("res/test_cases/if_without_cond.scxml", &mut dev_null)?;
+
+        assert_eq!(
+            parser.parse().unwrap_err(),
+            ParserError::IfWithoutCond(if_string)
+        );
+
+        Ok(())
     }
 
     #[test]

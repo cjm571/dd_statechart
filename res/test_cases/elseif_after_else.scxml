@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       name="if_deeply_nested"
+       version="1.0"
+       datamodel="ecmascript"
+       initial="off">
+
+  <datamodel>
+    <data id="always_true" expr="true"/>
+  </datamodel>
+
+  <state id="off">
+    <transition event="turn.on" target="on">
+        <if cond='true'>
+            <if cond='always_true == false'>
+                <log label="INVALID" expr="'ON always_true is true!'"/>
+            <else/>
+                <log label="INVALID" expr="'ON else'"/>
+            <elseif cond='true'/>
+                <log label="VALID" expr="'ON elseif true'"/>
+                <if cond='true'>
+                    <log label="VALID" expr="'ON if elseif if true'"/>
+                </if>
+            </if>
+        </if>
+    </transition>
+  </state>
+
+  <state id="on">
+    <transition event="turn.off" target="off">
+        <if cond='true'>
+            <if cond='always_true == true'>
+                <log label="VALID" expr="'OFF always_true is true!'"/>
+            <elseif cond='true'/>
+                <log label="INVALID" expr="'OFF elseif true'"/>
+            <else/>
+                <log label="INVALID" expr="'OFF else'"/>
+            </if>
+        </if>
+    </transition>
+  </state>
+</scxml>

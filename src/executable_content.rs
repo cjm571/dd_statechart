@@ -99,8 +99,8 @@ impl ExecutableContent {
     \*  *  *  *  *  *  *  */
 
     fn execute_assign(
-        location: &String,
-        expr: &String,
+        location: &str,
+        expr: &str,
         sys_vars: &mut SystemVariables,
     ) -> Result<(), ExecutableContentError> {
         // Interpret the expression to get the value to associate with the identifier
@@ -114,7 +114,7 @@ impl ExecutableContent {
     }
 
     fn execute_if<W>(
-        branch_table: &Vec<BranchTableEntry>,
+        branch_table: &[BranchTableEntry],
         sys_vars: &mut SystemVariables,
         writer: &mut W,
     ) -> Result<(), ExecutableContentError>
@@ -138,8 +138,8 @@ impl ExecutableContent {
     }
 
     fn execute_log<W>(
-        label: &String,
-        expr: &String,
+        label: &str,
+        expr: &str,
         sys_vars: &mut SystemVariables,
         writer: &mut W,
     ) -> Result<(), ExecutableContentError>
