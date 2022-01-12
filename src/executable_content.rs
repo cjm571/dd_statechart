@@ -42,10 +42,10 @@ pub enum ExecutableContent {
         String, /* Value expression string */
     ),
     Cancel,  /* FEAT: <cancel> */
-    ElseIf,  /* FEAT: <elseif> */
-    Else,    /* FEAT: <else> */
     ForEach, /* FEAT: <foreach> */
-    If,      /* FEAT: <if> */
+    BranchTable(
+        Vec<BranchTableEntry>, /* Table of if-elseif-else branches */
+    ),
     Log(
         String, /* Label */
         String, /* Value expression string */
@@ -53,6 +53,12 @@ pub enum ExecutableContent {
     Raise,  /* FEAT: <raise> */
     Script, /* FEAT: <script> */
     Send,   /* FEAT: <send> */
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BranchTableEntry {
+    cond: String,                 /* Conditional expression string */
+    exec: Vec<ExecutableContent>, /* Sub-Executable Content */
 }
 
 #[derive(Debug, PartialEq)]
@@ -77,48 +83,124 @@ impl ExecutableContent {
         W: Write,
     {
         match self {
-            Self::Assign(location, expr) => {
-                // Interpret the expression to get the value to associate with the identifier
-                let interpreter = Interpreter::new(expr);
-                let value = interpreter.interpret(sys_vars)?;
-
-                // Set the value in the data model
-                sys_vars.set_data_member(location, value);
-
-                Ok(())
-            }
-            Self::Log(label, expr) => {
-                let mut has_content = false;
-
-                // Interpret the expression to get the result to be logged
-                let interpreter = Interpreter::new(expr);
-                let value = interpreter.interpret(sys_vars)?;
-
-                // Output the components of a log message if they exist
-                if !label.is_empty() {
-                    write!(writer, "{}: ", label)?;
-                    has_content = true;
-                }
-                if !expr.is_empty() {
-                    write!(writer, "{}", value)?;
-                    has_content = true;
-                }
-
-                // Output a newline if anything was output
-                if has_content {
-                    writeln!(writer)?;
-                }
-
-                Ok(())
-            }
+            Self::Assign(location, expr) => Self::execute_assign(location, expr, sys_vars),
+            Self::BranchTable(branch_table) => Self::execute_if(branch_table, sys_vars, writer),
+            Self::Log(label, expr) => Self::execute_log(label, expr, sys_vars, writer),
             _ => todo!(
                 "Attempted to execute unimplemented ExecutableContent '{:?}'",
                 self
             ),
         }
     }
+
+
+    /*  *  *  *  *  *  *  *\
+     *   Helper Methods   *
+    \*  *  *  *  *  *  *  */
+
+    fn execute_assign(
+        location: &str,
+        expr: &str,
+        sys_vars: &mut SystemVariables,
+    ) -> Result<(), ExecutableContentError> {
+        // Interpret the expression to get the value to associate with the identifier
+        let interpreter = Interpreter::new(expr);
+        let value = interpreter.interpret(sys_vars)?;
+
+        // Set the value in the data model
+        sys_vars.set_data_member(location, value);
+
+        Ok(())
+    }
+
+    fn execute_if<W>(
+        branch_table: &[BranchTableEntry],
+        sys_vars: &mut SystemVariables,
+        writer: &mut W,
+    ) -> Result<(), ExecutableContentError>
+    where
+        W: Write,
+    {
+        // Iterate through the branch table, which is in document order, and execute the first entry whose
+        // cond evaluates to 'true'
+        for branch in branch_table {
+            if Interpreter::new(branch.cond()).interpret_as_bool(sys_vars)? {
+                // Branch passed, execute its content in order and break loop
+                for exec_content_element in branch.exec_content() {
+                    exec_content_element.execute(sys_vars, writer)?;
+                }
+
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn execute_log<W>(
+        label: &str,
+        expr: &str,
+        sys_vars: &mut SystemVariables,
+        writer: &mut W,
+    ) -> Result<(), ExecutableContentError>
+    where
+        W: Write,
+    {
+        let mut has_content = false;
+
+        // Interpret the expression to get the result to be logged
+        let interpreter = Interpreter::new(expr);
+        let value = interpreter.interpret(sys_vars)?;
+
+        // Output the components of a log message if they exist
+        if !label.is_empty() {
+            write!(writer, "{}: ", label)?;
+            has_content = true;
+        }
+        if !expr.is_empty() {
+            write!(writer, "{}", value)?;
+            has_content = true;
+        }
+
+        // Output a newline if anything was output
+        if has_content {
+            writeln!(writer)?;
+        }
+
+        Ok(())
+    }
 }
 
+
+impl BranchTableEntry {
+    pub fn new(cond: String, exec: Vec<ExecutableContent>) -> Self {
+        Self { cond, exec }
+    }
+
+    /*  *  *  *  *  *  *  *\
+     *  Accessor Methods  *
+    \*  *  *  *  *  *  *  */
+
+    pub fn cond(&self) -> &String {
+        &self.cond
+    }
+
+    pub fn exec_content(&self) -> &Vec<ExecutableContent> {
+        &self.exec
+    }
+
+    /*  *  *  *  *  *  *  *\
+     *  Mutator Methods   *
+    \*  *  *  *  *  *  *  */
+
+    pub fn set_cond(&mut self, cond: String) {
+        self.cond = cond;
+    }
+
+    pub fn push_exec_content(&mut self, exec: ExecutableContent) {
+        self.exec.push(exec);
+    }
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 //  Trait Implementations

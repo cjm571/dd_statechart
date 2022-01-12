@@ -29,13 +29,15 @@ use std::{error::Error, fmt, fs};
 use crate::{
     datamodel::{DataModelError, SystemVariables},
     event::{Event, EventError},
-    executable_content::ExecutableContent,
+    executable_content::{BranchTableEntry, ExecutableContent},
     interpreter::{Interpreter, InterpreterError},
     registry::RegistryError,
     state::{State, StateBuilder, StateBuilderError},
     transition::{Transition, TransitionBuilder, TransitionBuilderError},
     StateChart, StateChartBuilder, StateChartBuilderError,
 };
+
+use roxmltree::Node;
 
 use uuid::Uuid;
 
@@ -64,6 +66,9 @@ pub struct Parser<'w, W: 'w + Write> {
 pub enum ParserError {
     AssignWithoutLocation(String /* Stringified XML Tree Node */),
     AssignWithoutExpr(String /* Stringified XML Tree Node */),
+    ElseIfAfterElse(String /* Stringified XML Tree Node */),
+    ElseIfWithoutCond(String /* Stringified XML Tree Node */),
+    IfWithoutCond(String /* Stringified XML Tree Node */),
     InitialNodeChildless(String /* Stringified XML Tree Node */),
     InitialTransitionTargetless(String /* Stringified XML Tree Node */),
     InvalidScxmlChild(String /* Name of child element */),
@@ -169,7 +174,7 @@ impl<'w, W: 'w + Write> Parser<'w, W> {
 
 
     /*  *  *  *  *  *  *  *\
-     *  Helper Methods    *
+     *   Helper Methods   *
     \*  *  *  *  *  *  *  */
 
     fn validate_structure(document: &roxmltree::Document) -> Result<(), ParserError> {
@@ -318,54 +323,134 @@ impl<'w, W: 'w + Write> Parser<'w, W> {
 
         // Check for Executable Content children, skipping comments and text
         for child in element.children().filter(|v| v.is_element()) {
-            // Handle <assign>
-            if child.tag_name().name() == "assign" {
-                if let Some(location) = child.attribute("location") {
-                    // 'expr' may be either an attribute of 'assign', or its child(ren)
-                    if let Some(expr) = child.attribute("expr") {
-                        let assignment =
-                            ExecutableContent::Assign(location.to_string(), expr.to_string());
-                        transition_builder = transition_builder.executable_content(assignment);
-                    } else if child.has_children() {
-                        // When the 'expr' is not specified as part of the assign tag, it can be one
-                        // or more child nodes. This constitutes a multi-line expression, which
-                        // is not yet supported by the ECMAScript Interpreter
-                        unimplemented!("Multi-line ECMAScript expression are not yet supported");
-                    }
-                    // 'expr' was not specified, this is an error
-                    else {
-                        return Err(ParserError::AssignWithoutExpr(format!("{:?}", child)));
-                    }
-                }
-                // 'location' was not specified, this is an error
-                else {
-                    return Err(ParserError::AssignWithoutLocation(format!("{:?}", child)));
-                }
-            }
-            //Handle <log>
-            else if child.tag_name().name() == "log" {
-                let mut label = String::new();
-                let mut expr = String::new();
-
-                // <log> can contain a label, expression, both or neither
-                if let Some(label_str) = child.attribute("label") {
-                    label.push_str(label_str);
-                }
-                if let Some(expr_str) = child.attribute("expr") {
-                    expr.push_str(expr_str);
-                }
-
-                // Create the Executable Content and add it to the Transition builder
-                let log = ExecutableContent::Log(label, expr);
-                transition_builder = transition_builder.executable_content(log);
-            }
-
-            //FEAT: Handle other executable content
+            transition_builder =
+                transition_builder.executable_content(Self::parse_for_executable_content(child)?);
         }
 
         transition_builder
             .build()
             .map_err(ParserError::TransitionBuilderError)
+    }
+
+    fn parse_for_executable_content(element: Node) -> Result<ExecutableContent, ParserError> {
+        // Handle <assign>
+        if element.tag_name().name() == "assign" {
+            return Self::parse_assign(element);
+        }
+        // Handle <if>
+        if element.tag_name().name() == "if" {
+            return Self::parse_if(element);
+        }
+        // Handle <log>
+        if element.tag_name().name() == "log" {
+            Ok(Self::parse_log(element))
+        } else {
+            unimplemented!(
+                "Parsing of this Executable Content element '{}' is not yet supported",
+                element.tag_name().name()
+            )
+        }
+
+        //FEAT: Handle other executable content
+    }
+
+    fn parse_assign(element: Node) -> Result<ExecutableContent, ParserError> {
+        if let Some(location) = element.attribute("location") {
+            // 'expr' may be either an attribute of 'assign', or its child(ren)
+            if let Some(expr) = element.attribute("expr") {
+                // 'expr' was in-line, create it and return
+                Ok(ExecutableContent::Assign(
+                    location.to_string(),
+                    expr.to_string(),
+                ))
+            } else if element.has_children() {
+                // When the 'expr' is not specified as part of the assign tag, it can be one
+                // or more child elements. This constitutes a multi-line expression, which
+                // is not yet supported by the ECMAScript Interpreter
+                unimplemented!("Multi-line ECMAScript expression are not yet supported");
+            }
+            // 'expr' was not specified, this is an error
+            else {
+                Err(ParserError::AssignWithoutExpr(format!("{:?}", element)))
+            }
+        }
+        // 'location' was not specified, this is an error
+        else {
+            Err(ParserError::AssignWithoutLocation(format!("{:?}", element)))
+        }
+    }
+
+    fn parse_if(element: Node) -> Result<ExecutableContent, ParserError> {
+        if let Some(cond) = element.attribute("cond") {
+            // Create vector to hold children. Note that there may not be any
+            let mut branch_table = Vec::new();
+
+            // Used to catch illegal elseif-after-else
+            let mut else_encountered = false;
+
+            let mut cur_entry = BranchTableEntry::new(cond.to_string(), Vec::new());
+            for child in element.children().filter(|v| v.is_element()) {
+                // Handle <elseif>
+                if child.tag_name().name() == "elseif" {
+                    // If an <else> has already been encountered, the document is non-compliant
+                    if else_encountered {
+                        return Err(ParserError::ElseIfAfterElse(format!("{:?}", child)));
+                    }
+
+                    // Current entry has concluded, push it into the table
+                    branch_table.push(cur_entry);
+
+                    // <elseif>s must contain a "cond" attribute, if they do not it is an error
+                    if let Some(child_cond) = child.attribute("cond") {
+                        // Create a new entry and move on to the next child element
+                        cur_entry = BranchTableEntry::new(child_cond.to_string(), Vec::new());
+                        continue;
+                    } else {
+                        return Err(ParserError::ElseIfWithoutCond(format!("{:?}", child)));
+                    }
+                }
+
+                // Handle <else>
+                if child.tag_name().name() == "else" {
+                    else_encountered = true;
+                    // Current entry has concluded, push it into the table
+                    branch_table.push(cur_entry);
+
+                    // <else>s are effectively <if>s with a cond that always evaluates to 'true'
+                    // Create an always-true entry and move on to the next child element
+                    cur_entry = BranchTableEntry::new("true".to_string(), Vec::new());
+                    continue;
+                }
+
+                // Executable Content child, push onto entry's vector
+                cur_entry.push_exec_content(Self::parse_for_executable_content(child)?);
+            }
+
+            // Add current (final) entry to the table
+            branch_table.push(cur_entry);
+
+            Ok(ExecutableContent::BranchTable(branch_table))
+        }
+        // 'cond' not specified, this is an error
+        else {
+            Err(ParserError::IfWithoutCond(format!("{:?}", element)))
+        }
+    }
+
+    fn parse_log(element: Node) -> ExecutableContent {
+        let mut label = String::new();
+        let mut expr = String::new();
+
+        // <log> can contain a label, expression, both or neither
+        if let Some(label_str) = element.attribute("label") {
+            label.push_str(label_str);
+        }
+        if let Some(expr_str) = element.attribute("expr") {
+            expr.push_str(expr_str);
+        }
+
+        // Create the Executable Content and return it
+        ExecutableContent::Log(label, expr)
     }
 }
 
@@ -388,6 +473,15 @@ impl fmt::Display for ParserError {
             }
             Self::AssignWithoutExpr(parent_assign) => {
                 write!(f, "Assignment '{}' is missing an 'expr'", parent_assign)
+            }
+            Self::ElseIfAfterElse(parent_elseif) => {
+                write!(f, "ElseIf '{}' is exists after Else'", parent_elseif)
+            }
+            Self::ElseIfWithoutCond(parent_elseif) => {
+                write!(f, "ElseIf '{}' is missing a 'cond'", parent_elseif)
+            }
+            Self::IfWithoutCond(parent_if) => {
+                write!(f, "If '{}' is missing a 'cond'", parent_if)
             }
             Self::InitialNodeChildless(parent_state) => {
                 write!(
@@ -602,6 +696,48 @@ mod tests {
         assert_eq!(
             parser.parse().unwrap_err(),
             ParserError::AssignWithoutExpr(assign_string)
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn elseif_without_cond() -> TestResult {
+        let mut dev_null = io::sink();
+        let elseif_string = "Element { tag_name: {http://www.w3.org/2005/07/scxml}elseif, attributes: [], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }".to_string();
+        let parser = Parser::new("res/test_cases/elseif_without_cond.scxml", &mut dev_null)?;
+
+        assert_eq!(
+            parser.parse().unwrap_err(),
+            ParserError::ElseIfWithoutCond(elseif_string)
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn elseif_after_else() -> TestResult {
+        let mut dev_null = io::sink();
+        let elseif_string = "Element { tag_name: {http://www.w3.org/2005/07/scxml}elseif, attributes: [Attribute { name: cond, value: \"true\" }], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }".to_string();
+        let parser = Parser::new("res/test_cases/elseif_after_else.scxml", &mut dev_null)?;
+
+        assert_eq!(
+            parser.parse().unwrap_err(),
+            ParserError::ElseIfAfterElse(elseif_string)
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn if_without_cond() -> TestResult {
+        let mut dev_null = io::sink();
+        let if_string = "Element { tag_name: {http://www.w3.org/2005/07/scxml}if, attributes: [], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }".to_string();
+        let parser = Parser::new("res/test_cases/if_without_cond.scxml", &mut dev_null)?;
+
+        assert_eq!(
+            parser.parse().unwrap_err(),
+            ParserError::IfWithoutCond(if_string)
         );
 
         Ok(())
