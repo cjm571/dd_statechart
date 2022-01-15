@@ -27,6 +27,7 @@ use std::{error::Error, fmt};
 
 use crate::{
     datamodel::SystemVariables,
+    event::Event,
     interpreter::{Interpreter, InterpreterError},
 };
 
@@ -50,7 +51,7 @@ pub enum ExecutableContent {
         String, /* Label */
         String, /* Value expression string */
     ),
-    Raise,  /* FEAT: <raise> */
+    Raise(Event /* Event to raise */),
     Script, /* FEAT: <script> */
     Send,   /* FEAT: <send> */
 }

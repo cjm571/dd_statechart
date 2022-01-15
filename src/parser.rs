@@ -76,6 +76,7 @@ pub enum ParserError {
     InvalidScxmlVersion(String /* Invalid version */),
     InvalidDataModel(String /* Invalid data model name */),
     InvalidDataItem(String /* Stringified XML Tree Node */),
+    RaiseWithoutEvent(String /* Stringified XML Tree Node */),
     StateHasNoId(String /* Stringified XML Tree Node */),
 
     // Wrappers
@@ -349,13 +350,20 @@ impl<'w, W: 'w + Write> Parser<'w, W> {
         if element.tag_name().name() == "assign" {
             return Self::parse_assign(element);
         }
+
         // Handle <if>
         if element.tag_name().name() == "if" {
             return Self::parse_if(element);
         }
+
         // Handle <log>
         if element.tag_name().name() == "log" {
-            Ok(Self::parse_log(element))
+            return Ok(Self::parse_log(element));
+        }
+
+        // Handle <raise>
+        if element.tag_name().name() == "raise" {
+            Self::parse_raise(element)
         } else {
             unimplemented!(
                 "Parsing of this Executable Content element '{}' is not yet supported",
@@ -464,6 +472,15 @@ impl<'w, W: 'w + Write> Parser<'w, W> {
         // Create the Executable Content and return it
         ExecutableContent::Log(label, expr)
     }
+
+    fn parse_raise(element: Node) -> Result<ExecutableContent, ParserError> {
+        // Extract the Event parameter of the <raise> element
+        if let Some(event_str) = element.attribute("event") {
+            Ok(ExecutableContent::Raise(Event::from(event_str)?))
+        } else {
+            Err(ParserError::RaiseWithoutEvent(format!("{:?}", element)))
+        }
+    }
 }
 
 
@@ -535,6 +552,9 @@ impl fmt::Display for ParserError {
             }
             Self::InvalidDataItem(node_id) => {
                 write!(f, "Invalid Data Item '{:?}'", node_id)
+            }
+            Self::RaiseWithoutEvent(parent_raise) => {
+                write!(f, "Raise '{}' is missing an 'event'", parent_raise)
             }
             Self::StateHasNoId(node_id) => {
                 write!(
@@ -918,6 +938,19 @@ mod tests {
         assert_eq!(
             Parser::new("does_not_exist.scxml", &mut io::sink()).unwrap_err(),
             ParserError::IoError(std::io::ErrorKind::NotFound)
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn raise_without_event() -> TestResult {
+        let mut dev_null = io::sink();
+        let parser = Parser::new("res/test_cases/raise_without_event.scxml", &mut dev_null)?;
+
+        assert_eq!(
+            parser.parse().unwrap_err(),
+            ParserError::RaiseWithoutEvent("Element { tag_name: {http://www.w3.org/2005/07/scxml}raise, attributes: [], namespaces: [Namespace { name: None, uri: \"http://www.w3.org/2005/07/scxml\" }] }".to_string())
         );
 
         Ok(())

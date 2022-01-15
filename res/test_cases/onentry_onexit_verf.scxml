@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
-       name="if_deeply_nested"
+       name="onentry_onexit_verf"
        version="1.0"
        datamodel="ecmascript"
        initial="off">
