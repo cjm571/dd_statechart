@@ -256,7 +256,13 @@ impl<'w, W: 'w + Write> Parser<'w, W> {
                 }
             }
 
-            //FEAT: Handle <onexit>
+            // Handle <onexit>
+            if child.tag_name().name() == "onexit" {
+                for onexit_child in child.children().filter(|v| v.is_element()) {
+                    state_builder =
+                        state_builder.onexit(Self::parse_for_executable_content(onexit_child)?);
+                }
+            }
 
             // Handle <transition>
             if child.tag_name().name() == "transition" {
