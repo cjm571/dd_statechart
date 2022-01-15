@@ -24,11 +24,13 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+use std::io::Write;
 use std::{error::Error, fmt};
 
 use crate::{
     datamodel::SystemVariables,
     event::Event,
+    executable_content::{ExecutableContent, ExecutableContentError},
     transition::{Transition, TransitionError, TransitionFingerprint},
 };
 
@@ -47,24 +49,21 @@ pub struct State {
     is_active: bool,
     initial_id: Option<StateId>,
     transitions: Vec<Transition>,
-    on_entry: Vec<Callback>,
-    on_exit: Vec<Callback>,
+    onentry: Vec<ExecutableContent>,
+    onexit: Vec<ExecutableContent>,
 }
 
 //OPT: *STYLE* Create StateIdRef type that is an alias for &str
 //             Search for all instances of &str to find things to replace with this type
 pub type StateId = String;
 
-//OPT: *DESIGN* Would it be useful to specify an error type here? Even if it's just Box<dyn Error>?
-pub type Callback = fn() -> Result<(), ()>;
-
 #[derive(Debug, PartialEq)]
 pub enum StateError {
-    FailedCallback(usize),
     SubstatesSpecifiedWithoutInitial,
 
     // Wrappers
     TransitionError(TransitionError),
+    ExecutableContentError(ExecutableContentError),
 }
 
 
@@ -75,8 +74,8 @@ pub struct StateBuilder {
     is_active: bool,
     initial_id: Option<StateId>,
     transitions: Vec<Transition>,
-    on_entry: Vec<Callback>,
-    on_exit: Vec<Callback>,
+    onentry: Vec<ExecutableContent>,
+    onexit: Vec<ExecutableContent>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -136,9 +135,20 @@ impl State {
      *  Utility Methods   *
     \*  *  *  *  *  *  *  */
 
-    pub fn enter(&mut self) -> Result<(), StateError> {
+    pub fn enter<W>(
+        &mut self,
+        sys_vars: &mut SystemVariables,
+        writer: &mut W,
+    ) -> Result<(), StateError>
+    where
+        W: Write,
+    {
+        //FIXME: DEBUG DELETE
+        eprintln!("Executing <onentry> '{:?}'...", self);
         // Execute any on_enter callbacks
-        self.execute_on_entry()?;
+        self.execute_onentry(sys_vars, writer)?;
+        //FIXME: DEBUG DELETE
+        eprintln!("Executed <onentry>.");
 
         // Activate the State
         self.activate();
@@ -147,7 +157,7 @@ impl State {
         for substate in &mut self.substates {
             if let Some(initial_id) = &self.initial_id {
                 if substate.id() == initial_id {
-                    substate.enter()?;
+                    substate.enter(sys_vars, writer)?;
                 }
             } else {
                 return Err(StateError::SubstatesSpecifiedWithoutInitial);
@@ -157,16 +167,23 @@ impl State {
         Ok(())
     }
 
-    pub fn exit(&mut self) -> Result<(), StateError> {
+    pub fn exit<W>(
+        &mut self,
+        sys_vars: &mut SystemVariables,
+        writer: &mut W,
+    ) -> Result<(), StateError>
+    where
+        W: Write,
+    {
         // If substates exist, exit the active substate(s)
         for substate in &mut self.substates {
             if substate.is_active() {
-                substate.exit()?;
+                substate.exit(sys_vars, writer)?;
             }
         }
 
-        // Execute any on_exit callbacks
-        self.execute_on_exit()?;
+        // Execute any onexit callbacks
+        self.execute_onexit(sys_vars, writer)?;
 
         // Deactivate the State
         self.deactivate();
@@ -219,23 +236,33 @@ impl State {
      *  Helper Methods    *
     \*  *  *  *  *  *  *  */
 
-    fn execute_on_entry(&self) -> Result<(), StateError> {
-        for (i, entry_func) in self.on_entry.iter().enumerate() {
-            if let Some(_err) = (entry_func)().err() {
-                // Callback failed, return error indicating the callback index that failed
-                return Err(StateError::FailedCallback(i));
-            }
+    fn execute_onentry<W>(
+        &self,
+        sys_vars: &mut SystemVariables,
+        writer: &mut W,
+    ) -> Result<(), StateError>
+    where
+        W: Write,
+    {
+        for exec_content in &self.onentry {
+            //FIXME: DEBUG DELETE
+            eprintln!("Executing ExecContent '{:?}'...", exec_content);
+            exec_content.execute(sys_vars, writer)?;
         }
 
         Ok(())
     }
 
-    fn execute_on_exit(&self) -> Result<(), StateError> {
-        for (i, exit_func) in self.on_exit.iter().enumerate() {
-            if let Some(_err) = (exit_func)().err() {
-                // Callback failed, return error indicating the callback index that failed
-                return Err(StateError::FailedCallback(i));
-            }
+    fn execute_onexit<W>(
+        &self,
+        sys_vars: &mut SystemVariables,
+        writer: &mut W,
+    ) -> Result<(), StateError>
+    where
+        W: Write,
+    {
+        for exec_content in &self.onexit {
+            exec_content.execute(sys_vars, writer)?;
         }
 
         Ok(())
@@ -251,8 +278,8 @@ impl StateBuilder {
             substates: Vec::new(),
             initial_id: None,
             transitions: Vec::new(),
-            on_entry: Vec::new(),
-            on_exit: Vec::new(),
+            onentry: Vec::new(),
+            onexit: Vec::new(),
         }
     }
 
@@ -308,8 +335,8 @@ impl StateBuilder {
             is_active: self.is_active,
             initial_id: self.initial_id,
             transitions: self.transitions,
-            on_entry: self.on_entry,
-            on_exit: self.on_exit,
+            onentry: self.onentry,
+            onexit: self.onexit,
         })
     }
 
@@ -348,18 +375,14 @@ impl StateBuilder {
         Ok(self)
     }
 
-    pub fn on_entry(mut self, callback: Callback) -> Self {
-        // Callbacks are effectively unique, even if their signature/contents is identical
-        // so we cannot check for duplicates. Just push onto the vector.
-        self.on_entry.push(callback);
+    pub fn onentry(mut self, exec_content: ExecutableContent) -> Self {
+        self.onentry.push(exec_content);
 
         self
     }
 
-    pub fn on_exit(mut self, callback: Callback) -> Self {
-        // Callbacks are effectively unique, even if their signature/contents is identical
-        // so we cannot check for duplicates. Just push onto the vector.
-        self.on_exit.push(callback);
+    pub fn onexit(mut self, exec_content: ExecutableContent) -> Self {
+        self.onexit.push(exec_content);
 
         self
     }
@@ -381,8 +404,8 @@ impl fmt::Debug for State {
             .field("is_active", &self.is_active)
             .field("initial_id", &self.initial_id)
             .field("transitions", &self.transitions)
-            .field("on_entry", &self.on_entry)
-            .field("on_exit", &self.on_exit)
+            .field("onentry", &self.onentry)
+            .field("onexit", &self.onexit)
             .finish()
     }
 }
@@ -397,9 +420,6 @@ impl Error for StateError {}
 impl fmt::Display for StateError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::FailedCallback(idx) => {
-                write!(f, "callback at index {} failed", idx)
-            }
             Self::SubstatesSpecifiedWithoutInitial => {
                 write!(f, "State has substates but no Initial State")
             }
@@ -412,6 +432,13 @@ impl fmt::Display for StateError {
                     trans_err
                 )
             }
+            Self::ExecutableContentError(exec_err) => {
+                write!(
+                    f,
+                    "ExecutableContentError '{:?}' encountered while processing State",
+                    exec_err
+                )
+            }
         }
     }
 }
@@ -419,6 +446,12 @@ impl fmt::Display for StateError {
 impl From<TransitionError> for StateError {
     fn from(src: TransitionError) -> Self {
         Self::TransitionError(src)
+    }
+}
+
+impl From<ExecutableContentError> for StateError {
+    fn from(src: ExecutableContentError) -> Self {
+        Self::ExecutableContentError(src)
     }
 }
 
@@ -480,93 +513,68 @@ impl fmt::Display for StateBuilderError {
 mod tests {
 
     use std::error::Error;
-    use std::io;
 
-    use crate::{
-        event::Event,
-        state::{StateBuilder, StateError},
-        transition::TransitionBuilder,
-        StateChartBuilder, StateChartError,
-    };
+    use crate::{executable_content::ExecutableContent, state::StateBuilder, SystemVariables};
 
 
     type TestResult = Result<(), Box<dyn Error>>;
 
 
     #[test]
-    fn failed_on_exit() -> TestResult {
-        // Define Event and State IDs
-        let initial_to_terminal = Event::from("initial_to_terminal")?;
-        let initial_state_id = String::from("INITIAL");
-        let terminal_state_id = String::from("TERMINAL");
+    fn failed_onexit() -> TestResult {
+        // Create dummy params
+        let mut sys_vars = SystemVariables::default();
+        let mut buffer = Vec::new();
 
-        // Build Transition
-        let hapless_transition = TransitionBuilder::new(initial_state_id.as_str())
-            .event(&initial_to_terminal)?
-            .target_id(&terminal_state_id)?
+        // Build State, which will fail its 2nd onexit callback
+        let mut terminal = StateBuilder::new("terminal".to_string())
+            .onexit(ExecutableContent::Log(
+                String::default(),
+                "'VALID'".to_string(),
+            ))
+            .onexit(ExecutableContent::Assign(
+                "test".to_string(),
+                "'unterm".to_string(),
+            ))
             .build()?;
 
-        // Build States, one of which will fail its 2nd on_exit callback
-        let initial = StateBuilder::new(initial_state_id)
-            .transition(hapless_transition)?
-            .on_exit(|| Ok(()))
-            .on_exit(|| Err(()))
-            .build()?;
-        let terminal = StateBuilder::new(terminal_state_id).build()?;
-
-        // Build the StateChart and process the Event
-        let mut dev_null = io::sink();
-        let mut statechart = StateChartBuilder::new(&mut dev_null)
-            .initial(initial.id().to_string())
-            .state(initial)?
-            .state(terminal)?
-            .build()?;
-
+        // Enter the State and verify the onexit fails as expected
         assert_eq!(
-            statechart.process_external_event(&initial_to_terminal),
-            Err(StateChartError::StateError(StateError::FailedCallback(1))),
-            "Failed to catch a failed on_exit callback"
+            terminal.exit(&mut sys_vars, &mut buffer).is_err(),
+            true,
+            "Failed to catch a failed onexit callback"
         );
+        assert_eq!(String::from_utf8(buffer)?, "VALID\n".to_string(),);
 
         Ok(())
     }
 
 
     #[test]
-    fn failed_on_entry() -> TestResult {
-        // Define Event and State IDs
-        let initial_to_terminal = Event::from("initial_to_terminal")?;
-        let initial_state_id = String::from("INITIAL");
-        let terminal_state_id = String::from("TERMINAL");
+    fn failed_onentry() -> TestResult {
+        // Create dummy params
+        let mut sys_vars = SystemVariables::default();
+        let mut buffer = Vec::new();
 
-        // Build Transition
-        let hapless_transition = TransitionBuilder::new(initial_state_id.as_str())
-            .event(&initial_to_terminal)?
-            .target_id(&terminal_state_id)?
+        // Build State, which will fail its 2nd onentry callback
+        let mut terminal = StateBuilder::new("terminal".to_string())
+            .onentry(ExecutableContent::Log(
+                String::default(),
+                "'VALID'".to_string(),
+            ))
+            .onentry(ExecutableContent::Assign(
+                "test".to_string(),
+                "'unterm".to_string(),
+            ))
             .build()?;
 
-        // Build States, one of which will fail its 2nd on_entry callback
-        let initial = StateBuilder::new(initial_state_id)
-            .transition(hapless_transition)?
-            .build()?;
-        let terminal = StateBuilder::new(terminal_state_id)
-            .on_entry(|| Ok(()))
-            .on_entry(|| Err(()))
-            .build()?;
-
-        // Build the StateChart and process the Event
-        let mut dev_null = io::sink();
-        let mut statechart = StateChartBuilder::new(&mut dev_null)
-            .initial(initial.id().to_string())
-            .state(initial)?
-            .state(terminal)?
-            .build()?;
-
+        // Enter the State and verify the onentry fails as expected
         assert_eq!(
-            statechart.process_external_event(&initial_to_terminal),
-            Err(StateChartError::StateError(StateError::FailedCallback(1))),
-            "Failed to catch a failed on_entry callback"
+            terminal.enter(&mut sys_vars, &mut buffer).is_err(),
+            true,
+            "Failed to catch a failed onentry callback"
         );
+        assert_eq!(String::from_utf8(buffer)?, "VALID\n".to_string(),);
 
         Ok(())
     }

@@ -270,7 +270,7 @@ impl<'w, W: 'w + Write> StateChart<'w, W> {
                     .clone();
                 let source_state = self.registry.get_mut_state(&source_state_id)?;
 
-                source_state.exit()?;
+                source_state.exit(&mut self.sys_vars, &mut self.writer)?;
             }
         }
 
@@ -292,7 +292,7 @@ impl<'w, W: 'w + Write> StateChart<'w, W> {
                 .clone();
             for state_id in &target_state_ids {
                 let target_state = self.registry.get_mut_state(state_id)?;
-                target_state.enter()?;
+                target_state.enter(&mut self.sys_vars, &mut self.writer)?;
             }
         }
 
