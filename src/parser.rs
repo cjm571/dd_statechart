@@ -248,9 +248,21 @@ impl<'w, W: 'w + Write> Parser<'w, W> {
 
         // Iterate through children, adding transitions or parsing substates
         for child in element.children().filter(|v| v.is_element()) {
-            //FEAT: Handle <onentry>
+            // Handle <onentry>
+            if child.tag_name().name() == "onentry" {
+                for onentry_child in child.children().filter(|v| v.is_element()) {
+                    state_builder =
+                        state_builder.onentry(Self::parse_for_executable_content(onentry_child)?);
+                }
+            }
 
-            //FEAT: Handle <onexit>
+            // Handle <onexit>
+            if child.tag_name().name() == "onexit" {
+                for onexit_child in child.children().filter(|v| v.is_element()) {
+                    state_builder =
+                        state_builder.onexit(Self::parse_for_executable_content(onexit_child)?);
+                }
+            }
 
             // Handle <transition>
             if child.tag_name().name() == "transition" {

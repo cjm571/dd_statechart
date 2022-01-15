@@ -270,7 +270,7 @@ impl<'w, W: 'w + Write> StateChart<'w, W> {
                     .clone();
                 let source_state = self.registry.get_mut_state(&source_state_id)?;
 
-                source_state.exit()?;
+                source_state.exit(&mut self.sys_vars, &mut self.writer)?;
             }
         }
 
@@ -292,7 +292,7 @@ impl<'w, W: 'w + Write> StateChart<'w, W> {
                 .clone();
             for state_id in &target_state_ids {
                 let target_state = self.registry.get_mut_state(state_id)?;
-                target_state.enter()?;
+                target_state.enter(&mut self.sys_vars, &mut self.writer)?;
             }
         }
 
@@ -521,8 +521,9 @@ mod tests {
     use std::{error::Error, fmt, io};
 
     use crate::{
-        event::Event, registry::RegistryError, state::StateBuilder, transition::TransitionBuilder,
-        StateChart, StateChartBuilder, StateChartBuilderError, StateChartError,
+        event::Event, interpreter::EcmaScriptValue, registry::RegistryError, state::StateBuilder,
+        transition::TransitionBuilder, StateChart, StateChartBuilder, StateChartBuilderError,
+        StateChartError,
     };
 
 
@@ -773,6 +774,38 @@ COND: Powering off\n",
         }
 
         assert_eq!(String::from_utf8(buffer)?, verf_buffer);
+
+        Ok(())
+    }
+
+    #[test]
+    fn onentry_onexit_verification() -> TestResult {
+        let mut dev_null = io::sink();
+
+        // Parse a StateChart from the contrived SCXML file to verify proper function of <onentry> <onexit>
+        let mut statechart = StateChart::<io::Sink>::from(
+            "res/test_cases/onentry_onexit_verf.scxml",
+            &mut dev_null,
+        )?;
+
+        // Create events to be sent (already registered by parsing process)
+        let turn_on = Event::from("turn.on")?;
+        let turn_off = Event::from("turn.off")?;
+
+        // Process the events
+        for _ in 0..5 {
+            statechart.process_external_event(&turn_on)?;
+            statechart.process_external_event(&turn_off)?;
+        }
+
+        assert_eq!(
+            statechart.sys_vars.get_data_member("entry_verf").unwrap(),
+            &EcmaScriptValue::Number(10.0)
+        );
+        assert_eq!(
+            statechart.sys_vars.get_data_member("exit_verf").unwrap(),
+            &EcmaScriptValue::Number(10.0)
+        );
 
         Ok(())
     }

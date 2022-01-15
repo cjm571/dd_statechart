@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       name="if_deeply_nested"
+       version="1.0"
+       datamodel="ecmascript"
+       initial="off">
+
+  <datamodel>
+    <data id="entry_verf" expr="0"/>
+    <data id="exit_verf" expr="0"/>
+  </datamodel>
+
+  <state id="off">
+    <onentry>
+        <assign location="entry_verf" expr="entry_verf+1"/>
+    </onentry>
+    <onexit>
+        <assign location="exit_verf" expr="exit_verf+1"/>
+    </onexit>
+    
+    <transition event="turn.on" target="on">
+    </transition>
+  </state>
+
+  <state id="on">
+    <onentry>
+        <assign location="entry_verf" expr="entry_verf+1"/>
+    </onentry>
+    <onexit>
+        <assign location="exit_verf" expr="exit_verf+1"/>
+    </onexit>
+    
+    <transition event="turn.off" target="off">
+    </transition>
+  </state>
+</scxml>
