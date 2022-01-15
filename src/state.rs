@@ -143,12 +143,8 @@ impl State {
     where
         W: Write,
     {
-        //FIXME: DEBUG DELETE
-        eprintln!("Executing <onentry> '{:?}'...", self);
         // Execute any on_enter callbacks
         self.execute_onentry(sys_vars, writer)?;
-        //FIXME: DEBUG DELETE
-        eprintln!("Executed <onentry>.");
 
         // Activate the State
         self.activate();
@@ -245,8 +241,6 @@ impl State {
         W: Write,
     {
         for exec_content in &self.onentry {
-            //FIXME: DEBUG DELETE
-            eprintln!("Executing ExecContent '{:?}'...", exec_content);
             exec_content.execute(sys_vars, writer)?;
         }
 
