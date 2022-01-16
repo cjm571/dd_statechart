@@ -809,6 +809,26 @@ COND: Powering off\n",
 
         Ok(())
     }
+
+    #[test]
+    fn raise_verification() -> TestResult {
+        let mut stdout = io::stdout();
+
+        // Parse a StateChart from the contrived SCXML file to verify proper function of <raise>
+        // and the internal event queue
+        let mut statechart = StateChart::<io::Stdout>::from(
+            "res/test_cases/raise_verf.scxml",
+            &mut stdout,
+        )?;
+
+        // Create events to be sent (already registered by parsing process)
+        let turn_on = Event::from("turn.on")?;
+
+        // Process the events
+        statechart.process_external_event(&turn_on)?;
+        
+        Ok(())
+    }
 }
 
 
