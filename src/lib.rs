@@ -270,7 +270,11 @@ impl<'w, W: 'w + Write> StateChart<'w, W> {
                     .clone();
                 let source_state = self.registry.get_mut_state(&source_state_id)?;
 
-                source_state.exit(&mut self.sys_vars, &mut self.writer)?;
+                source_state.exit(
+                    &mut self.sys_vars,
+                    &mut self.internal_queue,
+                    &mut self.writer,
+                )?;
             }
         }
 
@@ -278,7 +282,11 @@ impl<'w, W: 'w + Write> StateChart<'w, W> {
         for transition_fingerprint in &enabled_transition_fingerprints {
             let cur_transition = self.registry.get_transition(transition_fingerprint)?;
             for exec_content in cur_transition.executable_content() {
-                exec_content.execute(&mut self.sys_vars, &mut self.writer)?;
+                exec_content.execute(
+                    &mut self.sys_vars,
+                    &mut self.internal_queue,
+                    &mut self.writer,
+                )?;
             }
         }
 
@@ -292,7 +300,11 @@ impl<'w, W: 'w + Write> StateChart<'w, W> {
                 .clone();
             for state_id in &target_state_ids {
                 let target_state = self.registry.get_mut_state(state_id)?;
-                target_state.enter(&mut self.sys_vars, &mut self.writer)?;
+                target_state.enter(
+                    &mut self.sys_vars,
+                    &mut self.internal_queue,
+                    &mut self.writer,
+                )?;
             }
         }
 
@@ -816,17 +828,17 @@ COND: Powering off\n",
 
         // Parse a StateChart from the contrived SCXML file to verify proper function of <raise>
         // and the internal event queue
-        let mut statechart = StateChart::<io::Stdout>::from(
-            "res/test_cases/raise_verf.scxml",
-            &mut stdout,
-        )?;
+        let mut statechart =
+            StateChart::<io::Stdout>::from("res/test_cases/raise_verf.scxml", &mut stdout)?;
 
         // Create events to be sent (already registered by parsing process)
         let turn_on = Event::from("turn.on")?;
 
         // Process the events
         statechart.process_external_event(&turn_on)?;
-        
+
+        //FIXME: assert_eq for log output
+
         Ok(())
     }
 }

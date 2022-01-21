@@ -24,6 +24,7 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+use std::collections::VecDeque;
 use std::io::Write;
 use std::{error::Error, fmt};
 
@@ -138,13 +139,14 @@ impl State {
     pub fn enter<W>(
         &mut self,
         sys_vars: &mut SystemVariables,
+        internal_queue: &mut VecDeque<Event>,
         writer: &mut W,
     ) -> Result<(), StateError>
     where
         W: Write,
     {
         // Execute any on_enter callbacks
-        self.execute_onentry(sys_vars, writer)?;
+        self.execute_onentry(sys_vars, internal_queue, writer)?;
 
         // Activate the State
         self.activate();
@@ -153,7 +155,7 @@ impl State {
         for substate in &mut self.substates {
             if let Some(initial_id) = &self.initial_id {
                 if substate.id() == initial_id {
-                    substate.enter(sys_vars, writer)?;
+                    substate.enter(sys_vars, internal_queue, writer)?;
                 }
             } else {
                 return Err(StateError::SubstatesSpecifiedWithoutInitial);
@@ -166,6 +168,7 @@ impl State {
     pub fn exit<W>(
         &mut self,
         sys_vars: &mut SystemVariables,
+        internal_queue: &mut VecDeque<Event>,
         writer: &mut W,
     ) -> Result<(), StateError>
     where
@@ -174,12 +177,12 @@ impl State {
         // If substates exist, exit the active substate(s)
         for substate in &mut self.substates {
             if substate.is_active() {
-                substate.exit(sys_vars, writer)?;
+                substate.exit(sys_vars, internal_queue, writer)?;
             }
         }
 
         // Execute any onexit callbacks
-        self.execute_onexit(sys_vars, writer)?;
+        self.execute_onexit(sys_vars, internal_queue, writer)?;
 
         // Deactivate the State
         self.deactivate();
@@ -235,13 +238,14 @@ impl State {
     fn execute_onentry<W>(
         &self,
         sys_vars: &mut SystemVariables,
+        internal_queue: &mut VecDeque<Event>,
         writer: &mut W,
     ) -> Result<(), StateError>
     where
         W: Write,
     {
         for exec_content in &self.onentry {
-            exec_content.execute(sys_vars, writer)?;
+            exec_content.execute(sys_vars, internal_queue, writer)?;
         }
 
         Ok(())
@@ -250,13 +254,14 @@ impl State {
     fn execute_onexit<W>(
         &self,
         sys_vars: &mut SystemVariables,
+        internal_queue: &mut VecDeque<Event>,
         writer: &mut W,
     ) -> Result<(), StateError>
     where
         W: Write,
     {
         for exec_content in &self.onexit {
-            exec_content.execute(sys_vars, writer)?;
+            exec_content.execute(sys_vars, internal_queue, writer)?;
         }
 
         Ok(())
@@ -506,7 +511,7 @@ impl fmt::Display for StateBuilderError {
 #[cfg(test)]
 mod tests {
 
-    use std::error::Error;
+    use std::{collections::VecDeque, error::Error};
 
     use crate::{executable_content::ExecutableContent, state::StateBuilder, SystemVariables};
 
@@ -518,6 +523,7 @@ mod tests {
     fn failed_onexit() -> TestResult {
         // Create dummy params
         let mut sys_vars = SystemVariables::default();
+        let mut internal_queue = VecDeque::new();
         let mut buffer = Vec::new();
 
         // Build State, which will fail its 2nd onexit callback
@@ -534,7 +540,9 @@ mod tests {
 
         // Enter the State and verify the onexit fails as expected
         assert_eq!(
-            terminal.exit(&mut sys_vars, &mut buffer).is_err(),
+            terminal
+                .exit(&mut sys_vars, &mut internal_queue, &mut buffer)
+                .is_err(),
             true,
             "Failed to catch a failed onexit callback"
         );
@@ -548,6 +556,7 @@ mod tests {
     fn failed_onentry() -> TestResult {
         // Create dummy params
         let mut sys_vars = SystemVariables::default();
+        let mut internal_queue = VecDeque::new();
         let mut buffer = Vec::new();
 
         // Build State, which will fail its 2nd onentry callback
@@ -564,7 +573,9 @@ mod tests {
 
         // Enter the State and verify the onentry fails as expected
         assert_eq!(
-            terminal.enter(&mut sys_vars, &mut buffer).is_err(),
+            terminal
+                .enter(&mut sys_vars, &mut internal_queue, &mut buffer)
+                .is_err(),
             true,
             "Failed to catch a failed onentry callback"
         );
