@@ -91,7 +91,10 @@ impl ExecutableContent {
                 Self::execute_if(branch_table, sys_vars, internal_queue, writer)
             }
             Self::Log(label, expr) => Self::execute_log(label, expr, sys_vars, writer),
-            Self::Raise(event) => Ok(Self::execute_raise(event, internal_queue)),
+            Self::Raise(event) => {
+                Self::execute_raise(event, internal_queue);
+                Ok(())
+            }
             _ => todo!(
                 "Attempted to execute unimplemented ExecutableContent '{:?}'",
                 self

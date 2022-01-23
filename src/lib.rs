@@ -824,12 +824,18 @@ COND: Powering off\n",
 
     #[test]
     fn raise_verification() -> TestResult {
-        let mut stdout = io::stdout();
+        // Establish verification buffer
+        let verf_buffer = String::from(
+            "turned on
+BEFORE auto.off
+turned off\n",
+        );
+        let mut buffer = Vec::new();
 
         // Parse a StateChart from the contrived SCXML file to verify proper function of <raise>
         // and the internal event queue
         let mut statechart =
-            StateChart::<io::Stdout>::from("res/test_cases/raise_verf.scxml", &mut stdout)?;
+            StateChart::<Vec<u8>>::from("res/test_cases/raise_verf.scxml", &mut buffer)?;
 
         // Create events to be sent (already registered by parsing process)
         let turn_on = Event::from("turn.on")?;
@@ -837,7 +843,7 @@ COND: Powering off\n",
         // Process the events
         statechart.process_external_event(&turn_on)?;
 
-        //FIXME: assert_eq for log output
+        assert_eq!(String::from_utf8(buffer)?, verf_buffer);
 
         Ok(())
     }
