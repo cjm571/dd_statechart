@@ -22,11 +22,13 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+use std::collections::VecDeque;
 use std::io::{self, Write};
 use std::{error::Error, fmt};
 
 use crate::{
     datamodel::SystemVariables,
+    event::Event,
     interpreter::{Interpreter, InterpreterError},
 };
 
@@ -50,7 +52,7 @@ pub enum ExecutableContent {
         String, /* Label */
         String, /* Value expression string */
     ),
-    Raise,  /* FEAT: <raise> */
+    Raise(Event /* Event to raise */),
     Script, /* FEAT: <script> */
     Send,   /* FEAT: <send> */
 }
@@ -77,6 +79,7 @@ impl ExecutableContent {
     pub fn execute<W>(
         &self,
         sys_vars: &mut SystemVariables,
+        internal_queue: &mut VecDeque<Event>,
         writer: &mut W,
     ) -> Result<(), ExecutableContentError>
     where
@@ -84,8 +87,14 @@ impl ExecutableContent {
     {
         match self {
             Self::Assign(location, expr) => Self::execute_assign(location, expr, sys_vars),
-            Self::BranchTable(branch_table) => Self::execute_if(branch_table, sys_vars, writer),
+            Self::BranchTable(branch_table) => {
+                Self::execute_if(branch_table, sys_vars, internal_queue, writer)
+            }
             Self::Log(label, expr) => Self::execute_log(label, expr, sys_vars, writer),
+            Self::Raise(event) => {
+                Self::execute_raise(event, internal_queue);
+                Ok(())
+            }
             _ => todo!(
                 "Attempted to execute unimplemented ExecutableContent '{:?}'",
                 self
@@ -116,6 +125,7 @@ impl ExecutableContent {
     fn execute_if<W>(
         branch_table: &[BranchTableEntry],
         sys_vars: &mut SystemVariables,
+        internal_queue: &mut VecDeque<Event>,
         writer: &mut W,
     ) -> Result<(), ExecutableContentError>
     where
@@ -127,7 +137,7 @@ impl ExecutableContent {
             if Interpreter::new(branch.cond()).interpret_as_bool(sys_vars)? {
                 // Branch passed, execute its content in order and break loop
                 for exec_content_element in branch.exec_content() {
-                    exec_content_element.execute(sys_vars, writer)?;
+                    exec_content_element.execute(sys_vars, internal_queue, writer)?;
                 }
 
                 break;
@@ -168,6 +178,11 @@ impl ExecutableContent {
         }
 
         Ok(())
+    }
+
+    fn execute_raise(event: &Event, internal_queue: &mut VecDeque<Event>) {
+        // Push clone of event onto the back of the internal queue
+        internal_queue.push_back(event.clone());
     }
 }
 
@@ -253,6 +268,7 @@ impl From<std::io::Error> for ExecutableContentError {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
     use std::error::Error;
     use std::io;
 
@@ -265,6 +281,7 @@ mod tests {
     type TestResult = Result<(), Box<dyn Error>>;
 
     mod assign {
+
         use super::*;
 
         #[test]
@@ -272,6 +289,7 @@ mod tests {
             let location = "loc".to_string();
             let initial_val = EcmaScriptValue::Boolean(false);
             let expr = "true".to_string();
+            let mut internal_queue = VecDeque::new();
 
             // Create a basic assignment statement and valid data model for it to act on
             let assignment = ExecutableContent::Assign(location.clone(), expr.clone());
@@ -282,7 +300,7 @@ mod tests {
             eprintln!("=== Initial Data Model:\n{:?}", sys_vars._x());
 
             // Execute the assignment
-            assignment.execute(&mut sys_vars, &mut io::stdout())?;
+            assignment.execute(&mut sys_vars, &mut internal_queue, &mut io::stdout())?;
 
             // Display final conditions
             eprintln!("=== Final Data Model:\n{:?}", sys_vars._x());
@@ -301,6 +319,7 @@ mod tests {
             let location = "loc".to_string();
             let initial_val = EcmaScriptValue::Number(0.0);
             let expr = "loc + 1".to_string();
+            let mut internal_queue = VecDeque::new();
 
             // Create a meta assignment statement and valid data model for it to act on
             let assignment = ExecutableContent::Assign(location.clone(), expr.clone());
@@ -313,7 +332,7 @@ mod tests {
             // Execute the assignment several times
             let executions = 4;
             for _ in 0..executions {
-                assignment.execute(&mut sys_vars, &mut io::stdout())?;
+                assignment.execute(&mut sys_vars, &mut internal_queue, &mut io::stdout())?;
             }
 
             // Display final conditions
@@ -338,6 +357,7 @@ mod tests {
         fn basic_logging() -> TestResult {
             let label = "LABEL".to_string();
             let expr = "\'This is a log message.\'".to_string();
+            let mut internal_queue = VecDeque::new();
 
             // Create a buffer to capture the log output
             let mut buffer = Vec::new();
@@ -347,7 +367,7 @@ mod tests {
             let mut sys_vars = SystemVariables::default();
 
             // Execute the log action
-            log_action.execute(&mut sys_vars, &mut buffer)?;
+            log_action.execute(&mut sys_vars, &mut internal_queue, &mut buffer)?;
 
             // Capture output and verify
             let output = String::from_utf8(buffer)?;
@@ -367,6 +387,7 @@ mod tests {
         fn empty_logging() -> TestResult {
             let label = "".to_string();
             let expr = "".to_string();
+            let mut internal_queue = VecDeque::new();
 
             // Create a buffer to capture the log output
             let mut buffer = Vec::new();
@@ -376,7 +397,7 @@ mod tests {
             let mut sys_vars = SystemVariables::default();
 
             // Execute the log action
-            log_action.execute(&mut sys_vars, &mut buffer)?;
+            log_action.execute(&mut sys_vars, &mut internal_queue, &mut buffer)?;
 
             // Capture output and verify
             let output = String::from_utf8(buffer)?;
@@ -389,6 +410,7 @@ mod tests {
         fn parsed_logging() -> TestResult {
             let label = "RESULT".to_string();
             let expr = "5.5 + 3".to_string();
+            let mut internal_queue = VecDeque::new();
 
             // Create a buffer to capture the log output
             let mut buffer = Vec::new();
@@ -398,7 +420,7 @@ mod tests {
             let mut sys_vars = SystemVariables::default();
 
             // Execute the log action
-            log_action.execute(&mut sys_vars, &mut buffer)?;
+            log_action.execute(&mut sys_vars, &mut internal_queue, &mut buffer)?;
 
             // Capture output and verify
             let output = String::from_utf8(buffer)?;
