@@ -314,13 +314,13 @@ impl<'w, W: 'w + Write> StateChart<'w, W> {
 
 
 impl<'w, W: 'w + Write> StateChartBuilder<'w, W> {
-    pub fn new(writer: &'w mut W) -> Self {
-        Self {
+    pub fn new(writer: &'w mut W) -> Result<Self, std::io::Error> {
+        Ok ( Self {
             initial: Option::default(),
             registry: Registry::default(),
-            sys_vars: SystemVariables::default(),
+            sys_vars: SystemVariables::new_default()?,
             writer,
-        }
+        } )
     }
 
     /*  *  *  *  *  *  *  *\
@@ -579,7 +579,7 @@ mod tests {
 
         // Build statechart
         let mut dev_null = io::sink();
-        let mut statechart = StateChartBuilder::new(&mut dev_null)
+        let mut statechart = StateChartBuilder::new(&mut dev_null)?
             .name("theia")
             .initial(idle.id().to_string())
             .state(idle)?
@@ -616,7 +616,7 @@ mod tests {
 
         // Create the statechart object and add states to it
         let mut dev_null = io::sink();
-        let mut statechart_builder = StateChartBuilder::new(&mut dev_null);
+        let mut statechart_builder = StateChartBuilder::new(&mut dev_null)?;
         statechart_builder = statechart_builder.state(duplicate_a)?;
 
         // Verify that adding the duplicate ID results in an error
@@ -639,7 +639,7 @@ mod tests {
         let state = StateBuilder::new(String::from("state")).build()?;
 
         let mut dev_null = io::sink();
-        let mut statechart = StateChartBuilder::new(&mut dev_null)
+        let mut statechart = StateChartBuilder::new(&mut dev_null)?
             .state(state)?
             .build()?;
 
@@ -684,7 +684,7 @@ mod tests {
 
         // Create a StateChart containing all of the above
         let mut dev_null = io::sink();
-        let mut statechart = StateChartBuilder::new(&mut dev_null)
+        let mut statechart = StateChartBuilder::new(&mut dev_null)?
             .state(start)?
             .state(end)?
             .build()?;
@@ -869,7 +869,7 @@ mod builder_tests {
 
         // Attempt to build a StateChart with an unregistered initial ID
         let mut dev_null = io::sink();
-        let mut invalid_builder = StateChartBuilder::new(&mut dev_null);
+        let mut invalid_builder = StateChartBuilder::new(&mut dev_null)?;
         invalid_builder = invalid_builder
             .state(registered)?
             .initial(unregistered.id().to_string());
@@ -886,7 +886,7 @@ mod builder_tests {
     #[test]
     fn no_states_registered() -> TestResult {
         assert_eq!(
-            StateChartBuilder::new(&mut io::sink()).build().unwrap_err(),
+            StateChartBuilder::new(&mut io::sink())?.build().unwrap_err(),
             StateChartBuilderError::NoStatesRegistered,
             "Failed to catch that no states were registered"
         );

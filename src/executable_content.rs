@@ -293,7 +293,7 @@ mod tests {
 
             // Create a basic assignment statement and valid data model for it to act on
             let assignment = ExecutableContent::Assign(location.clone(), expr.clone());
-            let mut sys_vars = SystemVariables::default();
+            let mut sys_vars = SystemVariables::new_default()?;
             sys_vars.set_data_member(&location, initial_val);
 
             // Display initial conditions
@@ -323,7 +323,7 @@ mod tests {
 
             // Create a meta assignment statement and valid data model for it to act on
             let assignment = ExecutableContent::Assign(location.clone(), expr.clone());
-            let mut sys_vars = SystemVariables::default();
+            let mut sys_vars = SystemVariables::new_default()?;
             sys_vars.set_data_member(&location, initial_val.clone());
 
             // Display initial conditions
@@ -364,7 +364,7 @@ mod tests {
 
             // Create a log action and a valid data model
             let log_action = ExecutableContent::Log(label.clone(), expr.clone());
-            let mut sys_vars = SystemVariables::default();
+            let mut sys_vars = SystemVariables::new_default()?;
 
             // Execute the log action
             log_action.execute(&mut sys_vars, &mut internal_queue, &mut buffer)?;
@@ -394,7 +394,7 @@ mod tests {
 
             // Create a log action and a valid data model
             let log_action = ExecutableContent::Log(label, expr);
-            let mut sys_vars = SystemVariables::default();
+            let mut sys_vars = SystemVariables::new_default()?;
 
             // Execute the log action
             log_action.execute(&mut sys_vars, &mut internal_queue, &mut buffer)?;
@@ -417,7 +417,7 @@ mod tests {
 
             // Create a log action and a valid data model
             let log_action = ExecutableContent::Log(label.clone(), expr.clone());
-            let mut sys_vars = SystemVariables::default();
+            let mut sys_vars = SystemVariables::new_default()?;
 
             // Execute the log action
             log_action.execute(&mut sys_vars, &mut internal_queue, &mut buffer)?;

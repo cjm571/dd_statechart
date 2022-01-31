@@ -297,7 +297,7 @@ mod tests {
             Operator::Logical(LogicalOperator::EqualTo),
             Box::new(Expression::Literal(Literal::Number(int_val as f64))),
         );
-        let sys_vars = SystemVariables::default();
+        let sys_vars = SystemVariables::new_default()?;
         let evaluator = Evaluator::new(&expr, &sys_vars);
 
         eprintln!("Evaluating Expression '{}'...", expr);
@@ -325,7 +325,7 @@ mod tests {
             Operator::Arithmetic(ArithmeticOperator::Slash),
             Box::new(Expression::Literal(Literal::Number(int_val as f64))),
         );
-        let sys_vars = SystemVariables::default();
+        let sys_vars = SystemVariables::new_default()?;
         let evaluator = Evaluator::new(&expr, &sys_vars);
 
         eprintln!("Evaluating Expression '{}'...", expr);
@@ -350,7 +350,7 @@ mod tests {
             Operator::Arithmetic(ArithmeticOperator::Plus),
             Box::new(Expression::Literal(Literal::String(int_val.to_string()))),
         );
-        let sys_vars = SystemVariables::default();
+        let sys_vars = SystemVariables::new_default()?;
         let evaluator = Evaluator::new(&expr, &sys_vars);
 
         eprintln!("Evaluating Expression '{}'...", expr);
@@ -377,7 +377,7 @@ mod tests {
             Operator::Logical(LogicalOperator::EqualTo),
             Box::new(Expression::Literal(Literal::Null)),
         );
-        let sys_vars = SystemVariables::default();
+        let sys_vars = SystemVariables::new_default()?;
         let evaluator = Evaluator::new(&expr, &sys_vars);
 
         eprintln!("Evaluating Expression '{}'...", expr);
@@ -396,7 +396,7 @@ mod tests {
         // Create an expression with a nonexistent identifier
         let non_existent = "dne".to_string();
         let expr1 = Expression::Identifier(non_existent.clone());
-        let sys_vars1 = SystemVariables::default();
+        let sys_vars1 = SystemVariables::new_default()?;
 
         // Attempt to evaluate it
         let evaluator1 = Evaluator::new(&expr1, &sys_vars1);
@@ -409,7 +409,7 @@ mod tests {
         let extant = "hello".to_string();
         let expected = EcmaScriptValue::String(extant.clone());
         let expr2 = Expression::Identifier(extant.clone());
-        let mut sys_vars2 = SystemVariables::default();
+        let mut sys_vars2 = SystemVariables::new_default()?;
         sys_vars2.set_data_member(&extant, expected.clone());
 
         // Attempt to evaluate it
@@ -430,7 +430,7 @@ mod tests {
 
         // Attempt to evaluate it
         assert_eq!(
-            Evaluator::new(&expr, &SystemVariables::default(),).evaluate(),
+            Evaluator::new(&expr, &SystemVariables::new_default()?,).evaluate(),
             Err(EvaluatorError::StringNegation(test_str.clone()))
         );
 

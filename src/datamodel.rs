@@ -22,6 +22,7 @@ Purpose:
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 use std::{collections::HashMap, error::Error, fmt};
+use std::net::UdpSocket;
 
 use crate::{event::Event, interpreter::EcmaScriptValue, StateChartId};
 
@@ -29,17 +30,30 @@ use uuid::Uuid;
 
 
 ///////////////////////////////////////////////////////////////////////////////
+//  Named Constants
+///////////////////////////////////////////////////////////////////////////////
+
+const DEFAULT_UDP_SOCKET_ADDR: &str = "127.0.0.1:34254";
+
+
+///////////////////////////////////////////////////////////////////////////////
 //  Data Structures
 ///////////////////////////////////////////////////////////////////////////////
 
-//OPT: *PERFORMANCE* Clone is not necessary, but requires major re-architecting of StateChartBuilder
 #[derive(Clone, Debug, PartialEq)]
 pub struct SystemVariables {
     _event: Option<Event>,
     _sessionid: Uuid,
     _name: StateChartId,
-    _ioprocessors: Vec<String>,
+    _ioprocessors: Vec<IoProcessor>,
     _x: HashMap<String, EcmaScriptValue>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct IoProcessor {
+    name: String,
+    socket: UdpSocket,
+    location: String,
 }
 
 #[derive(Debug, PartialEq)]
@@ -52,7 +66,29 @@ pub enum DataModelError {
 //  Object Implementations
 ///////////////////////////////////////////////////////////////////////////////
 
+impl IoProcessor {
+    pub fn new_default() -> Result<Self, std::io::Error> {
+        Ok ( Self {
+            name: "http://www.w3.org/TR/scxml/#SCXMLEventProcessor".to_string(),
+            socket: UdpSocket::bind(DEFAULT_UDP_SOCKET_ADDR)?,
+            location: String::from(DEFAULT_UDP_SOCKET_ADDR),
+        } )
+    }
+}
+
+
 impl SystemVariables {
+    pub fn new_default() -> Result<Self, std::io::Error> {
+        Ok ( Self {
+            _event: None,
+            _sessionid: Uuid::new_v4(),
+            _name: String::default(),
+            _ioprocessors: vec![IoProcessor::new_default()?],
+            _x: HashMap::default(),
+        } )
+
+    }
+
     /*  *  *  *  *  *  *  *\
      *  Accessor Methods  *
     \*  *  *  *  *  *  *  */
@@ -109,22 +145,6 @@ impl fmt::Display for DataModelError {
                     identifier_name
                 )
             }
-        }
-    }
-}
-
-/*  *  *  *  *  *  *  *\
- *  SystemVariables   *
-\*  *  *  *  *  *  *  */
-
-impl Default for SystemVariables {
-    fn default() -> Self {
-        Self {
-            _event: None,
-            _sessionid: Uuid::new_v4(),
-            _name: String::new(),
-            _ioprocessors: Vec::new(),
-            _x: HashMap::default(),
         }
     }
 }

@@ -522,7 +522,7 @@ mod tests {
     #[test]
     fn failed_onexit() -> TestResult {
         // Create dummy params
-        let mut sys_vars = SystemVariables::default();
+        let mut sys_vars = SystemVariables::new_default()?;
         let mut internal_queue = VecDeque::new();
         let mut buffer = Vec::new();
 
@@ -555,7 +555,7 @@ mod tests {
     #[test]
     fn failed_onentry() -> TestResult {
         // Create dummy params
-        let mut sys_vars = SystemVariables::default();
+        let mut sys_vars = SystemVariables::new_default()?;
         let mut internal_queue = VecDeque::new();
         let mut buffer = Vec::new();
 

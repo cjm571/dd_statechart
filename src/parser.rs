@@ -112,7 +112,7 @@ impl<'w, W: 'w + Write> Parser<'w, W> {
         Ok(Self {
             path: path.to_string(),
             content: file_contents,
-            statechart_builder: StateChartBuilder::new(writer),
+            statechart_builder: StateChartBuilder::new(writer)?,
         })
     }
 
