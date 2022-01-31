@@ -21,8 +21,8 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-use std::{collections::HashMap, error::Error, fmt};
 use std::net::UdpSocket;
+use std::{collections::HashMap, error::Error, fmt};
 
 use crate::{event::Event, interpreter::EcmaScriptValue, StateChartId};
 
@@ -33,14 +33,14 @@ use uuid::Uuid;
 //  Named Constants
 ///////////////////////////////////////////////////////////////////////////////
 
-const DEFAULT_UDP_SOCKET_ADDR: &str = "127.0.0.1:34254";
+const OS_ASSIGNED_SOCKET_ADDR: &str = "0.0.0.0:0";
 
 
 ///////////////////////////////////////////////////////////////////////////////
 //  Data Structures
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct SystemVariables {
     _event: Option<Event>,
     _sessionid: Uuid,
@@ -49,7 +49,7 @@ pub struct SystemVariables {
     _x: HashMap<String, EcmaScriptValue>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug)]
 struct IoProcessor {
     name: String,
     socket: UdpSocket,
@@ -68,25 +68,35 @@ pub enum DataModelError {
 
 impl IoProcessor {
     pub fn new_default() -> Result<Self, std::io::Error> {
-        Ok ( Self {
+        let socket = UdpSocket::bind(OS_ASSIGNED_SOCKET_ADDR)?;
+        let location = socket.local_addr()?.to_string();
+
+        Ok(Self {
             name: "http://www.w3.org/TR/scxml/#SCXMLEventProcessor".to_string(),
-            socket: UdpSocket::bind(DEFAULT_UDP_SOCKET_ADDR)?,
-            location: String::from(DEFAULT_UDP_SOCKET_ADDR),
-        } )
+            socket,
+            location,
+        })
+    }
+
+    /*  *  *  *  *  *  *  *\
+     *  Accessor Methods  *
+    \*  *  *  *  *  *  *  */
+
+    pub fn location(&self) -> &str {
+        &self.location
     }
 }
 
 
 impl SystemVariables {
     pub fn new_default() -> Result<Self, std::io::Error> {
-        Ok ( Self {
+        Ok(Self {
             _event: None,
             _sessionid: Uuid::new_v4(),
             _name: String::default(),
             _ioprocessors: vec![IoProcessor::new_default()?],
             _x: HashMap::default(),
-        } )
-
+        })
     }
 
     /*  *  *  *  *  *  *  *\
@@ -128,6 +138,16 @@ impl SystemVariables {
 ///////////////////////////////////////////////////////////////////////////////
 //  Trait Implementations
 ///////////////////////////////////////////////////////////////////////////////
+
+/*  *  *  *  *  *  *  *\
+ *     IoProcessor    *
+\*  *  *  *  *  *  *  */
+impl PartialEq for IoProcessor {
+    fn eq(&self, other: &Self) -> bool {
+        (self.name == other.name) && (self.location == other.location)
+    }
+}
+
 
 /*  *  *  *  *  *  *  *\
  *   DataModelError   *

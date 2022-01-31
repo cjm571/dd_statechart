@@ -315,12 +315,12 @@ impl<'w, W: 'w + Write> StateChart<'w, W> {
 
 impl<'w, W: 'w + Write> StateChartBuilder<'w, W> {
     pub fn new(writer: &'w mut W) -> Result<Self, std::io::Error> {
-        Ok ( Self {
+        Ok(Self {
             initial: Option::default(),
             registry: Registry::default(),
             sys_vars: SystemVariables::new_default()?,
             writer,
-        } )
+        })
     }
 
     /*  *  *  *  *  *  *  *\
@@ -886,7 +886,9 @@ mod builder_tests {
     #[test]
     fn no_states_registered() -> TestResult {
         assert_eq!(
-            StateChartBuilder::new(&mut io::sink())?.build().unwrap_err(),
+            StateChartBuilder::new(&mut io::sink())?
+                .build()
+                .unwrap_err(),
             StateChartBuilderError::NoStatesRegistered,
             "Failed to catch that no states were registered"
         );
