@@ -52,6 +52,7 @@ pub struct SystemVariables {
 #[derive(Debug)]
 struct IoProcessor {
     name: String,
+    #[allow(dead_code)]
     socket: UdpSocket,
     location: String,
 }
@@ -82,6 +83,7 @@ impl IoProcessor {
      *  Accessor Methods  *
     \*  *  *  *  *  *  *  */
 
+    #[allow(dead_code)]
     pub fn location(&self) -> &str {
         &self.location
     }
