@@ -65,7 +65,11 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-use std::io::Write;
+use std::io::{self, Write};
+use std::net::UdpSocket;
+use std::string::FromUtf8Error;
+use std::sync::mpsc;
+use std::thread;
 use std::{collections::VecDeque, error::Error, fmt};
 
 
@@ -84,7 +88,7 @@ pub mod transition;
 
 use crate::{
     datamodel::{DataModelError, SystemVariables},
-    event::Event,
+    event::{Event, EventError},
     executable_content::ExecutableContentError,
     interpreter::EcmaScriptValue,
     parser::{Parser, ParserError},
@@ -118,6 +122,7 @@ pub enum StateChartError {
 
     // Wrappers
     ExecutableContentError(ExecutableContentError),
+    IoProcessorError(IoProcessorError),
     ParserError(ParserError),
     RegistryError(RegistryError),
     StateError(StateError),
@@ -141,12 +146,21 @@ pub enum StateChartBuilderError {
     RegistryError(RegistryError),
 }
 
+//FIXME: Break this out into its own file?
+#[derive(Debug, PartialEq)]
+pub enum IoProcessorError {
+    // Wrappers
+    EventError(EventError),
+    FromUtf8Error(FromUtf8Error),
+    IoError(io::ErrorKind),
+}
+
 
 ///////////////////////////////////////////////////////////////////////////////
 //  Object Implementations
 ///////////////////////////////////////////////////////////////////////////////
 
-impl<'w, W: 'w + Write> StateChart<'w, W> {
+impl<'w, W: 'w + Write + Sync> StateChart<'w, W> {
     pub fn from(path: &str, writer: &'w mut W) -> Result<Self, StateChartError> {
         // Parse the SCXML doc at the given path
         Parser::new(path, writer)
@@ -173,6 +187,37 @@ impl<'w, W: 'w + Write> StateChart<'w, W> {
     /*  *  *  *  *  *  *  *\
      *  Utility Methods   *
     \*  *  *  *  *  *  *  */
+
+    pub fn spawn_io_processors_and_listener(&self) -> Result<(), StateChartError> {
+        //FEAT: Need to handle multiple processors as they are added
+
+        // // Spawn threads to listen for Events
+        // for io_processor in self.sys_vars._ioprocessors() {
+        //     thread::spawn(move || self.exec_io_processor(io_processor.socket()));
+        // }
+
+        // Create the sender/receiver pair to be used to get Events from the IO Processor(s)
+        //FEAT: Need this to be an EventPacket or something, to include metadata specified in SCXML Spec.
+        let (event_sender, event_rcvr) = mpsc::channel::<Event>();
+
+        let owned_socket = self.sys_vars._ioprocessors()[0].socket_owned();
+        thread::spawn(move || Self::exec_io_processor(owned_socket, event_sender));
+
+        //FIXME: PICKUP HERE!!!!!!
+        // add while loop to listen for event packets, and rename this function to indicate it's a forever loop
+        loop {
+            let rcvd_event = event_rcvr.recv().unwrap();
+            eprintln!("LISTENER: Received Event {:?}", rcvd_event);
+
+            #[cfg(test)]
+            {
+                // Implement a "kill switch" so tests don't last forever
+                if rcvd_event.id() == "KILL" {
+                    return Ok(());
+                }
+            }
+        }
+    }
 
     pub fn process_external_event(&mut self, event: &Event) -> Result<(), StateChartError> {
         // Ensure the given Event is registered
@@ -310,6 +355,44 @@ impl<'w, W: 'w + Write> StateChart<'w, W> {
 
         Ok(())
     }
+
+
+    /*  *  *  *  *  *  *  *\
+     *  Helper Functions  *
+    \*  *  *  *  *  *  *  */
+
+    pub fn exec_io_processor(
+        socket: UdpSocket,
+        event_sender: mpsc::Sender<Event>,
+    ) -> Result<(), IoProcessorError> {
+        // Establish buffer to hold external Event data
+        let mut buf = [0; 30];
+
+        // Begin listening for external Events on the sockets
+        eprintln!(
+            "Listening for Events on UDP Port {}...",
+            socket.local_addr()?
+        );
+        while let Ok((bytes_recvd, src_addr)) = socket.recv_from(&mut buf) {
+            let rcvd_string = String::from_utf8(buf[0..bytes_recvd].to_vec())?
+                .trim()
+                .to_string();
+            eprintln!(
+                "Received {} bytes from {} on UDP Port {}:\n{:?}",
+                bytes_recvd,
+                src_addr,
+                socket.local_addr()?,
+                rcvd_string
+            );
+
+            // Create an event from packet and send back to the listener on the main thread
+            //FIXME: Don't return here on error - catch and log
+            let parsed_event = Event::from(&rcvd_string)?;
+            event_sender.send(parsed_event).unwrap();
+        }
+
+        Ok(())
+    }
 }
 
 
@@ -431,6 +514,13 @@ impl fmt::Display for StateChartError {
                     exec_err
                 )
             }
+            Self::IoProcessorError(iop_err) => {
+                write!(
+                    f,
+                    "IoProcessorError '{:?}' encountered while processing state chart",
+                    iop_err
+                )
+            }
             Self::ParserError(parse_err) => {
                 write!(
                     f,
@@ -459,6 +549,11 @@ impl fmt::Display for StateChartError {
 impl From<ExecutableContentError> for StateChartError {
     fn from(src: ExecutableContentError) -> Self {
         Self::ExecutableContentError(src)
+    }
+}
+impl From<IoProcessorError> for StateChartError {
+    fn from(src: IoProcessorError) -> Self {
+        Self::IoProcessorError(src)
     }
 }
 impl From<RegistryError> for StateChartError {
@@ -524,13 +619,69 @@ impl From<RegistryError> for StateChartBuilderError {
 }
 
 
+/*  *  *  *  *  *  *  *\
+ *  IoProcessorError  *
+\*  *  *  *  *  *  *  */
+
+impl Error for IoProcessorError {}
+
+impl fmt::Display for IoProcessorError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::EventError(event_error) => {
+                write!(
+                    f,
+                    "EventError '{:?}' encountered while processing IO events",
+                    event_error
+                )
+            }
+            Self::FromUtf8Error(utf8_err) => {
+                write!(
+                    f,
+                    "FromUtf8Error '{:?}' encountered while processing IO events",
+                    utf8_err
+                )
+            }
+            Self::IoError(io_err) => {
+                write!(
+                    f,
+                    "IoError of ErrorKind'{:?}' encountered while processing IO events",
+                    io_err
+                )
+            }
+        }
+    }
+}
+
+impl From<EventError> for IoProcessorError {
+    fn from(src: EventError) -> Self {
+        Self::EventError(src)
+    }
+}
+impl From<FromUtf8Error> for IoProcessorError {
+    fn from(src: FromUtf8Error) -> Self {
+        Self::FromUtf8Error(src)
+    }
+}
+impl From<io::Error> for IoProcessorError {
+    fn from(src: io::Error) -> Self {
+        Self::IoError(src.kind())
+    }
+}
+
+
 ///////////////////////////////////////////////////////////////////////////////
 //  Unit Tests
 ///////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
-    use std::{error::Error, fmt, io};
+    use std::{
+        error::Error,
+        fmt, io,
+        net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
+        sync::mpsc,
+    };
 
     use crate::{
         event::Event, interpreter::EcmaScriptValue, registry::RegistryError, state::StateBuilder,
@@ -823,6 +974,7 @@ COND: Powering off\n",
     }
 
     #[test]
+
     fn raise_verification() -> TestResult {
         // Establish verification buffer
         let verf_buffer = String::from(
@@ -844,6 +996,29 @@ turned off\n",
         statechart.process_external_event(&turn_on)?;
 
         assert_eq!(String::from_utf8(buffer)?, verf_buffer);
+
+        Ok(())
+    }
+
+    #[test]
+    fn exec_io_processor() -> TestResult {
+        // Create dummy UDP socket and sender/receiver pair
+        let socket = UdpSocket::bind("0.0.0.0:0")?;
+        let socket_port = socket.local_addr()?.port();
+        let (event_sender, event_rcvr) = mpsc::channel::<Event>();
+
+        // Spawn IO Processor thread
+        std::thread::spawn(move || StateChart::<Vec<u8>>::exec_io_processor(socket, event_sender));
+
+        // Create a test socket and use it to send a test packet to the IO processor
+        let test_socket = UdpSocket::bind("0.0.0.0:0")?;
+        let iop_socket_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), socket_port);
+        test_socket.send_to("test".as_bytes(), iop_socket_addr)?;
+
+        // Verify that the test packet was received and processed successfully
+        if let Ok(rcvd_event) = event_rcvr.recv_timeout(std::time::Duration::from_millis(10000)) {
+            assert_eq!(rcvd_event, Event::from("test")?);
+        }
 
         Ok(())
     }

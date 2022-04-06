@@ -10,3 +10,4 @@ Cargo.lock
 
 # Syncthing
 .stignore
+.stignore_synced

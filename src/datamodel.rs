@@ -50,7 +50,7 @@ pub struct SystemVariables {
 }
 
 #[derive(Debug)]
-struct IoProcessor {
+pub struct IoProcessor {
     name: String,
     socket: UdpSocket,
     location: String,
@@ -85,6 +85,15 @@ impl IoProcessor {
     pub fn location(&self) -> &str {
         &self.location
     }
+
+    pub fn socket(&self) -> &UdpSocket {
+        &self.socket
+    }
+
+    //FIXME: UNWRAP()
+    pub fn socket_owned(&self) -> UdpSocket {
+        self.socket.try_clone().unwrap()
+    }
 }
 
 
@@ -105,6 +114,10 @@ impl SystemVariables {
 
     pub fn _event(&self) -> Option<Event> {
         self._event.as_ref().cloned()
+    }
+
+    pub fn _ioprocessors(&self) -> &Vec<IoProcessor> {
+        &self._ioprocessors
     }
 
     pub fn _x(&self) -> &HashMap<String, EcmaScriptValue> {
