@@ -160,7 +160,7 @@ impl TransitionBuilder {
         // Assemble the components of the fingerprint
         let mut fingerprint_components = vec![self.source_id.clone()];
         for event in &self.events {
-            fingerprint_components.push(event.id());
+            fingerprint_components.push(event.name());
         }
         fingerprint_components.push(self.cond.clone());
         for target_id in &self.target_ids {

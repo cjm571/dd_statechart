@@ -89,7 +89,6 @@ impl Event {
 
         Ok(Self {
             name_nodes: composed_nodes,
-            //FEAT: Support external events
             event_type: EventType::Platform,
         })
     }
@@ -99,7 +98,7 @@ impl Event {
      *  Accessor Methods  *
     \*  *  *  *  *  *  *  */
 
-    pub fn id(&self) -> String {
+    pub fn name(&self) -> String {
         let mut composed_id = String::new();
 
         for node in &self.name_nodes {
@@ -110,6 +109,8 @@ impl Event {
 
         composed_id
     }
+
+    
 }
 
 

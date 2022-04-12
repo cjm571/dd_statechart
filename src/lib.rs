@@ -212,7 +212,7 @@ impl<'w, W: 'w + Write + Sync> StateChart<'w, W> {
             #[cfg(test)]
             {
                 // Implement a "kill switch" so tests don't last forever
-                if rcvd_event.id() == "KILL" {
+                if rcvd_event.name() == "KILL" {
                     return Ok(());
                 }
             }
