@@ -39,8 +39,9 @@ use std::{error::Error, fmt};
 //FEAT: Align this struct with §5.10.1
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Event {
-    id_nodes: Vec<String>,
+    name_nodes: Vec<String>,
     event_type: EventType,
+    // sendid
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -87,7 +88,7 @@ impl Event {
         }
 
         Ok(Self {
-            id_nodes: composed_nodes,
+            name_nodes: composed_nodes,
             //FEAT: Support external events
             event_type: EventType::Platform,
         })
@@ -101,7 +102,7 @@ impl Event {
     pub fn id(&self) -> String {
         let mut composed_id = String::new();
 
-        for node in &self.id_nodes {
+        for node in &self.name_nodes {
             composed_id.push_str(node);
             composed_id.push('.');
         }
@@ -122,7 +123,7 @@ impl Event {
 
 impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut id_node_iter = self.id_nodes.iter().peekable();
+        let mut id_node_iter = self.name_nodes.iter().peekable();
 
         while let Some(id_node) = id_node_iter.next() {
             write!(f, "{}", id_node)?;
