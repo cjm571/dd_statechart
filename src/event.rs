@@ -82,6 +82,10 @@ impl Event {
 
         composed_id
     }
+
+    pub fn event_type(&self) -> EventType {
+        self.event_type
+    }
 }
 
 
@@ -121,11 +125,17 @@ impl EventBuilder {
      *  Builder Methods   *
     \*  *  *  *  *  *  *  */
 
-    pub fn build(mut self) -> Result<Event, EventBuilderError> {
+    pub fn build(self) -> Result<Event, EventBuilderError> {
         Ok(Event {
             name_nodes: self.name_nodes,
             event_type: self.event_type,
         })
+    }
+
+    pub fn event_type(mut self, event_type: EventType) -> Self {
+        self.event_type = event_type;
+
+        self
     }
 }
 
@@ -216,6 +226,8 @@ mod builder_tests {
 
     use crate::event::{EventBuilder, EventBuilderError};
 
+    use super::EventType;
+
 
     type TestResult = Result<(), Box<dyn Error>>;
 
@@ -257,6 +269,19 @@ mod builder_tests {
             )),
             "Failed to catch empty node"
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn event_type() -> TestResult {
+        let event_type = EventType::External;
+
+        let event = EventBuilder::new("external")?
+            .event_type(event_type)
+            .build()?;
+
+        assert_eq!(event.event_type(), event_type);
 
         Ok(())
     }
