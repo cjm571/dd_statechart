@@ -110,7 +110,7 @@ impl EventBuilder {
             composed_nodes.push(String::from(*node));
         }
 
-        Ok( Self {
+        Ok(Self {
             name_nodes: composed_nodes,
             event_type: EventType::Internal,
         })
@@ -193,7 +193,6 @@ mod tests {
     type TestResult = Result<(), Box<dyn Error>>;
 
 
-
     #[test]
     fn output() -> TestResult {
         let source = "error.send.failed";
@@ -220,7 +219,7 @@ mod builder_tests {
 
     type TestResult = Result<(), Box<dyn Error>>;
 
-    
+
     #[test]
     fn id_contains_duplicates() -> TestResult {
         let valid_string = "error.send.failed";
@@ -252,7 +251,10 @@ mod builder_tests {
         // Verify empty node is caught
         assert_eq!(
             EventBuilder::new(empty_node),
-            Err(EventBuilderError::NameNodeIsEmpty(String::from(empty_node), 3)),
+            Err(EventBuilderError::NameNodeIsEmpty(
+                String::from(empty_node),
+                3
+            )),
             "Failed to catch empty node"
         );
 

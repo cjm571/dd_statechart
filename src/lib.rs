@@ -684,9 +684,12 @@ mod tests {
     };
 
     use crate::{
-        event::{Event, EventBuilder}, interpreter::EcmaScriptValue, registry::RegistryError, state::StateBuilder,
-        transition::TransitionBuilder, StateChart, StateChartBuilder, StateChartBuilderError,
-        StateChartError,
+        event::{Event, EventBuilder},
+        interpreter::EcmaScriptValue,
+        registry::RegistryError,
+        state::StateBuilder,
+        transition::TransitionBuilder,
+        StateChart, StateChartBuilder, StateChartBuilderError, StateChartError,
     };
 
 

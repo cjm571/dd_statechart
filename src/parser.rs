@@ -476,7 +476,9 @@ impl<'w, W: 'w + Write> Parser<'w, W> {
     fn parse_raise(element: Node) -> Result<ExecutableContent, ParserError> {
         // Extract the Event parameter of the <raise> element
         if let Some(event_str) = element.attribute("event") {
-            Ok(ExecutableContent::Raise(EventBuilder::new(event_str)?.build()?))
+            Ok(ExecutableContent::Raise(
+                EventBuilder::new(event_str)?.build()?,
+            ))
         } else {
             Err(ParserError::RaiseWithoutEvent(format!("{:?}", element)))
         }
@@ -926,7 +928,9 @@ mod tests {
 
         assert_eq!(
             parser.parse().unwrap_err(),
-            ParserError::EventError(EventBuilderError::IdContainsDuplicates("turn.on.on".to_string()))
+            ParserError::EventError(EventBuilderError::IdContainsDuplicates(
+                "turn.on.on".to_string()
+            ))
         );
 
         Ok(())
