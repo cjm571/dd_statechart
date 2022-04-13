@@ -28,7 +28,7 @@ use std::{error::Error, fmt, fs};
 
 use crate::{
     datamodel::{DataModelError, SystemVariables},
-    event::{Event, EventError},
+    event::{EventBuilder, EventBuilderError},
     executable_content::{BranchTableEntry, ExecutableContent},
     interpreter::{Interpreter, InterpreterError},
     registry::RegistryError,
@@ -81,7 +81,7 @@ pub enum ParserError {
 
     // Wrappers
     DataModelError(DataModelError),
-    EventError(EventError),
+    EventError(EventBuilderError),
     InterpreterError(InterpreterError),
     IoError(std::io::ErrorKind),
     RegistryError(RegistryError),
@@ -319,7 +319,7 @@ impl<'w, W: 'w + Write> Parser<'w, W> {
         if let Some(event_ids) = element.attribute("event").map(|v| v.split_whitespace()) {
             for event_id in event_ids {
                 // Create an event and add it to the builder
-                let event = Event::from(event_id)?;
+                let event = EventBuilder::new(event_id)?.build()?;
                 transition_builder = transition_builder.event(&event)?;
             }
         }
@@ -476,7 +476,7 @@ impl<'w, W: 'w + Write> Parser<'w, W> {
     fn parse_raise(element: Node) -> Result<ExecutableContent, ParserError> {
         // Extract the Event parameter of the <raise> element
         if let Some(event_str) = element.attribute("event") {
-            Ok(ExecutableContent::Raise(Event::from(event_str)?))
+            Ok(ExecutableContent::Raise(EventBuilder::new(event_str)?.build()?))
         } else {
             Err(ParserError::RaiseWithoutEvent(format!("{:?}", element)))
         }
@@ -637,8 +637,8 @@ impl From<DataModelError> for ParserError {
         Self::DataModelError(src)
     }
 }
-impl From<EventError> for ParserError {
-    fn from(src: EventError) -> Self {
+impl From<EventBuilderError> for ParserError {
+    fn from(src: EventBuilderError) -> Self {
         Self::EventError(src)
     }
 }
@@ -690,7 +690,7 @@ mod tests {
     use std::io;
 
     use crate::{
-        event::{Event, EventError},
+        event::{EventBuilder, EventBuilderError},
         parser::{Parser, ParserError},
         registry::RegistryError,
         state::StateBuilderError,
@@ -926,7 +926,7 @@ mod tests {
 
         assert_eq!(
             parser.parse().unwrap_err(),
-            ParserError::EventError(EventError::IdContainsDuplicates("turn.on.on".to_string()))
+            ParserError::EventError(EventBuilderError::IdContainsDuplicates("turn.on.on".to_string()))
         );
 
         Ok(())
@@ -1029,7 +1029,7 @@ mod tests {
         assert_eq!(
             parser.parse().unwrap_err(),
             ParserError::TransitionBuilderError(TransitionBuilderError::DuplicateEventId(
-                Event::from("turn.on")?
+                EventBuilder::new("turn.on")?.build()?
             ))
         );
 
@@ -1051,7 +1051,7 @@ mod tests {
 
         // Send turn-on event
         eprintln!("*** Sending 'turn.on' Event...");
-        let turn_on = Event::from("turn.on")?;
+        let turn_on = EventBuilder::new("turn.on")?.build()?;
         statechart.process_external_event(&turn_on)?;
 
         eprintln!("*** Active State(s):\n{:#?}", statechart.active_state_ids());
@@ -1062,7 +1062,7 @@ mod tests {
 
         // Send a door-open event
         eprintln!("*** Sending 'door.open' Event...");
-        let door_open = Event::from("door.open")?;
+        let door_open = EventBuilder::new("door.open")?.build()?;
         statechart.process_external_event(&door_open)?;
 
         eprintln!("*** Active State(s):\n{:#?}", statechart.active_state_ids());
@@ -1073,7 +1073,7 @@ mod tests {
 
         // Send a door-close event
         eprintln!("*** Sending 'door.close' Event...");
-        let door_close = Event::from("door.close")?;
+        let door_close = EventBuilder::new("door.close")?.build()?;
         statechart.process_external_event(&door_close)?;
 
         eprintln!("*** Active State(s):\n{:#?}", statechart.active_state_ids());
@@ -1083,7 +1083,7 @@ mod tests {
         );
 
         // Send time event 6x
-        let time = Event::from("time")?;
+        let time = EventBuilder::new("time")?.build()?;
         for _ in 0..5 {
             eprintln!("*** Sending 'time' Event...");
             statechart.process_external_event(&time)?;

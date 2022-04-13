@@ -321,7 +321,7 @@ mod tests {
     use std::error::Error;
 
     use crate::{
-        event::Event,
+        event::EventBuilder,
         registry::{Registry, RegistryError},
         state::{State, StateBuilder},
         transition::TransitionFingerprint,
@@ -336,8 +336,8 @@ mod tests {
 
         let state_a = StateBuilder::new(String::from(state_id)).build()?;
         let state_b = StateBuilder::new(String::from(state_id)).build()?;
-        let event_a = Event::from(event_id)?;
-        let event_b = Event::from(event_id)?;
+        let event_a = EventBuilder::new(event_id)?.build()?;
+        let event_b = EventBuilder::new(event_id)?.build()?;
 
         // Create the Registry and register the elements
         let mut registry = Registry::default();

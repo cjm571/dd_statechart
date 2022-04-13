@@ -88,7 +88,7 @@ pub mod transition;
 
 use crate::{
     datamodel::{DataModelError, SystemVariables},
-    event::{Event, EventError},
+    event::{Event, EventBuilder, EventBuilderError},
     executable_content::ExecutableContentError,
     interpreter::EcmaScriptValue,
     parser::{Parser, ParserError},
@@ -150,7 +150,7 @@ pub enum StateChartBuilderError {
 #[derive(Debug, PartialEq)]
 pub enum IoProcessorError {
     // Wrappers
-    EventError(EventError),
+    EventError(EventBuilderError),
     FromUtf8Error(FromUtf8Error),
     IoError(io::ErrorKind),
 }
@@ -387,7 +387,7 @@ impl<'w, W: 'w + Write + Sync> StateChart<'w, W> {
 
             // Create an event from packet and send back to the listener on the main thread
             //FIXME: Don't return here on error - catch and log
-            let parsed_event = Event::from(&rcvd_string)?;
+            let parsed_event = EventBuilder::new(&rcvd_string)?.build()?;
             event_sender.send(parsed_event).unwrap();
         }
 
@@ -653,8 +653,8 @@ impl fmt::Display for IoProcessorError {
     }
 }
 
-impl From<EventError> for IoProcessorError {
-    fn from(src: EventError) -> Self {
+impl From<EventBuilderError> for IoProcessorError {
+    fn from(src: EventBuilderError) -> Self {
         Self::EventError(src)
     }
 }
@@ -684,7 +684,7 @@ mod tests {
     };
 
     use crate::{
-        event::Event, interpreter::EcmaScriptValue, registry::RegistryError, state::StateBuilder,
+        event::{Event, EventBuilder}, interpreter::EcmaScriptValue, registry::RegistryError, state::StateBuilder,
         transition::TransitionBuilder, StateChart, StateChartBuilder, StateChartBuilderError,
         StateChartError,
     };
@@ -705,7 +705,7 @@ mod tests {
     #[test]
     fn theia() -> TestResult {
         // Define Event and State IDs for reference
-        let go_to_non_imaging = Event::from("go_to_non_imaging")?;
+        let go_to_non_imaging = EventBuilder::new("go_to_non_imaging")?.build()?;
         let idle_id = String::from("IDLE");
         let diagnostic_id = String::from("DIAGNOSTIC");
         let non_imaging_id = String::from("NON-IMAGING");
@@ -785,7 +785,7 @@ mod tests {
     #[test]
     fn unregistered_event() -> TestResult {
         // Create an event but don't register it
-        let unregistered_event = Event::from("unregistered")?;
+        let unregistered_event = EventBuilder::new("unregistered")?.build()?;
 
         let state = StateBuilder::new(String::from("state")).build()?;
 
@@ -813,7 +813,7 @@ mod tests {
 
         // Create an event for the eventful Transition
         let event_id = "test.event";
-        let event = Event::from(event_id)?;
+        let event = EventBuilder::new(event_id)?.build()?;
 
         let eventful = TransitionBuilder::new(start_id.as_str())
             .event(&event)?
@@ -860,10 +860,10 @@ mod tests {
             StateChart::<io::Sink>::from("res/examples/01_microwave.scxml", &mut dev_null)?;
 
         // Create events to be sent (already registered by parsing process)
-        let turn_on = Event::from("turn.on")?;
-        let door_open = Event::from("door.open")?;
-        let door_close = Event::from("door.close")?;
-        let time = Event::from("time")?;
+        let turn_on = EventBuilder::new("turn.on")?.build()?;
+        let door_open = EventBuilder::new("door.open")?.build()?;
+        let door_close = EventBuilder::new("door.close")?.build()?;
+        let time = EventBuilder::new("time")?.build()?;
 
         // Process the events
         statechart.process_external_event(&turn_on)?;
@@ -887,8 +887,8 @@ mod tests {
             StateChart::<io::Sink>::from("res/test_cases/if_deeply_nested.scxml", &mut dev_null)?;
 
         // Create events to be sent (already registered by parsing process)
-        let turn_on = Event::from("turn.on")?;
-        let turn_off = Event::from("turn.off")?;
+        let turn_on = EventBuilder::new("turn.on")?.build()?;
+        let turn_off = EventBuilder::new("turn.off")?.build()?;
 
         // Process the events
         statechart.process_external_event(&turn_on)?;
@@ -923,10 +923,10 @@ COND: Powering off\n",
             StateChart::<Vec<u8>>::from("res/test_cases/logging_microwave.scxml", &mut buffer)?;
 
         // Create events to be sent (already registered by parsing process)
-        let turn_on = Event::from("turn.on")?;
-        let door_open = Event::from("door.open")?;
-        let door_close = Event::from("door.close")?;
-        let time = Event::from("time")?;
+        let turn_on = EventBuilder::new("turn.on")?.build()?;
+        let door_open = EventBuilder::new("door.open")?.build()?;
+        let door_close = EventBuilder::new("door.close")?.build()?;
+        let time = EventBuilder::new("time")?.build()?;
 
         // Process the events
         statechart.process_external_event(&turn_on)?;
@@ -952,8 +952,8 @@ COND: Powering off\n",
         )?;
 
         // Create events to be sent (already registered by parsing process)
-        let turn_on = Event::from("turn.on")?;
-        let turn_off = Event::from("turn.off")?;
+        let turn_on = EventBuilder::new("turn.on")?.build()?;
+        let turn_off = EventBuilder::new("turn.off")?.build()?;
 
         // Process the events
         for _ in 0..5 {
@@ -990,7 +990,7 @@ turned off\n",
             StateChart::<Vec<u8>>::from("res/test_cases/raise_verf.scxml", &mut buffer)?;
 
         // Create events to be sent (already registered by parsing process)
-        let turn_on = Event::from("turn.on")?;
+        let turn_on = EventBuilder::new("turn.on")?.build()?;
 
         // Process the events
         statechart.process_external_event(&turn_on)?;
@@ -1017,7 +1017,7 @@ turned off\n",
 
         // Verify that the test packet was received and processed successfully
         if let Ok(rcvd_event) = event_rcvr.recv_timeout(std::time::Duration::from_millis(10000)) {
-            assert_eq!(rcvd_event, Event::from("test")?);
+            assert_eq!(rcvd_event, EventBuilder::new("test")?.build()?);
         }
 
         Ok(())

@@ -341,14 +341,14 @@ mod builder_tests {
     use std::error::Error;
 
     use crate::{
-        event::Event,
+        event::EventBuilder,
         transition::{TransitionBuilder, TransitionBuilderError},
     };
 
     #[test]
     fn duplicate_event() -> Result<(), Box<dyn Error>> {
         // Define Event
-        let event = Event::from("event")?;
+        let event = EventBuilder::new("event")?.build()?;
 
         // Verify that duplicate event is caught
         let builder = TransitionBuilder::new("state").event(&event)?;
