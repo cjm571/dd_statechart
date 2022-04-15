@@ -41,6 +41,7 @@ use std::{error::Error, fmt};
 pub struct Event {
     name_nodes: Vec<String>,
     event_type: EventType,
+    sendid: String,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -54,6 +55,7 @@ pub enum EventType {
 pub struct EventBuilder {
     name_nodes: Vec<String>,
     event_type: EventType,
+    sendid: String,
 }
 
 #[derive(Debug, PartialEq)]
@@ -83,8 +85,12 @@ impl Event {
         composed_id
     }
 
-    pub fn event_type(&self) -> EventType {
-        self.event_type
+    pub fn event_type(&self) -> &EventType {
+        &self.event_type
+    }
+
+    pub fn sendid(&self) -> &str {
+        &self.sendid
     }
 }
 
@@ -117,6 +123,7 @@ impl EventBuilder {
         Ok(Self {
             name_nodes: composed_nodes,
             event_type: EventType::Internal,
+            sendid: String::default(),
         })
     }
 
@@ -129,11 +136,18 @@ impl EventBuilder {
         Ok(Event {
             name_nodes: self.name_nodes,
             event_type: self.event_type,
+            sendid: self.sendid,
         })
     }
 
     pub fn event_type(mut self, event_type: EventType) -> Self {
         self.event_type = event_type;
+
+        self
+    }
+
+    pub fn sendid(mut self, sendid: String) -> Self {
+        self.sendid = sendid;
 
         self
     }
@@ -163,6 +177,17 @@ impl fmt::Display for Event {
         Ok(())
     }
 }
+
+/*  *  *  *  *  *  *  *\
+ *      EventType     *
+\*  *  *  *  *  *  *  */
+
+impl Default for EventType {
+    fn default() -> Self {
+        Self::Internal
+    }
+}
+
 
 /*  *  *  *  *  *  *  *\
  *     EventError     *
@@ -281,7 +306,20 @@ mod builder_tests {
             .event_type(event_type)
             .build()?;
 
-        assert_eq!(event.event_type(), event_type);
+        assert_eq!(event.event_type(), &event_type);
+
+        Ok(())
+    }
+
+    #[test]
+    fn sendid() -> TestResult {
+        let sendid = String::from("test");
+
+        let event = EventBuilder::new("external")?
+            .sendid(sendid.clone())
+            .build()?;
+
+        assert_eq!(event.sendid(), &sendid);
 
         Ok(())
     }
