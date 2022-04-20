@@ -21,7 +21,7 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-use std::net::UdpSocket;
+use std::net::{SocketAddr, UdpSocket};
 use std::{collections::HashMap, error::Error, fmt};
 
 use crate::{event::Event, interpreter::EcmaScriptValue, StateChartId};
@@ -53,7 +53,7 @@ pub struct SystemVariables {
 pub struct IoProcessor {
     name: String,
     socket: UdpSocket,
-    location: String,
+    location: SocketAddr,
 }
 
 #[derive(Debug, PartialEq)]
@@ -69,7 +69,7 @@ pub enum DataModelError {
 impl IoProcessor {
     pub fn new_default() -> Result<Self, std::io::Error> {
         let socket = UdpSocket::bind(OS_ASSIGNED_SOCKET_ADDR)?;
-        let location = socket.local_addr()?.to_string();
+        let location = socket.local_addr()?;
 
         Ok(Self {
             name: "http://www.w3.org/TR/scxml/#SCXMLEventProcessor".to_string(),
@@ -82,7 +82,7 @@ impl IoProcessor {
      *  Accessor Methods  *
     \*  *  *  *  *  *  *  */
 
-    pub fn location(&self) -> &str {
+    pub fn location(&self) -> &SocketAddr {
         &self.location
     }
 

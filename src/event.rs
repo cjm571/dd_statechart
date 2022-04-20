@@ -29,7 +29,18 @@ Purpose:
 
 \* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-use std::{error::Error, fmt};
+use std::{
+    error::Error,
+    fmt,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+};
+
+
+///////////////////////////////////////////////////////////////////////////////
+//  Named Constants
+///////////////////////////////////////////////////////////////////////////////
+
+const BLACKHOLE_IPADDR: IpAddr = IpAddr::V4(Ipv4Addr::new(255, 0, 0, 0));
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -41,7 +52,8 @@ use std::{error::Error, fmt};
 pub struct Event {
     name_nodes: Vec<String>,
     event_type: EventType,
-    sendid: String,
+    sendid: String,     //FIXME: Should this be an Option<String>?
+    origin: SocketAddr, //FIXME: Make this an Option<SocketAddr>
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -56,6 +68,7 @@ pub struct EventBuilder {
     name_nodes: Vec<String>,
     event_type: EventType,
     sendid: String,
+    origin: SocketAddr,
 }
 
 #[derive(Debug, PartialEq)]
@@ -92,6 +105,10 @@ impl Event {
     pub fn sendid(&self) -> &str {
         &self.sendid
     }
+
+    pub fn origin(&self) -> &SocketAddr {
+        &self.origin
+    }
 }
 
 
@@ -122,8 +139,9 @@ impl EventBuilder {
 
         Ok(Self {
             name_nodes: composed_nodes,
-            event_type: EventType::Internal,
+            event_type: EventType::default(),
             sendid: String::default(),
+            origin: SocketAddr::new(BLACKHOLE_IPADDR, 0),
         })
     }
 
@@ -137,6 +155,7 @@ impl EventBuilder {
             name_nodes: self.name_nodes,
             event_type: self.event_type,
             sendid: self.sendid,
+            origin: self.origin,
         })
     }
 
@@ -148,6 +167,12 @@ impl EventBuilder {
 
     pub fn sendid(mut self, sendid: String) -> Self {
         self.sendid = sendid;
+
+        self
+    }
+
+    pub fn origin(mut self, origin: SocketAddr) -> Self {
+        self.origin = origin;
 
         self
     }
@@ -320,6 +345,17 @@ mod builder_tests {
             .build()?;
 
         assert_eq!(event.sendid(), &sendid);
+
+        Ok(())
+    }
+
+    #[test]
+    fn origin() -> TestResult {
+        let origin = "127.0.0.1:0".parse()?;
+
+        let event = EventBuilder::new("external")?.origin(origin).build()?;
+
+        assert_eq!(event.origin(), &origin);
 
         Ok(())
     }
