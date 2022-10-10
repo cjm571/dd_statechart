@@ -79,7 +79,7 @@ pub struct StateBuilder {
     onexit: Vec<ExecutableContent>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum StateBuilderError {
     DuplicateSubstate(StateId),
     DuplicateTransition(TransitionFingerprint),

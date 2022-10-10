@@ -131,7 +131,7 @@ pub struct StateChartBuilder<'w, W: 'w + Write> {
     writer: &'w mut W,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum StateChartBuilderError {
     InitialStateNotRegistered(StateId),
     NoStatesRegistered,

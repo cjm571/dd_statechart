@@ -37,7 +37,7 @@ pub struct Lexer<'c> {
     position: u32,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum LexerError {
     UnexpectedCharacter(
         String, /* Unexpected Character */
@@ -140,7 +140,7 @@ impl<'c> Lexer<'c> {
             Some('\'') => Some(self.capture_string_literal()?),
 
             // Numerical Literals
-            Some(x) if x.is_digit(10) => Some(self.capture_numerical_literal(x)?),
+            Some(x) if x.is_ascii_digit() => Some(self.capture_numerical_literal(x)?),
 
             // Identifiers
             Some(x) if x.is_alphabetic() || x == '_' => Some(self.capture_identifier(x)),
@@ -211,7 +211,7 @@ impl<'c> Lexer<'c> {
         while let Some(next_char) = self
             .expr_iter
             .peek()
-            .filter(|v| v.is_digit(10) || v == &&'.')
+            .filter(|v| v.is_ascii_digit() || v == &&'.')
         {
             if next_char == &'.' {
                 if decimal_encountered {

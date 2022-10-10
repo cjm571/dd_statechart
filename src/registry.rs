@@ -46,7 +46,7 @@ pub struct Registry {
     events: Vec<Event>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum RegistryError {
     EventAlreadyRegistered(Event),
     StateAlreadyRegistered(StateId),

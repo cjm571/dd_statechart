@@ -50,7 +50,7 @@ pub enum EventType {
     External, // All other events
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum EventError {
     IdContainsDuplicates(String),
     IdNodeIsEmpty(String, usize),

@@ -144,13 +144,13 @@ pub enum Unary {
     Not(Box<Expression>),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Operator {
     Logical(LogicalOperator),
     Arithmetic(ArithmeticOperator),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LogicalOperator {
     EqualTo,
     NotEqualTo,
@@ -160,7 +160,7 @@ pub enum LogicalOperator {
     LessThanOrEqualTo,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ArithmeticOperator {
     Plus,
     Minus,
