@@ -44,7 +44,11 @@ pub enum ExecutableContent {
         String, /* Value expression string */
     ),
     Cancel,  /* FEAT: <cancel> */
-    ForEach, /* FEAT: <foreach> */
+    ForEach(
+        String, /* Array value expression string */
+        String, /* Item variable name */
+        Option<String>, /* Index storage variable name */
+    ),
     BranchTable(
         Vec<BranchTableEntry>, /* Table of if-elseif-else branches */
     ),
@@ -87,6 +91,7 @@ impl ExecutableContent {
     {
         match self {
             Self::Assign(location, expr) => Self::execute_assign(location, expr, sys_vars),
+            Self::ForEach(array, item, index) => Self::execute_foreach(array, item, index, sys_vars),
             Self::BranchTable(branch_table) => {
                 Self::execute_if(branch_table, sys_vars, internal_queue, writer)
             }
@@ -120,6 +125,15 @@ impl ExecutableContent {
         sys_vars.set_data_member(location, value);
 
         Ok(())
+    }
+
+    fn execute_foreach(
+        array: &str,
+        item: &str,
+        index: &Option<String>,
+        sys_vars: &mut SystemVariables,
+    ) -> Result<(), ExecutableContentError> {
+        todo!("FOREACH IN WORK!")
     }
 
     fn execute_if<W>(
