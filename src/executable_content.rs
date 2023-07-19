@@ -128,10 +128,10 @@ impl ExecutableContent {
     }
 
     fn execute_foreach(
-        array: &str,
-        item: &str,
-        index: &Option<String>,
-        sys_vars: &mut SystemVariables,
+        _array: &str,
+        _item: &str,
+        _index: &Option<String>,
+        _sys_vars: &mut SystemVariables,
     ) -> Result<(), ExecutableContentError> {
         todo!("FOREACH IN WORK!")
     }

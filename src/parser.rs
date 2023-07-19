@@ -56,10 +56,10 @@ const VALID_DATAMODEL: &str = "ecmascript";
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, PartialEq)]
-pub struct Parser<'w, W: 'w + Write> {
+pub struct Parser<W: Write> {
     path: String,
     content: String,
-    statechart_builder: StateChartBuilder<'w, W>,
+    statechart_builder: StateChartBuilder<W>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -101,9 +101,9 @@ pub enum ValidElementClass {
 //  Object Implementation
 ///////////////////////////////////////////////////////////////////////////////
 
-impl<'w, W: 'w + Write> Parser<'w, W> {
+impl<W: Write> Parser<W> {
     /// Creates a new Parser object for the SCXML file at the given path.
-    pub fn new(path: &str, writer: &'w mut W) -> Result<Self, ParserError> {
+    pub fn new(path: &str, writer: W) -> Result<Self, ParserError> {
         // Attempt to open the file at the given path
         let mut file = fs::File::open(path)?;
         let mut file_contents = String::new();
@@ -116,7 +116,7 @@ impl<'w, W: 'w + Write> Parser<'w, W> {
         })
     }
 
-    pub fn parse(mut self) -> Result<StateChart<'w, W>, ParserError> {
+    pub fn parse(mut self) -> Result<StateChart<W>, ParserError> {
         // Parse contents of the SCXML file into an roxmltree::Document
         let parsed_content = roxmltree::Document::parse(self.content.as_str())?;
 
