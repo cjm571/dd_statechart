@@ -9,4 +9,4 @@ Cargo.lock
 *.code-workspace
 
 # Syncthing
-.stignore
+.stignore*

@@ -42,7 +42,7 @@ pub struct SystemVariables {
     _x: HashMap<String, EcmaScriptValue>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum DataModelError {
     InvalidValueType(String /* Identifier name */),
 }

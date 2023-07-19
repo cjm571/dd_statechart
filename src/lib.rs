@@ -102,12 +102,12 @@ use crate::{
 ///
 /// Contains a list of all nodes and events that make up the statechart.
 #[derive(PartialEq)]
-pub struct StateChart<'w, W: 'w + Write> {
+pub struct StateChart<W: Write> {
     initial: Option<StateId>,
     internal_queue: VecDeque<Event>,
     registry: Registry,
     sys_vars: SystemVariables,
-    writer: &'w mut W,
+    writer: W,
 }
 
 pub type StateChartId = String;
@@ -124,14 +124,14 @@ pub enum StateChartError {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct StateChartBuilder<'w, W: 'w + Write> {
+pub struct StateChartBuilder<W: Write> {
     initial: Option<StateId>,
     registry: Registry,
     sys_vars: SystemVariables,
-    writer: &'w mut W,
+    writer: W,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum StateChartBuilderError {
     InitialStateNotRegistered(StateId),
     NoStatesRegistered,
@@ -146,8 +146,8 @@ pub enum StateChartBuilderError {
 //  Object Implementations
 ///////////////////////////////////////////////////////////////////////////////
 
-impl<'w, W: 'w + Write> StateChart<'w, W> {
-    pub fn from(path: &str, writer: &'w mut W) -> Result<Self, StateChartError> {
+impl<W: Write> StateChart<W> {
+    pub fn from(path: &str, writer: W) -> Result<Self, StateChartError> {
         // Parse the SCXML doc at the given path
         Parser::new(path, writer)
             .map_err(StateChartError::ParserError)?
@@ -313,8 +313,8 @@ impl<'w, W: 'w + Write> StateChart<'w, W> {
 }
 
 
-impl<'w, W: 'w + Write> StateChartBuilder<'w, W> {
-    pub fn new(writer: &'w mut W) -> Self {
+impl<W: Write> StateChartBuilder<W> {
+    pub fn new(writer: W) -> Self {
         Self {
             initial: Option::default(),
             registry: Registry::default(),
@@ -327,7 +327,7 @@ impl<'w, W: 'w + Write> StateChartBuilder<'w, W> {
      *  Builder Methods   *
     \*  *  *  *  *  *  *  */
 
-    pub fn build(mut self) -> Result<StateChart<'w, W>, StateChartBuilderError> {
+    pub fn build(mut self) -> Result<StateChart<W>, StateChartBuilderError> {
         // Ensure at least one State has been registered
         if let Some(first_state) = self.registry.get_all_states().first() {
             // If no initial State ID was provided, set to first doc-order child
@@ -397,7 +397,7 @@ impl<'w, W: 'w + Write> StateChartBuilder<'w, W> {
  *     StateChart     *
 \*  *  *  *  *  *  *  */
 
-impl<'w, W: 'w + Write> fmt::Debug for StateChart<'w, W> {
+impl<W: Write> fmt::Debug for StateChart<W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("StateChart")
             .field("sys_vars", &self.sys_vars)
@@ -578,8 +578,8 @@ mod tests {
         let imaging = StateBuilder::new(imaging_id).build()?;
 
         // Build statechart
-        let mut dev_null = io::sink();
-        let mut statechart = StateChartBuilder::new(&mut dev_null)
+        let dev_null = io::sink();
+        let mut statechart = StateChartBuilder::new(dev_null)
             .name("theia")
             .initial(idle.id().to_string())
             .state(idle)?
@@ -615,8 +615,8 @@ mod tests {
         let duplicate_b = StateBuilder::new(duplicate_id.clone()).build()?;
 
         // Create the statechart object and add states to it
-        let mut dev_null = io::sink();
-        let mut statechart_builder = StateChartBuilder::new(&mut dev_null);
+        let dev_null = io::sink();
+        let mut statechart_builder = StateChartBuilder::new(dev_null);
         statechart_builder = statechart_builder.state(duplicate_a)?;
 
         // Verify that adding the duplicate ID results in an error
@@ -638,8 +638,8 @@ mod tests {
 
         let state = StateBuilder::new(String::from("state")).build()?;
 
-        let mut dev_null = io::sink();
-        let mut statechart = StateChartBuilder::new(&mut dev_null)
+        let dev_null = io::sink();
+        let mut statechart = StateChartBuilder::new(dev_null)
             .state(state)?
             .build()?;
 
@@ -683,8 +683,8 @@ mod tests {
         let end = StateBuilder::new(end_id.clone()).build()?;
 
         // Create a StateChart containing all of the above
-        let mut dev_null = io::sink();
-        let mut statechart = StateChartBuilder::new(&mut dev_null)
+        let dev_null = io::sink();
+        let mut statechart = StateChartBuilder::new(dev_null)
             .state(start)?
             .state(end)?
             .build()?;
@@ -703,10 +703,10 @@ mod tests {
 
     #[test]
     fn end_to_end_scxml() -> TestResult {
-        let mut dev_null = io::sink();
+        let dev_null = io::sink();
         // Parse a StateChart from the microwave SCXML sample
         let mut statechart =
-            StateChart::<io::Sink>::from("res/examples/01_microwave.scxml", &mut dev_null)?;
+            StateChart::<io::Sink>::from("res/examples/01_microwave.scxml", dev_null)?;
 
         // Create events to be sent (already registered by parsing process)
         let turn_on = Event::from("turn.on")?;
@@ -730,10 +730,10 @@ mod tests {
 
     #[test]
     fn if_deeply_nested() -> TestResult {
-        let mut dev_null = io::sink();
+        let dev_null = io::sink();
         // Parse a StateChart with deeply-nested <if>s
         let mut statechart =
-            StateChart::<io::Sink>::from("res/test_cases/if_deeply_nested.scxml", &mut dev_null)?;
+            StateChart::<io::Sink>::from("res/test_cases/if_deeply_nested.scxml", dev_null)?;
 
         // Create events to be sent (already registered by parsing process)
         let turn_on = Event::from("turn.on")?;
@@ -764,12 +764,12 @@ EVENT: Tick: 5
 COND: Powering off\n",
         );
 
-        // Create a buffer for log verification
-        let mut buffer = Vec::new();
+        // Create a file for log verification
+        let file = std::fs::File::create("logging_microwave.log").unwrap();
 
         // Parse a StateChart from the modified microwave SCXML example to include some contrived logging
         let mut statechart =
-            StateChart::<Vec<u8>>::from("res/test_cases/logging_microwave.scxml", &mut buffer)?;
+            StateChart::from("res/test_cases/logging_microwave.scxml", file)?;
 
         // Create events to be sent (already registered by parsing process)
         let turn_on = Event::from("turn.on")?;
@@ -785,19 +785,23 @@ COND: Powering off\n",
             statechart.process_external_event(&time)?;
         }
 
-        assert_eq!(String::from_utf8(buffer)?, verf_buffer);
+        // Verify output is as expected
+        assert_eq!(std::fs::read_to_string("logging_microwave.log")?, verf_buffer);
+
+        // Delete test log file
+        std::fs::remove_file("logging_microwave.log")?;
 
         Ok(())
     }
 
     #[test]
     fn onentry_onexit_verification() -> TestResult {
-        let mut dev_null = io::sink();
+        let dev_null = io::sink();
 
         // Parse a StateChart from the contrived SCXML file to verify proper function of <onentry> <onexit>
         let mut statechart = StateChart::<io::Sink>::from(
             "res/test_cases/onentry_onexit_verf.scxml",
-            &mut dev_null,
+            dev_null,
         )?;
 
         // Create events to be sent (already registered by parsing process)
@@ -830,12 +834,14 @@ COND: Powering off\n",
 BEFORE auto.off
 turned off\n",
         );
-        let mut buffer = Vec::new();
+
+        // Create a file for log verification
+        let file = std::fs::File::create("raise_verification.log").unwrap();
 
         // Parse a StateChart from the contrived SCXML file to verify proper function of <raise>
         // and the internal event queue
         let mut statechart =
-            StateChart::<Vec<u8>>::from("res/test_cases/raise_verf.scxml", &mut buffer)?;
+            StateChart::from("res/test_cases/raise_verf.scxml", file)?;
 
         // Create events to be sent (already registered by parsing process)
         let turn_on = Event::from("turn.on")?;
@@ -843,7 +849,11 @@ turned off\n",
         // Process the events
         statechart.process_external_event(&turn_on)?;
 
-        assert_eq!(String::from_utf8(buffer)?, verf_buffer);
+        // Verify output is as expected
+        assert_eq!(std::fs::read_to_string("raise_verification.log")?, verf_buffer);
+
+        // Delete test log file
+        std::fs::remove_file("raise_verification.log")?;
 
         Ok(())
     }
@@ -868,8 +878,8 @@ mod builder_tests {
         let registered = StateBuilder::new(String::from("registered")).build()?;
 
         // Attempt to build a StateChart with an unregistered initial ID
-        let mut dev_null = io::sink();
-        let mut invalid_builder = StateChartBuilder::new(&mut dev_null);
+        let dev_null = io::sink();
+        let mut invalid_builder = StateChartBuilder::new(dev_null);
         invalid_builder = invalid_builder
             .state(registered)?
             .initial(unregistered.id().to_string());

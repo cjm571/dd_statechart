@@ -73,7 +73,7 @@ pub struct TransitionBuilder {
     executable_content: Vec<ExecutableContent>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum TransitionBuilderError {
     ConditionAlreadySet(
         String, /* New (rejected) condition expression */

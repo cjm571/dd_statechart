@@ -241,10 +241,10 @@ impl<'i> Parser<'i> {
         match self.consume_token() {
             // Literals and Identifiers can be parsed directly
             Some(&Token::Number(value)) => Ok(Expression::Literal(Literal::Number(value))),
-            Some(&Token::String(ref string)) => {
+            Some(Token::String(string)) => {
                 Ok(Expression::Literal(Literal::String(string.clone())))
             }
-            Some(&Token::Identifier(ref identifier)) => match identifier.as_str() {
+            Some(Token::Identifier(identifier)) => match identifier.as_str() {
                 "true" => Ok(Expression::Literal(Literal::True)),
                 "false" => Ok(Expression::Literal(Literal::False)),
                 "null" => Ok(Expression::Literal(Literal::Null)),
